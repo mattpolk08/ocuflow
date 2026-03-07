@@ -7,6 +7,9 @@
 // Phase 1D: Exam Record
 // Phase 2A: Billing & Claims
 // Phase 2B: Reporting & Analytics
+// Phase 3A: Optical Dispensary
+// Phase 4A: Patient Portal
+// Phase 5A: Clinical Messaging & Task Board
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Hono } from 'hono'
@@ -23,7 +26,8 @@ import examRoutes      from './routes/exams'
 import billingRoutes   from './routes/billing'
 import reportsRoutes   from './routes/reports'
 import opticalRoutes   from './routes/optical'
-import portalRoutes    from './routes/portal'
+import portalRoutes      from './routes/portal'
+import messagingRoutes   from './routes/messaging'
 // Import HTML as raw string (Vite ?raw import)
 import intakeHtml    from '../public/intake.html?raw'
 import dashboardHtml from '../public/dashboard.html?raw'
@@ -33,7 +37,8 @@ import examHtml      from '../public/exam.html?raw'
 import billingHtml   from '../public/billing.html?raw'
 import reportsHtml   from '../public/reports.html?raw'
 import opticalHtml   from '../public/optical.html?raw'
-import portalHtml    from '../public/portal.html?raw'
+import portalHtml      from '../public/portal.html?raw'
+import messagingHtml   from '../public/messaging.html?raw'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
@@ -88,6 +93,9 @@ app.get('/optical', (c) => c.html(opticalHtml))
 // ── Patient Portal ────────────────────────────────────────────────────────────
 app.get('/portal', (c) => c.html(portalHtml))
 
+// ── Clinical Messaging & Task Board ──────────────────────────────────────────
+app.get('/messaging', (c) => c.html(messagingHtml))
+
 // ── API Routes ────────────────────────────────────────────────────────────────
 app.route('/api/auth',      authRoutes)
 app.route('/api/intake',    intakeRoutes)
@@ -98,16 +106,17 @@ app.route('/api/exams',     examRoutes)
 app.route('/api/billing',   billingRoutes)
 app.route('/api/reports',   reportsRoutes)
 app.route('/api/optical',   opticalRoutes)
-app.route('/api/portal',    portalRoutes)
+app.route('/api/portal',     portalRoutes)
+app.route('/api/messaging',  messagingRoutes)
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (c) => {
   return c.json({
     status: 'ok',
     service: 'OculoFlow',
-    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal'],
+    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging'],
     timestamp: new Date().toISOString(),
-    version: '1.7.0',
+    version: '1.8.0',
   })
 })
 
@@ -288,6 +297,23 @@ app.get('/', (c) => {
         <div class="flex items-center gap-1.5 mt-3 text-xs text-blue-400 font-medium">
           <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
           Open Patient Portal →
+        </div>
+      </a>
+
+      <a href="/messaging" class="group bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-indigo-500 rounded-2xl p-5 transition-all duration-200 cursor-pointer">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center group-hover:bg-indigo-500/30 transition-colors">
+            <i class="fas fa-comment-medical text-indigo-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Phase 5A — Live</span>
+            <p class="text-sm font-semibold text-white">Clinical Messaging</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">Secure staff inbox with STAT/Urgent priority, task board with kanban-style status, patient recall list management.</p>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-indigo-400 font-medium">
+          <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+          Open Messaging →
         </div>
       </a>
     </div>

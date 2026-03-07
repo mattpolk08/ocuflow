@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OculoFlow — Clinical Messaging</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg-0: #0a0e1a; --bg-1: #0f1629; --bg-2: #141c35;
+      --border: rgba(99,102,241,0.15);
+      --accent: #6366f1; --accent-h: #818cf8;
+      --stat-c: #ef4444; --urgent-c: #f97316; --normal-c: #6366f1;
+      --text-1: #f1f5f9; --text-2: #94a3b8; --text-3: #475569;
+    }
+    * { box-sizing: border-box; }
+    body { background: var(--bg-0); color: var(--text-1); font-family: 'Inter', system-ui, sans-serif; margin: 0; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+    /* Top bar */
+    .topbar { background: var(--bg-1); border-bottom: 1px solid var(--border); height: 52px; display: flex; align-items: center; padding: 0 16px; gap: 12px; shrink: 0; z-index: 50; flex-shrink: 0; }
+    .logo-pill { display: flex; align-items: center; gap: 8px; background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.25); border-radius: 8px; padding: 4px 10px; }
+    .nav-link { font-size: 12px; font-weight: 500; color: var(--text-2); text-decoration: none; padding: 4px 10px; border-radius: 6px; transition: all .15s; display: flex; align-items: center; gap-6px; gap: 6px; }
+    .nav-link:hover, .nav-link.active { background: rgba(99,102,241,0.15); color: var(--text-1); }
+    .badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; border-radius: 9px; font-size: 10px; font-weight: 700; padding: 0 5px; }
+    .badge-red { background: #ef4444; color: #fff; }
+    .badge-orange { background: #f97316; color: #fff; }
+    .badge-blue { background: var(--accent); color: #fff; }
+
+    /* Main layout */
+    .app-body { display: flex; flex: 1; overflow: hidden; }
+
+    /* Left panel — nav + summary */
+    .left-panel { width: 220px; flex-shrink: 0; background: var(--bg-1); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+    .side-section { padding: 10px 12px 6px; }
+    .side-label { font-size: 10px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 4px; }
+    .side-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border-radius: 8px; font-size: 12px; font-weight: 500; color: var(--text-2); background: none; border: none; cursor: pointer; transition: all .15s; text-align: left; }
+    .side-btn:hover { background: rgba(99,102,241,0.1); color: var(--text-1); }
+    .side-btn.active { background: rgba(99,102,241,0.18); color: #818cf8; }
+    .side-btn .icon { width: 20px; text-align: center; font-size: 11px; }
+    .side-btn .ml-auto { margin-left: auto; }
+
+    /* Stat pills */
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px 12px; }
+    .stat-pill { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+    .stat-pill .num { font-size: 20px; font-weight: 700; line-height: 1; }
+    .stat-pill .lbl { font-size: 9px; color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; margin-top: 2px; }
+    .stat-pill.red .num { color: #ef4444; }
+    .stat-pill.orange .num { color: #f97316; }
+    .stat-pill.indigo .num { color: #818cf8; }
+    .stat-pill.emerald .num { color: #10b981; }
+
+    /* Middle panel — thread/task list */
+    .mid-panel { width: 320px; flex-shrink: 0; background: var(--bg-1); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+    .mid-header { padding: 12px 14px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .search-box { display: flex; align-items: center; gap: 8px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 12px; color: var(--text-2); }
+    .search-box input { background: none; border: none; outline: none; color: var(--text-1); font-size: 12px; flex: 1; }
+    .item-list { flex: 1; overflow-y: auto; }
+    .thread-item { padding: 12px 14px; border-bottom: 1px solid rgba(99,102,241,0.08); cursor: pointer; transition: background .12s; }
+    .thread-item:hover { background: rgba(99,102,241,0.07); }
+    .thread-item.active { background: rgba(99,102,241,0.14); border-left: 3px solid var(--accent); }
+    .thread-item .subject { font-size: 12px; font-weight: 600; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 3px; }
+    .thread-item .preview { font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .thread-item .meta { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+    .priority-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .p-STAT    { background: #ef4444; box-shadow: 0 0 6px #ef444480; }
+    .p-URGENT  { background: #f97316; }
+    .p-HIGH    { background: #eab308; }
+    .p-NORMAL  { background: #6366f1; }
+    .p-LOW     { background: #475569; }
+    .cat-tag { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: 1px 5px; border-radius: 4px; background: rgba(99,102,241,0.15); color: #818cf8; }
+    .cat-PATIENT_CARE { background: rgba(16,185,129,0.15); color: #10b981; }
+    .cat-REFERRAL { background: rgba(139,92,246,0.15); color: #a78bfa; }
+    .cat-BILLING { background: rgba(245,158,11,0.15); color: #fbbf24; }
+    .cat-PRESCRIPTION { background: rgba(6,182,212,0.15); color: #22d3ee; }
+    .cat-ADMINISTRATIVE { background: rgba(99,102,241,0.15); color: #818cf8; }
+    .cat-CLINICAL { background: rgba(16,185,129,0.15); color: #10b981; }
+    .cat-FOLLOW_UP { background: rgba(6,182,212,0.15); color: #22d3ee; }
+    .cat-RECALL { background: rgba(239,68,68,0.15); color: #f87171; }
+    .cat-INSURANCE { background: rgba(245,158,11,0.15); color: #fbbf24; }
+    .cat-OPTICAL { background: rgba(139,92,246,0.15); color: #a78bfa; }
+    .cat-OTHER { background: rgba(71,85,105,0.2); color: #94a3b8; }
+    .unread-dot { width: 8px; height: 8px; background: #6366f1; border-radius: 50%; flex-shrink: 0; }
+
+    /* Task item */
+    .task-item { padding: 11px 14px; border-bottom: 1px solid rgba(99,102,241,0.08); cursor: pointer; transition: background .12s; }
+    .task-item:hover { background: rgba(99,102,241,0.07); }
+    .task-item.active { background: rgba(99,102,241,0.14); border-left: 3px solid var(--accent); }
+    .task-item .title { font-size: 12px; font-weight: 600; color: var(--text-1); margin-bottom: 4px; line-height: 1.3; }
+    .task-status { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: 1px 6px; border-radius: 4px; }
+    .s-OPEN        { background: rgba(99,102,241,0.2); color: #818cf8; }
+    .s-IN_PROGRESS { background: rgba(6,182,212,0.2); color: #22d3ee; }
+    .s-BLOCKED     { background: rgba(239,68,68,0.2); color: #f87171; }
+    .s-DONE        { background: rgba(16,185,129,0.2); color: #34d399; }
+    .s-CANCELLED   { background: rgba(71,85,105,0.2); color: #64748b; }
+    .overdue-chip  { font-size: 9px; font-weight: 700; background: rgba(239,68,68,0.2); color: #f87171; padding: 1px 5px; border-radius: 4px; }
+
+    /* Recall item */
+    .recall-item { padding: 11px 14px; border-bottom: 1px solid rgba(99,102,241,0.08); cursor: pointer; transition: background .12s; }
+    .recall-item:hover { background: rgba(99,102,241,0.07); }
+    .recall-item.active { background: rgba(99,102,241,0.14); border-left: 3px solid var(--accent); }
+    .recall-status { font-size: 9px; font-weight: 700; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; }
+    .rs-PENDING      { background: rgba(245,158,11,0.2); color: #fbbf24; }
+    .rs-CONTACTED    { background: rgba(6,182,212,0.2); color: #22d3ee; }
+    .rs-SCHEDULED    { background: rgba(16,185,129,0.2); color: #34d399; }
+    .rs-DECLINED     { background: rgba(239,68,68,0.2); color: #f87171; }
+    .rs-UNREACHABLE  { background: rgba(71,85,105,0.2); color: #64748b; }
+
+    /* Right panel — detail view */
+    .right-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .detail-header { padding: 14px 18px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--bg-1); }
+    .detail-content { flex: 1; overflow-y: auto; padding: 0; }
+    .msg-bubble { padding: 10px 14px; margin: 0 14px 10px; border-radius: 12px; background: var(--bg-2); border: 1px solid var(--border); }
+    .msg-bubble.own { margin-left: 40px; border-left: 3px solid var(--accent); }
+    .msg-bubble .sender { font-size: 11px; font-weight: 700; color: #818cf8; margin-bottom: 4px; }
+    .msg-bubble .role-tag { font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); margin-left: 6px; }
+    .msg-bubble .body { font-size: 13px; color: var(--text-1); line-height: 1.5; }
+    .msg-bubble .ts { font-size: 10px; color: var(--text-3); margin-top: 6px; }
+    .compose-bar { border-top: 1px solid var(--border); padding: 12px 16px; background: var(--bg-1); flex-shrink: 0; }
+    .compose-input { width: 100%; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; font-size: 13px; color: var(--text-1); outline: none; resize: none; min-height: 60px; max-height: 140px; font-family: inherit; }
+    .compose-input:focus { border-color: rgba(99,102,241,0.5); }
+    .btn-send { display: flex; align-items: center; gap: 6px; padding: 8px 18px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; border: none; cursor: pointer; transition: all .15s; }
+    .btn-send:hover { background: var(--accent-h); }
+    .btn-ghost { background: none; border: 1px solid var(--border); color: var(--text-2); font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 7px; cursor: pointer; transition: all .15s; display: flex; align-items: center; gap: 5px; }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--text-1); }
+    .btn-danger { background: none; border: 1px solid rgba(239,68,68,0.3); color: #f87171; font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 7px; cursor: pointer; transition: all .15s; display: flex; align-items: center; gap: 5px; }
+    .btn-danger:hover { background: rgba(239,68,68,0.1); }
+
+    /* Empty state */
+    .empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-3); gap: 12px; padding: 32px; }
+    .empty-state i { font-size: 40px; opacity: .3; }
+
+    /* Task detail */
+    .task-detail { padding: 18px; }
+    .task-field { margin-bottom: 14px; }
+    .task-field label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text-3); margin-bottom: 4px; }
+    .task-field .val { font-size: 13px; color: var(--text-1); }
+    .comment-list { margin-top: 8px; }
+    .comment-item { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+    .comment-item .author { font-size: 11px; font-weight: 700; color: #818cf8; margin-bottom: 4px; }
+    .comment-item .body { font-size: 12px; color: var(--text-1); }
+    .comment-item .ts { font-size: 10px; color: var(--text-3); margin-top: 4px; }
+
+    /* Recall detail */
+    .recall-detail { padding: 18px; }
+
+    /* Modal overlay */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,10,0.8); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .modal { background: var(--bg-1); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; }
+    .modal-header { padding: 18px 20px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .modal-title { font-size: 16px; font-weight: 700; color: var(--text-1); }
+    .modal-body { padding: 16px 20px 20px; }
+    .form-group { margin-bottom: 14px; }
+    .form-label { display: block; font-size: 11px; font-weight: 600; color: var(--text-2); margin-bottom: 5px; }
+    .form-input { width: 100%; background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13px; color: var(--text-1); outline: none; font-family: inherit; }
+    .form-input:focus { border-color: rgba(99,102,241,0.5); }
+    select.form-input option { background: var(--bg-2); }
+    textarea.form-input { resize: vertical; min-height: 70px; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.3); border-radius: 2px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+
+    /* Participants chips */
+    .participant-chip { display: inline-flex; align-items: center; gap: 5px; background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.2); border-radius: 20px; padding: 2px 8px; font-size: 11px; color: #a5b4fc; margin: 2px; }
+    .avatar-xs { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: #fff; flex-shrink: 0; }
+
+    /* Pinned indicator */
+    .pin-icon { color: #fbbf24; }
+
+    /* Toolbar badges */
+    .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    /* Status selects inline */
+    .status-select { background: none; border: none; color: inherit; font-size: inherit; font-weight: inherit; cursor: pointer; outline: none; padding: 0; }
+    
+    /* Animation */
+    @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+    .fade-in { animation: fadeIn .2s ease; }
+    @keyframes pulse-ring { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+    .pulse-ring { animation: pulse-ring 2s infinite; }
+  </style>
+</head>
+<body>
+
+<!-- ── Top Bar ──────────────────────────────────────────────────────────────── -->
+<header class="topbar">
+  <div class="logo-pill">
+    <i class="fas fa-comment-medical text-indigo-400 text-xs"></i>
+    <span class="text-xs font-bold text-indigo-300 tracking-wide">Messaging</span>
+    <span class="text-xs text-slate-500 ml-1">v1.8.0</span>
+  </div>
+  <nav class="hidden md:flex items-center gap-0.5 ml-2">
+    <a href="/"          class="nav-link"><i class="fas fa-house w-4 text-center"></i>Home</a>
+    <a href="/dashboard" class="nav-link"><i class="fas fa-gauge-high w-4 text-center"></i>Dashboard</a>
+    <a href="/patients"  class="nav-link"><i class="fas fa-users w-4 text-center"></i>Patients</a>
+    <a href="/schedule"  class="nav-link"><i class="fas fa-calendar-days w-4 text-center"></i>Schedule</a>
+    <a href="/exam"      class="nav-link"><i class="fas fa-file-medical w-4 text-center"></i>Exam</a>
+    <a href="/billing"   class="nav-link"><i class="fas fa-file-invoice-dollar w-4 text-center"></i>Billing</a>
+    <a href="/optical"   class="nav-link"><i class="fas fa-glasses w-4 text-center"></i>Optical</a>
+    <a href="/reports"   class="nav-link"><i class="fas fa-chart-line w-4 text-center"></i>Reports</a>
+    <a href="/portal"    class="nav-link"><i class="fas fa-user-circle w-4 text-center"></i>Portal</a>
+    <a href="/messaging" class="nav-link active"><i class="fas fa-comment-medical w-4 text-center"></i>Messaging</a>
+  </nav>
+
+  <!-- Action buttons -->
+  <div class="ml-auto flex items-center gap-2">
+    <button onclick="openNewThreadModal()" class="btn-send text-xs py-1.5 px-3">
+      <i class="fas fa-plus"></i> New Message
+    </button>
+    <button onclick="openNewTaskModal()" class="btn-ghost">
+      <i class="fas fa-list-check"></i> New Task
+    </button>
+  </div>
+</header>
+
+<!-- ── App Body ─────────────────────────────────────────────────────────────── -->
+<div class="app-body">
+
+  <!-- Left Panel -->
+  <aside class="left-panel">
+    <!-- Stats -->
+    <div class="stat-grid" id="stat-grid">
+      <div class="stat-pill red"><div class="num" id="stat-unread">—</div><div class="lbl">Unread</div></div>
+      <div class="stat-pill orange"><div class="num" id="stat-urgent-msg">—</div><div class="lbl">Urgent Msgs</div></div>
+      <div class="stat-pill indigo"><div class="num" id="stat-open-tasks">—</div><div class="lbl">Open Tasks</div></div>
+      <div class="stat-pill red"><div class="num" id="stat-overdue-tasks">—</div><div class="lbl">Overdue</div></div>
+    </div>
+
+    <!-- View sections -->
+    <div class="side-section">
+      <div class="side-label">Messages</div>
+      <button class="side-btn active" id="view-inbox"    onclick="setView('inbox')">    <span class="icon"><i class="fas fa-inbox"></i></span> Inbox       <span class="ml-auto badge badge-red" id="badge-inbox" style="display:none"></span></button>
+      <button class="side-btn"        id="view-urgent"   onclick="setView('urgent')">   <span class="icon"><i class="fas fa-triangle-exclamation"></i></span> Urgent   <span class="ml-auto badge badge-orange" id="badge-urgent" style="display:none"></span></button>
+      <button class="side-btn"        id="view-patient"  onclick="setView('patient')">  <span class="icon"><i class="fas fa-heart-pulse"></i></span> Patient Care</button>
+      <button class="side-btn"        id="view-referral" onclick="setView('referral')"> <span class="icon"><i class="fas fa-share-from-square"></i></span> Referrals</button>
+      <button class="side-btn"        id="view-billing-msg" onclick="setView('billing-msg')"><span class="icon"><i class="fas fa-file-invoice-dollar"></i></span> Billing</button>
+      <button class="side-btn"        id="view-archived" onclick="setView('archived')"> <span class="icon"><i class="fas fa-archive"></i></span> Archived</button>
+    </div>
+
+    <div class="side-section">
+      <div class="side-label">Tasks</div>
+      <button class="side-btn" id="view-tasks"      onclick="setView('tasks')">     <span class="icon"><i class="fas fa-list-check"></i></span> All Tasks   <span class="ml-auto badge badge-blue" id="badge-tasks" style="display:none"></span></button>
+      <button class="side-btn" id="view-my-tasks"   onclick="setView('my-tasks')">  <span class="icon"><i class="fas fa-user-check"></i></span> My Tasks</button>
+      <button class="side-btn" id="view-overdue"    onclick="setView('overdue')">   <span class="icon"><i class="fas fa-clock"></i></span> Overdue      <span class="ml-auto badge badge-red" id="badge-overdue" style="display:none"></span></button>
+    </div>
+
+    <div class="side-section" style="margin-bottom:8px;">
+      <div class="side-label">Recall</div>
+      <button class="side-btn" id="view-recalls"   onclick="setView('recalls')">    <span class="icon"><i class="fas fa-rotate"></i></span> Recall List  <span class="ml-auto badge badge-orange" id="badge-recalls" style="display:none"></span></button>
+    </div>
+
+    <!-- Staff online -->
+    <div class="side-section" style="border-top:1px solid var(--border); padding-top:10px; margin-top:auto;">
+      <div class="side-label">Staff Online</div>
+      <div id="staff-list" class="flex flex-col gap-1"></div>
+    </div>
+  </aside>
+
+  <!-- Middle Panel -->
+  <div class="mid-panel">
+    <div class="mid-header">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-sm font-bold text-slate-100" id="list-title">Inbox</h2>
+        <button onclick="refreshList()" class="text-slate-500 hover:text-slate-300 text-xs"><i class="fas fa-rotate-right"></i></button>
+      </div>
+      <div class="search-box">
+        <i class="fas fa-magnifying-glass text-slate-500 text-xs"></i>
+        <input type="text" id="search-input" placeholder="Search…" oninput="filterList(this.value)">
+      </div>
+    </div>
+    <div class="item-list" id="item-list">
+      <div class="empty-state"><i class="fas fa-spinner fa-spin"></i><span>Loading…</span></div>
+    </div>
+  </div>
+
+  <!-- Right Panel -->
+  <div class="right-panel" id="right-panel">
+    <div class="empty-state" id="empty-state">
+      <i class="fas fa-comment-medical"></i>
+      <span class="text-sm font-semibold text-slate-400">Select a thread or task</span>
+      <span class="text-xs text-slate-600 text-center max-w-xs">Choose an item from the list to view details, reply, or update status.</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── New Thread Modal ───────────────────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="modal-thread">
+  <div class="modal fade-in">
+    <div class="modal-header">
+      <span class="modal-title"><i class="fas fa-comment-plus mr-2 text-indigo-400"></i>New Message Thread</span>
+      <button onclick="closeModal('modal-thread')" class="text-slate-500 hover:text-slate-300"><i class="fas fa-xmark text-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Subject *</label>
+        <input class="form-input" id="nt-subject" placeholder="e.g. Patient care discussion">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Category *</label>
+        <select class="form-input" id="nt-category">
+          <option value="GENERAL">General</option>
+          <option value="PATIENT_CARE">Patient Care</option>
+          <option value="REFERRAL">Referral</option>
+          <option value="PRESCRIPTION">Prescription</option>
+          <option value="LAB_RESULT">Lab Result</option>
+          <option value="SCHEDULING">Scheduling</option>
+          <option value="BILLING">Billing</option>
+          <option value="ADMINISTRATIVE">Administrative</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Priority *</label>
+        <select class="form-input" id="nt-priority">
+          <option value="NORMAL">Normal</option>
+          <option value="URGENT">Urgent</option>
+          <option value="STAT">STAT</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Patient (optional)</label>
+        <input class="form-input" id="nt-patient" placeholder="Patient name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">From (Your Name) *</label>
+        <input class="form-input" id="nt-sender" placeholder="e.g. Dr. Sarah Chen">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Role *</label>
+        <select class="form-input" id="nt-role">
+          <option value="OPTOMETRIST">Optometrist</option>
+          <option value="PHYSICIAN">Physician</option>
+          <option value="TECHNICIAN">Technician</option>
+          <option value="NURSE">Nurse</option>
+          <option value="FRONT_DESK">Front Desk</option>
+          <option value="BILLING">Billing</option>
+          <option value="MANAGER">Manager</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Message *</label>
+        <textarea class="form-input" id="nt-body" placeholder="Type your message…" rows="3"></textarea>
+      </div>
+      <div class="flex gap-2 justify-end mt-4">
+        <button onclick="closeModal('modal-thread')" class="btn-ghost">Cancel</button>
+        <button onclick="submitNewThread()" class="btn-send">Send Message</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── New Task Modal ────────────────────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="modal-task">
+  <div class="modal fade-in">
+    <div class="modal-header">
+      <span class="modal-title"><i class="fas fa-list-check mr-2 text-indigo-400"></i>New Task</span>
+      <button onclick="closeModal('modal-task')" class="text-slate-500 hover:text-slate-300"><i class="fas fa-xmark text-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Title *</label>
+        <input class="form-input" id="tk-title" placeholder="Task title">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <textarea class="form-input" id="tk-desc" rows="2" placeholder="Optional details…"></textarea>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="form-group">
+          <label class="form-label">Category *</label>
+          <select class="form-input" id="tk-category">
+            <option value="CLINICAL">Clinical</option>
+            <option value="ADMINISTRATIVE">Administrative</option>
+            <option value="FOLLOW_UP">Follow-Up</option>
+            <option value="RECALL">Recall</option>
+            <option value="PRESCRIPTION_REFILL">Rx Refill</option>
+            <option value="INSURANCE">Insurance</option>
+            <option value="REFERRAL">Referral</option>
+            <option value="LAB">Lab</option>
+            <option value="OPTICAL">Optical</option>
+            <option value="BILLING">Billing</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Priority *</label>
+          <select class="form-input" id="tk-priority">
+            <option value="NORMAL">Normal</option>
+            <option value="HIGH">High</option>
+            <option value="URGENT">Urgent</option>
+            <option value="LOW">Low</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="form-group">
+          <label class="form-label">Assigned To</label>
+          <input class="form-input" id="tk-assignee" placeholder="Staff name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Due Date</label>
+          <input class="form-input" type="date" id="tk-due">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="form-group">
+          <label class="form-label">Patient (optional)</label>
+          <input class="form-input" id="tk-patient" placeholder="Patient name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Created By *</label>
+          <input class="form-input" id="tk-creator" placeholder="Your name">
+        </div>
+      </div>
+      <div class="flex gap-2 justify-end mt-4">
+        <button onclick="closeModal('modal-task')" class="btn-ghost">Cancel</button>
+        <button onclick="submitNewTask()" class="btn-send">Create Task</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 border border-slate-600 text-white text-sm px-5 py-2.5 rounded-xl shadow-2xl z-[300] hidden transition-all"></div>
+
+<script src="/static/messaging.js"></script>
+</body>
+</html>
