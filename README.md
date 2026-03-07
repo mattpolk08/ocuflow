@@ -2,7 +2,7 @@
 
 ## Project Overview
 - **Name**: OculoFlow
-- **Version**: 1.9.0
+- **Version**: 2.0.0
 - **Goal**: Full-stack ophthalmology EHR and practice management system built on Cloudflare Pages + Hono
 - **Stack**: TypeScript · Hono · Cloudflare Workers · KV Storage · Vite · Tailwind CSS (CDN) · Chart.js
 
@@ -18,6 +18,7 @@
 - **Patient Portal**: …/portal
 - **Clinical Messaging**: …/messaging
 - **Reminders & Comms**: …/reminders
+- **Provider Scorecards**: …/scorecards
 - **API Health**: …/api/health
 - **GitHub**: https://github.com/mattpolk08/ocuflow
 
@@ -96,32 +97,48 @@
 - Modals: Send Message, New Campaign, New Template (all with validation)
 - Seed: 7 templates, 4 rules, 8 messages, 3 no-shows (Marcus Webb, Carlos Rivera, Linda Park), 3 campaigns
 
+### Phase 7A — Provider Scorecards & Benchmarking *(v2.0.0)*
+- Per-provider KPI dashboards with deterministic simulation for 3 providers: Dr. Sarah Chen, Dr. Raj Patel, Dr. Amy Torres
+- **5 tabs**: Practice Overview, Provider Scorecard, Benchmarks, Trends, Goals
+- **Practice Overview**: provider leaderboard ranked by overall score, practice daily visit chart, visit-type breakdown (bar), revenue-by-payer (doughnut)
+- **Provider Scorecard**: score ring (0–100 composite), 9-cell KPI grid (visits, new patients, revenue, collection rate, avg exam time, utilization, satisfaction, return-visit rate, coding accuracy), daily volume & revenue line charts, appointment-type & payer doughnut charts
+- **Benchmarks**: per-metric bar rows comparing provider vs. practice avg vs. national avg (8 benchmarks: visits/day, exam duration, collection rate, satisfaction, no-show rate, coding accuracy, utilization, return-visit rate) + radar chart
+- **Trends**: weekly performance snapshot table + bar/line charts for visits & revenue across 8 weeks
+- **Goals**: filter by provider/status, progress bars, status chips (ON_TRACK/AT_RISK/ACHIEVED/MISSED), full CRUD modal (create, edit, delete)
+- Date range selector: 7d / 30d / 90d / YTD across all views
+- Routes: `GET /scorecards`, `GET|POST|PATCH|DELETE /api/scorecards/*` (14 endpoints)
+- Seed: 8 goals across 3 providers; 8 benchmarks per provider; 8 weekly period snapshots
+- KPIs: Volume (visits, new/return patients, no-shows, daily series), Efficiency (avg exam min, doc time, completion %, on-time %, utilization %), Revenue (charged, collected, collection rate, AR, by-payer), Quality (satisfaction score, return-visit rate, referral rate, preventive care, coding accuracy, composite quality score)
+- Tests: 28/28 smoke, 36/36 functional
+
 ## API Summary
 
-| Module        | Base Path           | Key Endpoints                                                                         |
-|---------------|---------------------|---------------------------------------------------------------------------------------|
-| Auth          | /api/auth           | POST /login, /logout, /session                                                        |
-| Intake        | /api/intake         | POST /start, /verify-otp, /insurance, /sign                                           |
-| Dashboard     | /api/dashboard      | GET /summary, /appointments, /flow                                                    |
-| Patients      | /api/patients       | GET /, /:id, POST /, PUT /:id, POST /:id/insurance                                    |
-| Scheduling    | /api/schedule       | GET /slots, /appointments, POST /appointment, /waitlist                               |
-| Exams         | /api/exams          | GET /, /:id, POST /, POST /:id/sign, POST /:id/amend                                  |
-| Billing       | /api/billing        | GET /superbills, /ar, /cpt; POST /superbills/:id/status                               |
-| Reports       | /api/reports        | GET /dashboard, /revenue, /providers, /payer-mix, /ar-aging                           |
-| Optical       | /api/optical        | GET /inventory, /orders, /frames, /lenses, /contact-lenses                            |
-| Portal        | /api/portal         | POST /auth/demo, GET /auth/session, /dashboard, /appointments, /messages, /rx, /optical-orders, /balance |
-| Messaging     | /api/messaging      | GET /dashboard, /staff, /threads; POST /threads, /threads/:id/reply; PATCH archive/pin; GET|POST|PATCH /tasks, /recalls |
-| Reminders     | /api/reminders      | GET /dashboard, /templates, /messages, /rules, /no-shows, /campaigns; POST /messages/send, /messages/reminder, /messages/:id/response, /no-shows, /no-shows/:id/followup, /campaigns, /campaigns/:id/launch; PATCH /templates/:id, /rules/:id, /no-shows/:id, /campaigns/:id/status |
-| Health        | /api/health         | GET — version, phases, timestamp                                                      |
+| Module        | Base Path              | Key Endpoints                                                                         |
+|---------------|------------------------|---------------------------------------------------------------------------------------|
+| Auth          | /api/auth              | POST /login, /logout, /session                                                        |
+| Intake        | /api/intake            | POST /start, /verify-otp, /insurance, /sign                                           |
+| Dashboard     | /api/dashboard         | GET /summary, /appointments, /flow                                                    |
+| Patients      | /api/patients          | GET /, /:id, POST /, PUT /:id, POST /:id/insurance                                    |
+| Scheduling    | /api/schedule          | GET /slots, /appointments, POST /appointment, /waitlist                               |
+| Exams         | /api/exams             | GET /, /:id, POST /, POST /:id/sign, POST /:id/amend                                  |
+| Billing       | /api/billing           | GET /superbills, /ar, /cpt; POST /superbills/:id/status                               |
+| Reports       | /api/reports           | GET /dashboard, /revenue, /providers, /payer-mix, /ar-aging                           |
+| Optical       | /api/optical           | GET /inventory, /orders, /frames, /lenses, /contact-lenses                            |
+| Portal        | /api/portal            | POST /auth/demo, GET /auth/session, /dashboard, /appointments, /messages, /rx, /optical-orders, /balance |
+| Messaging     | /api/messaging         | GET /dashboard, /staff, /threads; POST /threads, /threads/:id/reply; PATCH archive/pin; GET|POST|PATCH /tasks, /recalls |
+| Reminders     | /api/reminders         | GET /dashboard, /templates, /messages, /rules, /no-shows, /campaigns; POST /messages/send, /messages/reminder, /messages/:id/response, /no-shows, /no-shows/:id/followup, /campaigns, /campaigns/:id/launch; PATCH /templates/:id, /rules/:id, /no-shows/:id, /campaigns/:id/status |
+| Scorecards    | /api/scorecards        | GET /providers, /summary(?range=), /providers/:id(?range=), /providers/:id/volume|efficiency|revenue|quality|benchmarks|snapshots, /goals(?providerId=); POST /goals; PATCH /goals/:id; DELETE /goals/:id |
+| Health        | /api/health            | GET — version, phases, timestamp                                                      |
 
 ## Data Architecture
 - **Storage**: Cloudflare Workers KV (`OCULOFLOW_KV` binding)
 - **Pattern**: In-memory seed guard + KV index key + individual record keys
-- **Key prefixes**: `patient:`, `appt:`, `exam:`, `sb:`, `optical:frame:`, `optical:order:`, `portal:session:`, `portal:appt-req:`, `portal:thread:`, `msg:thread:`, `msg:task:`, `msg:recall:`, `msg:staff:`, `comms:template:`, `comms:msg:`, `comms:rule:`, `comms:noshow:`, `comms:campaign:`, etc.
+- **Key prefixes**: `patient:`, `appt:`, `exam:`, `sb:`, `optical:frame:`, `optical:order:`, `portal:session:`, `portal:appt-req:`, `portal:thread:`, `msg:thread:`, `msg:task:`, `msg:recall:`, `msg:staff:`, `comms:template:`, `comms:msg:`, `comms:rule:`, `comms:noshow:`, `comms:campaign:`, `sc:goal:`, `sc:seeded`
 - **Demo mode**: All data seeded automatically on first KV read
+- **Scorecards**: KPIs computed deterministically on-the-fly (no KV writes); only goals use KV
 
 ## User Guide
-1. **Home** `/` — Phase overview with links to all 11 modules
+1. **Home** `/` — Phase overview with links to all 12 modules
 2. **Intake** `/intake?demo=true` — Start patient intake wizard
 3. **Dashboard** `/dashboard` — Command center, today's schedule, flow board
 4. **Patients** `/patients` — Search/register patients, verify insurance
@@ -133,6 +150,7 @@
 10. **Patient Portal** `/portal` — Click "Demo Login" → navigate Overview / Appointments / Records / Optical / Billing / Messages tabs
 11. **Clinical Messaging** `/messaging` — Staff inbox: browse threads, reply, manage tasks and recall list
 12. **Reminders & Comms** `/reminders` — Overview dashboard → Message Log (filter by status/type) → No-Shows (send follow-ups) → Campaigns (launch) → Templates (edit/preview) → Automation Rules (toggle)
+13. **Provider Scorecards** `/scorecards` — Select provider from sidebar → view scorecard, benchmarks, trends, goals; use date-range pills (7d/30d/90d/YTD); switch to Practice tab for leaderboard
 
 ## Keyboard Shortcuts
 - `N` — New item (superbill, order depending on page)
@@ -143,14 +161,15 @@
 ## Deployment
 - **Platform**: Cloudflare Pages (Hono SSR Workers)
 - **Status**: ✅ Active (sandbox dev server)
-- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~586 KB, 82 modules)
+- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~628 KB, 85 modules)
 - **Start**: `pm2 start ecosystem.config.cjs`
 - **Last Updated**: 2026-03-07
 
 ## Pending / Next Steps
-- **Phase 6B** — Provider Scorecards & Benchmarking: individual KPIs, patient volume trends, exam efficiency, revenue per provider
-- **Phase 6C** — Telehealth / Async Video Visit: patient pre-visit questionnaire + provider async review workflow
+- **Phase 7B** — Telehealth / Async Video Visit: patient pre-visit questionnaire + provider async review workflow
+- **Phase 7C** — E-Prescribing & PDMP: electronic prescription creation, controlled substance PDMP lookup, pharmacy routing
 - **Fix**: `isNewPatient` duplicate key warning in `src/lib/patients.ts:36`
 - **Enhancement**: Real login flow for portal (patient account creation / password reset)
 - **Enhancement**: File attachment support in clinical messaging threads
 - **Enhancement**: Webhooks / real Twilio/SendGrid integration for outbound reminders
+- **Enhancement**: Real provider data feed to scorecards (currently computed from deterministic simulation)
