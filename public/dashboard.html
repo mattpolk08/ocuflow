@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Command Center — OculoFlow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          colors: {
+            brand: { 50:'#eff6ff',100:'#dbeafe',200:'#bfdbfe',300:'#93c5fd',400:'#60a5fa',500:'#3b82f6',600:'#2563eb',700:'#1d4ed8',800:'#1e40af',900:'#1e3a8a' },
+            surface: { DEFAULT:'#0f172a', 1:'#1e293b', 2:'#334155', 3:'#475569' }
+          },
+          animation: {
+            'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'slide-in': 'slideIn 0.3s ease-out',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; overflow: hidden; }
+    body { font-family: 'Inter', sans-serif; background: #0f172a; color: #e2e8f0; }
+
+    /* Scrollable panels */
+    .panel-scroll { overflow-y: auto; scrollbar-width: thin; scrollbar-color: #334155 transparent; }
+    .panel-scroll::-webkit-scrollbar { width: 4px; }
+    .panel-scroll::-webkit-scrollbar-track { background: transparent; }
+    .panel-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+
+    /* Status pill */
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 8px; border-radius: 999px;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+
+    /* Flow card hover */
+    .flow-card {
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      cursor: pointer;
+    }
+    .flow-card:hover { transform: translateY(-1px); }
+    .flow-card:active { transform: translateY(0); }
+
+    /* Dot pulse (live indicator) */
+    .dot-live {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #22c55e;
+      box-shadow: 0 0 0 0 rgba(34,197,94,0.4);
+      animation: dotPulse 1.8s ease-out infinite;
+    }
+    @keyframes dotPulse {
+      0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); }
+      70%  { box-shadow: 0 0 0 8px rgba(34,197,94,0); }
+      100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+    }
+
+    /* Time slot block */
+    .time-slot {
+      position: absolute; left: 52px; right: 4px;
+      border-radius: 8px; padding: 4px 8px;
+      overflow: hidden; cursor: pointer;
+      transition: opacity 0.15s, filter 0.15s;
+      border-left: 3px solid transparent;
+    }
+    .time-slot:hover { filter: brightness(1.1); }
+
+    /* Kanban column */
+    .kanban-col { min-width: 200px; flex: 1; max-width: 240px; }
+
+    /* Shimmer loading */
+    .shimmer {
+      background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+    }
+    @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+    /* Context menu */
+    #ctx-menu {
+      position: fixed; z-index: 999;
+      background: #1e293b; border: 1px solid #334155;
+      border-radius: 12px; padding: 6px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+      min-width: 200px;
+    }
+    .ctx-item {
+      display: flex; align-items: center; gap-10px; gap: 10px;
+      padding: 8px 12px; border-radius: 8px;
+      font-size: 13px; cursor: pointer; color: #cbd5e1;
+      transition: background 0.1s, color 0.1s;
+    }
+    .ctx-item:hover { background: #334155; color: #fff; }
+    .ctx-item i { width: 16px; text-align: center; font-size: 12px; opacity: 0.7; }
+
+    /* Modal overlay */
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 500;
+      background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center;
+      padding: 16px;
+    }
+
+    /* Tooltip */
+    .tooltip { position: relative; }
+    .tooltip:hover .tooltip-text { opacity: 1; pointer-events: auto; }
+    .tooltip-text {
+      position: absolute; bottom: calc(100% + 6px); left: 50%;
+      transform: translateX(-50%); background: #0f172a;
+      color: #e2e8f0; font-size: 11px; padding: 4px 8px;
+      border-radius: 6px; white-space: nowrap; opacity: 0;
+      pointer-events: none; transition: opacity 0.15s;
+      border: 1px solid #334155; z-index: 50;
+    }
+
+    /* Urgent flash */
+    .urgent-flash {
+      animation: urgentFlash 2s ease-in-out infinite;
+    }
+    @keyframes urgentFlash {
+      0%, 100% { border-color: #ef4444; }
+      50% { border-color: #fca5a5; }
+    }
+  </style>
+</head>
+
+<body class="flex flex-col h-screen">
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       TOP NAV BAR
+  ════════════════════════════════════════════════════════════════════════ -->
+  <nav class="flex-shrink-0 bg-surface-1 border-b border-slate-700/60 px-4 h-14 flex items-center justify-between z-40">
+    <!-- Left: Logo + Nav -->
+    <div class="flex items-center gap-6">
+      <div class="flex items-center gap-2.5">
+        <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-lg shadow-brand-900">
+          <i class="fas fa-eye text-white text-xs"></i>
+        </div>
+        <span class="font-bold text-white text-sm tracking-tight">OculoFlow</span>
+      </div>
+
+      <div class="hidden md:flex items-center gap-1">
+        <a href="/dashboard" class="nav-link px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-brand-600/20 border border-brand-500/30 flex items-center gap-1.5">
+          <i class="fas fa-gauge-high text-brand-400 text-xs"></i> Command Center
+        </a>
+        <a href="/patients" class="nav-link px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-700/50 flex items-center gap-1.5 transition-colors">
+          <i class="fas fa-users text-xs"></i> Patients
+        </a>
+        <a href="/schedule" class="nav-link px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-700/50 flex items-center gap-1.5 transition-colors">
+          <i class="fas fa-calendar text-xs"></i> Schedule
+        </a>
+        <a href="/billing" class="nav-link px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-700/50 flex items-center gap-1.5 transition-colors">
+          <i class="fas fa-file-invoice-dollar text-xs"></i> Billing
+        </a>
+        <a href="/optical" class="nav-link px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-700/50 flex items-center gap-1.5 transition-colors">
+          <i class="fas fa-glasses text-xs"></i> Optical
+        </a>
+        <a href="/reports" class="nav-link px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-700/50 flex items-center gap-1.5 transition-colors">
+          <i class="fas fa-chart-line text-xs"></i> Reports
+        </a>
+      </div>
+    </div>
+
+    <!-- Right: Actions -->
+    <div class="flex items-center gap-2">
+      <!-- Live indicator -->
+      <div class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+        <div class="dot-live"></div>
+        <span class="text-xs font-medium text-emerald-400" id="live-clock">--:--</span>
+      </div>
+
+      <!-- Search -->
+      <button onclick="openSearch()" class="w-8 h-8 rounded-lg bg-slate-700/50 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition-colors tooltip">
+        <i class="fas fa-magnifying-glass text-xs"></i>
+        <span class="tooltip-text">Quick Search (⌘K)</span>
+      </button>
+
+      <!-- Alerts -->
+      <button class="relative w-8 h-8 rounded-lg bg-slate-700/50 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition-colors" onclick="toggleAlerts()">
+        <i class="fas fa-bell text-xs"></i>
+        <span class="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full border border-surface-1"></span>
+      </button>
+
+      <!-- New Appointment -->
+      <button onclick="openNewAppt()" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-lg transition-colors">
+        <i class="fas fa-plus text-xs"></i> New Appt
+      </button>
+
+      <!-- User avatar -->
+      <div class="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center text-white text-xs font-bold cursor-pointer" title="Front Desk — Maria R.">
+        MR
+      </div>
+    </div>
+  </nav>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       KPI SUMMARY BAR
+  ════════════════════════════════════════════════════════════════════════ -->
+  <div class="flex-shrink-0 bg-surface-1/80 border-b border-slate-700/40 px-4 py-2.5">
+    <div class="flex items-center gap-2 overflow-x-auto pb-0.5">
+      <!-- Date -->
+      <div class="flex-shrink-0 mr-2">
+        <p class="text-xs font-semibold text-white" id="kpi-date">Loading...</p>
+        <p class="text-xs text-slate-500">Today's Schedule</p>
+      </div>
+      <div class="w-px h-8 bg-slate-700 flex-shrink-0 mx-1"></div>
+
+      <!-- KPI Pills -->
+      <div id="kpi-bar" class="flex items-center gap-2">
+        <!-- Populated by JS -->
+        <div class="shimmer h-8 w-20 rounded-lg flex-shrink-0"></div>
+        <div class="shimmer h-8 w-20 rounded-lg flex-shrink-0"></div>
+        <div class="shimmer h-8 w-20 rounded-lg flex-shrink-0"></div>
+        <div class="shimmer h-8 w-20 rounded-lg flex-shrink-0"></div>
+        <div class="shimmer h-8 w-20 rounded-lg flex-shrink-0"></div>
+      </div>
+
+      <div class="ml-auto flex-shrink-0 flex items-center gap-2">
+        <!-- Revenue mini bar -->
+        <div class="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-slate-800 rounded-lg border border-slate-700">
+          <i class="fas fa-circle-dollar-to-slot text-emerald-400 text-xs"></i>
+          <div>
+            <p class="text-xs font-bold text-white" id="kpi-collected">$—</p>
+            <p class="text-xs text-slate-500" id="kpi-goal">of $— goal</p>
+          </div>
+          <div class="w-16 h-1.5 bg-slate-600 rounded-full overflow-hidden ml-1">
+            <div id="revenue-progress" class="h-full bg-emerald-500 rounded-full transition-all duration-500" style="width:0%"></div>
+          </div>
+        </div>
+
+        <!-- Refresh -->
+        <button onclick="refreshDashboard()" class="w-7 h-7 rounded-lg bg-slate-700/50 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition-colors" id="refresh-btn">
+          <i class="fas fa-rotate text-xs"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       MAIN CONTENT — 3-COLUMN LAYOUT
+  ════════════════════════════════════════════════════════════════════════ -->
+  <div class="flex flex-1 overflow-hidden">
+
+    <!-- ── LEFT SIDEBAR: Provider Cards + Rooms ────────────────────────── -->
+    <aside class="hidden lg:flex flex-col w-56 xl:w-64 flex-shrink-0 bg-surface-1 border-r border-slate-700/60 panel-scroll">
+      <div class="p-3 space-y-3">
+
+        <!-- Section: Providers -->
+        <div>
+          <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-1">Providers</p>
+          <div id="provider-cards" class="space-y-2">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="border-t border-slate-700/60 pt-3">
+          <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-1">Rooms</p>
+          <div id="room-grid" class="space-y-1.5">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="border-t border-slate-700/60 pt-3">
+          <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-1">Quick Actions</p>
+          <div class="space-y-1">
+            <button onclick="openNewAppt()" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-slate-700/60 transition-colors text-left">
+              <i class="fas fa-calendar-plus text-brand-400 w-4 text-center"></i> New Appointment
+            </button>
+            <button onclick="openSearch()" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-slate-700/60 transition-colors text-left">
+              <i class="fas fa-user-plus text-emerald-400 w-4 text-center"></i> New Patient
+            </button>
+            <a href="/intake?demo=true" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-slate-700/60 transition-colors">
+              <i class="fas fa-mobile-screen text-violet-400 w-4 text-center"></i> Send Intake Link
+            </a>
+            <button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-slate-700/60 transition-colors text-left">
+              <i class="fas fa-print text-amber-400 w-4 text-center"></i> Print Schedule
+            </button>
+          </div>
+        </div>
+
+        <!-- Waitlist -->
+        <div class="border-t border-slate-700/60 pt-3">
+          <div class="flex items-center justify-between mb-2 px-1">
+            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Waitlist</p>
+            <span class="text-xs bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded font-semibold">2</span>
+          </div>
+          <div class="space-y-1.5">
+            <div class="bg-slate-800/80 rounded-lg p-2.5">
+              <p class="text-xs font-semibold text-white">Sandra Heim</p>
+              <p class="text-xs text-slate-400">ASAP · Dr. Chen</p>
+            </div>
+            <div class="bg-slate-800/80 rounded-lg p-2.5">
+              <p class="text-xs font-semibold text-white">Carlos Vega</p>
+              <p class="text-xs text-slate-400">Morning · Any provider</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── CENTER: Patient Flow Board (Kanban) ─────────────────────────── -->
+    <main class="flex-1 flex flex-col overflow-hidden">
+
+      <!-- Sub-header: View toggle + filter -->
+      <div class="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-slate-700/40">
+        <div class="flex items-center gap-1 bg-slate-800 rounded-lg p-0.5">
+          <button id="view-flow" onclick="setView('flow')" class="view-btn px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-brand-600 transition-all">
+            <i class="fas fa-columns mr-1.5"></i>Flow Board
+          </button>
+          <button id="view-schedule" onclick="setView('schedule')" class="view-btn px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white transition-all">
+            <i class="fas fa-list-ul mr-1.5"></i>Schedule
+          </button>
+          <button id="view-timeline" onclick="setView('timeline')" class="view-btn px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white transition-all">
+            <i class="fas fa-timeline mr-1.5"></i>Timeline
+          </button>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <!-- Provider filter -->
+          <select id="provider-filter" onchange="filterByProvider(this.value)" class="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-lg px-2.5 py-1.5 appearance-none focus:outline-none focus:border-brand-500">
+            <option value="all">All Providers</option>
+            <option value="dr-chen">Dr. Chen</option>
+            <option value="dr-patel">Dr. Patel</option>
+          </select>
+
+          <!-- Alerts badge -->
+          <div id="alert-pill" class="hidden flex items-center gap-1.5 px-2.5 py-1.5 bg-rose-500/15 border border-rose-500/30 rounded-lg cursor-pointer" onclick="toggleAlerts()">
+            <i class="fas fa-triangle-exclamation text-rose-400 text-xs"></i>
+            <span class="text-xs font-semibold text-rose-400" id="alert-count">0 alerts</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── FLOW BOARD VIEW ──────────────────────────────────────────── -->
+      <div id="view-flow-content" class="flex-1 overflow-hidden flex flex-col">
+        <div class="flex-1 overflow-x-auto overflow-y-hidden panel-scroll p-3">
+          <div class="flex gap-3 h-full min-w-max" id="kanban-board">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SCHEDULE LIST VIEW ──────────────────────────────────────── -->
+      <div id="view-schedule-content" class="flex-1 overflow-y-auto panel-scroll hidden">
+        <div class="p-3 space-y-2" id="schedule-list">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- ── TIMELINE VIEW ──────────────────────────────────────────── -->
+      <div id="view-timeline-content" class="flex-1 overflow-auto panel-scroll hidden">
+        <div class="p-4">
+          <div id="timeline-grid" class="relative">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- ── RIGHT SIDEBAR: Alerts + Activity ───────────────────────────── -->
+    <aside class="hidden xl:flex flex-col w-64 flex-shrink-0 bg-surface-1 border-l border-slate-700/60 panel-scroll" id="right-sidebar">
+      <div class="p-3 space-y-3">
+
+        <!-- Alerts -->
+        <div>
+          <div class="flex items-center justify-between mb-2 px-1">
+            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Alerts</p>
+            <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+          </div>
+          <div id="alert-list" class="space-y-2">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+        <!-- Today's Metrics Chart -->
+        <div class="border-t border-slate-700/60 pt-3">
+          <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 px-1">Visit Progress</p>
+          <div class="bg-slate-800 rounded-xl p-3">
+            <canvas id="donut-chart" width="200" height="200"></canvas>
+            <div class="flex flex-wrap gap-2 mt-3 justify-center" id="chart-legend"></div>
+          </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="border-t border-slate-700/60 pt-3">
+          <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-1">Activity Log</p>
+          <div id="activity-log" class="space-y-2 text-xs">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+        <!-- Upcoming (next 2) -->
+        <div class="border-t border-slate-700/60 pt-3">
+          <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-1">Up Next</p>
+          <div id="up-next" class="space-y-2">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       PATIENT DETAIL MODAL
+  ════════════════════════════════════════════════════════════════════════ -->
+  <div id="patient-modal" class="modal-overlay hidden" onclick="closeModal(event)">
+    <div class="bg-surface-1 rounded-2xl border border-slate-700 w-full max-w-lg max-h-[85vh] overflow-y-auto" onclick="event.stopPropagation()">
+      <!-- Modal Header -->
+      <div class="flex items-start justify-between p-5 border-b border-slate-700/60">
+        <div class="flex items-center gap-3">
+          <div id="modal-avatar" class="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-lg flex-shrink-0"></div>
+          <div>
+            <h3 id="modal-patient-name" class="font-bold text-white text-lg"></h3>
+            <p id="modal-patient-meta" class="text-sm text-slate-400"></p>
+          </div>
+        </div>
+        <button onclick="document.getElementById('patient-modal').classList.add('hidden')" class="w-8 h-8 rounded-lg bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-slate-400 hover:text-white transition-colors flex-shrink-0">
+          <i class="fas fa-times text-sm"></i>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-5 space-y-4" id="modal-body">
+        <!-- Populated by JS -->
+      </div>
+
+      <!-- Modal Footer: Flow Actions -->
+      <div class="p-4 border-t border-slate-700/60 flex flex-wrap gap-2" id="modal-actions">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Context Menu -->
+  <div id="ctx-menu" class="hidden" onclick="hideContextMenu()">
+    <div id="ctx-items"></div>
+  </div>
+
+  <!-- Search Modal -->
+  <div id="search-modal" class="modal-overlay hidden" onclick="closeSearch(event)">
+    <div class="bg-surface-1 rounded-2xl border border-slate-700 w-full max-w-md" onclick="event.stopPropagation()">
+      <div class="p-3">
+        <div class="flex items-center gap-3 px-3 py-2.5 bg-slate-800 rounded-xl border border-slate-600 focus-within:border-brand-500 transition-colors">
+          <i class="fas fa-magnifying-glass text-slate-400"></i>
+          <input id="search-input" type="text" placeholder="Search patients, appointments..." class="flex-1 bg-transparent text-white text-sm placeholder-slate-500 outline-none" oninput="handleSearch(this.value)" />
+          <kbd class="text-xs text-slate-500 bg-slate-700 px-1.5 py-0.5 rounded">ESC</kbd>
+        </div>
+      </div>
+      <div id="search-results" class="px-3 pb-3 max-h-72 overflow-y-auto">
+        <p class="text-xs text-slate-500 text-center py-4">Type to search patients...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Alerts Panel -->
+  <div id="alerts-panel" class="hidden fixed top-14 right-3 z-50 w-80 bg-surface-1 border border-slate-700 rounded-2xl shadow-2xl shadow-black/40 overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-slate-700">
+      <p class="text-sm font-semibold text-white">Alerts & Tasks</p>
+      <button onclick="toggleAlerts()" class="text-slate-400 hover:text-white text-xs">Dismiss all</button>
+    </div>
+    <div id="alerts-panel-content" class="p-2 max-h-80 overflow-y-auto space-y-1"></div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-50 bg-slate-800 border border-slate-700 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2">
+    <i id="toast-icon" class="fas fa-check-circle text-emerald-400 text-sm"></i>
+    <span id="toast-text">Done</span>
+  </div>
+
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>

@@ -10,8 +10,10 @@ import { secureHeaders } from 'hono/secure-headers'
 import { serveStatic } from 'hono/cloudflare-workers'
 import authRoutes from './routes/auth'
 import intakeRoutes from './routes/intake'
+import dashboardRoutes from './routes/dashboard'
 // Import HTML as raw string (Vite ?raw import)
-import intakeHtml from '../public/intake.html?raw'
+import intakeHtml    from '../public/intake.html?raw'
+import dashboardHtml from '../public/dashboard.html?raw'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
@@ -38,14 +40,15 @@ app.use('/api/*', cors({
 app.use('/static/*', serveStatic({ root: './' }))
 
 // ── Patient Intake Page ───────────────────────────────────────────────────────
-// Serves the mobile-first wizard at /intake?token=XXXX
-app.get('/intake', (c) => {
-  return c.html(intakeHtml)
-})
+app.get('/intake', (c) => c.html(intakeHtml))
+
+// ── Command Center Dashboard ──────────────────────────────────────────────────
+app.get('/dashboard', (c) => c.html(dashboardHtml))
 
 // ── API Routes ────────────────────────────────────────────────────────────────
-app.route('/api/auth',   authRoutes)
-app.route('/api/intake', intakeRoutes)
+app.route('/api/auth',      authRoutes)
+app.route('/api/intake',    intakeRoutes)
+app.route('/api/dashboard', dashboardRoutes)
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (c) => {
@@ -101,18 +104,22 @@ app.get('/', (c) => {
         </div>
       </a>
 
-      <div class="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 opacity-60">
+      <a href="/dashboard" class="group bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-blue-500 rounded-2xl p-5 transition-all duration-200 cursor-pointer">
         <div class="flex items-center gap-3 mb-3">
-          <div class="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center">
-            <i class="fas fa-gauge-high text-slate-400"></i>
+          <div class="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center group-hover:bg-blue-500/30 transition-colors">
+            <i class="fas fa-gauge-high text-blue-400"></i>
           </div>
           <div>
-            <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Phase 1A — Next</span>
-            <p class="text-sm font-semibold text-slate-300">Command Center</p>
+            <span class="text-xs font-semibold text-blue-400 uppercase tracking-wider">Phase 1A — Live</span>
+            <p class="text-sm font-semibold text-white">Command Center</p>
           </div>
         </div>
-        <p class="text-xs text-slate-500 leading-relaxed">Daily schedule view, patient flow board, and provider status tracking.</p>
-      </div>
+        <p class="text-xs text-slate-400 leading-relaxed">Daily schedule, Kanban flow board, provider tracking, timeline view, and patient detail modal.</p>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-blue-400 font-medium">
+          <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+          Open Command Center →
+        </div>
+      </a>
 
       <div class="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 opacity-60">
         <div class="flex items-center gap-3 mb-3">
