@@ -14,6 +14,7 @@
 // Phase 7A: Provider Scorecards & Benchmarking
 // Phase 7B: Telehealth / Async Video Visit
 // Phase 7C: E-Prescribing & PDMP
+// Phase 8A: AI Clinical Decision Support
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Hono } from 'hono'
@@ -36,6 +37,7 @@ import remindersRoutes   from './routes/reminders'
 import scorecardsRoutes  from './routes/scorecards'
 import telehealthRoutes  from './routes/telehealth'
 import erxRoutes         from './routes/erx'
+import aiRoutes          from './routes/ai'
 // Import HTML as raw string (Vite ?raw import)
 import intakeHtml    from '../public/intake.html?raw'
 import dashboardHtml from '../public/dashboard.html?raw'
@@ -51,6 +53,7 @@ import remindersHtml   from '../public/reminders.html?raw'
 import scorecardsHtml  from '../public/scorecards.html?raw'
 import telehealthHtml  from '../public/telehealth.html?raw'
 import erxHtml         from '../public/erx.html?raw'
+import aiHtml          from '../public/ai.html?raw'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
@@ -120,6 +123,9 @@ app.get('/telehealth', (c) => c.html(telehealthHtml))
 // ── E-Prescribing & PDMP ─────────────────────────────────────────────────────
 app.get('/erx', (c) => c.html(erxHtml))
 
+// ── AI Clinical Decision Support ─────────────────────────────────────────────
+app.get('/ai', (c) => c.html(aiHtml))
+
 // ── API Routes ────────────────────────────────────────────────────────────────
 app.route('/api/auth',      authRoutes)
 app.route('/api/intake',    intakeRoutes)
@@ -136,15 +142,16 @@ app.route('/api/reminders',  remindersRoutes)
 app.route('/api/scorecards', scorecardsRoutes)
 app.route('/api/telehealth', telehealthRoutes)
 app.route('/api/erx',        erxRoutes)
+app.route('/api/ai',         aiRoutes)
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (c) => {
   return c.json({
     status: 'ok',
     service: 'OculoFlow',
-    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx'],
+    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx', '8a-ai-cds'],
     timestamp: new Date().toISOString(),
-    version: '2.2.0',
+    version: '2.3.0',
 
   })
 })
@@ -411,6 +418,23 @@ app.get('/', (c) => {
         <div class="flex items-center gap-1.5 mt-3 text-xs text-emerald-400 font-medium">
           <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
           Open eRx →
+        </div>
+      </a>
+
+      <a href="/ai" class="group bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-indigo-500 rounded-2xl p-5 transition-all duration-200 cursor-pointer">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center group-hover:bg-indigo-500/30 transition-colors">
+            <i class="fas fa-brain text-indigo-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Phase 8A — Live</span>
+            <p class="text-sm font-semibold text-white">AI Clinical Decision Support</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">ICD-10 code suggestions, drug interaction alerts, clinical guideline lookup, AI-assisted note generation, and patient risk stratification.</p>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-indigo-400 font-medium">
+          <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+          Open AI CDS →
         </div>
       </a>
     </div>

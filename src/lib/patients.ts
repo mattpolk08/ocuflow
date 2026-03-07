@@ -33,7 +33,7 @@ export function getSeedPatients(): Patient[] {
       email: 'msullivan@email.com', phone: '(305) 555-0101', cellPhone: '(305) 555-0101',
       address: { street: '1420 Ocean Drive', city: 'Miami Beach', state: 'FL', zip: '33139' },
       emergencyContact: { name: 'Thomas Sullivan', relationship: 'Spouse', phone: '(305) 555-0102' },
-      portalAccess: true, lastVisitDate: '2025-03-07', isNewPatient: false,
+      portalAccess: true, lastVisitDate: '2025-03-07',
       allergies: 'Penicillin, Sulfa drugs',
       currentMedications: 'Timolol 0.5% BID OU, Latanoprost 0.005% QHS OS',
       insurancePlans: [{

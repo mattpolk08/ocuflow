@@ -2,7 +2,7 @@
 
 ## Project Overview
 - **Name**: OculoFlow
-- **Version**: 2.2.0
+- **Version**: 2.3.0
 - **Goal**: Full-stack ophthalmology EHR and practice management system built on Cloudflare Pages + Hono
 - **Stack**: TypeScript · Hono · Cloudflare Workers · KV Storage · Vite · Tailwind CSS (CDN) · Chart.js
 
@@ -21,6 +21,7 @@
 - **Provider Scorecards**: …/scorecards
 - **Telehealth**: …/telehealth
 - **eRx (E-Prescribing)**: …/erx
+- **AI Clinical Decision Support**: …/ai
 - **API Health**: …/api/health
 - **GitHub**: https://github.com/mattpolk08/ocuflow
 
@@ -148,6 +149,21 @@
 - API valid statuses: `DRAFT`, `PENDING_REVIEW`, `SIGNED`, `SENT`, `FILLED`, `CANCELLED`, `EXPIRED`, `DENIED`
 - Tests: 26/26 smoke, 59/61 functional (2 test-data edge cases: `ACTIVE` not a valid eRx status → proper 400 validation)
 
+### Phase 8A — AI Clinical Decision Support *(v2.3.0)*
+- AI-powered clinical insights engine with ICD-10 smart suggest, drug interaction checker, guideline lookup, patient risk scoring, and auto-generated SOAP notes
+- **5 tabs**: Dashboard (AI activity overview), ICD-10 (catalog + suggest), Guidelines (library + lookup), Risk Scoring (patient risk matrix), Notes (AI note generation)
+- **Dashboard tab**: `pendingInsights`, `criticalAlerts`, `icdSuggestionsToday`, `notesGeneratedToday`, `riskScoresComputed`, `interactionAlertsActive`, seeded `recentInsights` cards with dismiss workflow
+- **ICD-10 tab**: full ophthalmology ICD-10 catalog (GLAUCOMA, CATARACT, CORNEA, RETINA, OCULOMOTOR, NEURO_OPHTHALMIC, EYELID, LACRIMAL, CORNEA categories); category filter; smart suggest from symptom text; code detail view with `commonPresentations` and `relatedCodes`
+- **Guidelines tab**: AAO/AGS/AOA clinical guidelines organized by topic; full-text lookup via `query`, `icdCodes`, or `topic`; by-ICD lookup; evidence-level badges (I / II / III); `keyRecommendations` list
+- **Risk Scoring tab**: compute patient risk by category (`GLAUCOMA_PROGRESSION`, `DIABETIC_RETINOPATHY_PROGRESSION`, `AMD_PROGRESSION`, `VISION_LOSS`, `SURGICAL_RISK`, `MEDICATION_ADHERENCE`, `NO_SHOW_RISK`, `READMISSION_RISK`); returns `level` (LOW/MODERATE/HIGH/CRITICAL), `score` (0–100), `riskFactors` array; list all risk scores; filter by patientId / category
+- **Notes tab**: AI SOAP note generator — input `chiefComplaint`, `diagnoses`, `medications`, `findings` → structured output with sections: `CHIEF_COMPLAINT`, `HPI`, `EXAM_FINDINGS`, `ASSESSMENT`, `PLAN`; note list with filter; requires `chiefComplaint` + `patientId`
+- **Insights**: 5 seeded clinical insights (ICD_SUGGESTION, DRUG_INTERACTION, RISK_ALERT, GUIDELINE_ALERT, CARE_GAP); dismiss workflow with reason; filter by `type`, `priority`, `dismissed`
+- Routes: `GET /ai`, `GET|POST|PATCH /api/ai/*` (18 endpoints)
+- API structure: all responses wrapped in `{ success, data }` envelope; create endpoints return HTTP 201
+- Seed: 5 clinical insights, 3 risk scores, 2 saved notes (auto-generated on first KV access)
+- Key prefix: `ai:insight:`, `ai:risk:`, `ai:note:`, `ai:seeded`
+- Tests: 31/31 smoke, **60/60 functional** ✅
+
 ## API Summary
 
 | Module        | Base Path              | Key Endpoints                                                                         |
@@ -167,17 +183,18 @@
 | Scorecards    | /api/scorecards        | GET /providers, /summary(?range=), /providers/:id(?range=), /providers/:id/volume|efficiency|revenue|quality|benchmarks|snapshots, /goals(?providerId=); POST /goals; PATCH /goals/:id; DELETE /goals/:id |
 | Telehealth    | /api/telehealth        | GET /dashboard, /visits(?filter=&providerId=), /visits/:id, /visits/:id/messages; POST /visits, /visits/:id/questionnaire, /visits/:id/review, /visits/:id/info-request, /visits/:id/messages; PATCH /visits/:id/status, /visits/:id/assign, /visits/:id/info-request/:irId |
 | eRx           | /api/erx               | GET /ping, /dashboard, /prescriptions(?patientId=&status=&providerId=), /prescriptions/:id, /formulary, /formulary/:id, /formulary/categories/list, /pharmacies, /pharmacies/:id, /pdmp(?patientId=), /allergies/:patientId; POST /prescriptions, /prescriptions/:id/sign, /prescriptions/:id/refill, /interactions/check, /pdmp/check, /allergies/:patientId; PATCH /prescriptions/:id, /prescriptions/:id/status |
+| AI CDS        | /api/ai                | GET /ping, /dashboard, /icd10(?category=), /icd10/categories, /icd10/:code, /interactions, /guidelines(?topic=&source=&q=), /guidelines/topics, /guidelines/:id, /guidelines/by-icd/:code, /risk(?patientId=&category=), /risk/categories, /insights(?type=&priority=&dismissed=), /notes; POST /icd10/suggest, /interactions/check, /guidelines/lookup, /risk/compute, /notes/generate; PATCH /insights/:id/dismiss |
 | Health        | /api/health            | GET — version, phases, timestamp                                                      |
 
 ## Data Architecture
 - **Storage**: Cloudflare Workers KV (`OCULOFLOW_KV` binding)
 - **Pattern**: In-memory seed guard + KV index key + individual record keys
-- **Key prefixes**: `patient:`, `appt:`, `exam:`, `sb:`, `optical:frame:`, `optical:order:`, `portal:session:`, `portal:appt-req:`, `portal:thread:`, `msg:thread:`, `msg:task:`, `msg:recall:`, `msg:staff:`, `comms:template:`, `comms:msg:`, `comms:rule:`, `comms:noshow:`, `comms:campaign:`, `sc:goal:`, `sc:seeded`, `th:visit:`, `th:idx`, `th:seeded`, `erx:rx:`, `erx:idx`, `erx:allergy:`, `erx:pdmp:`, `erx:seeded`
+- **Key prefixes**: `patient:`, `appt:`, `exam:`, `sb:`, `optical:frame:`, `optical:order:`, `portal:session:`, `portal:appt-req:`, `portal:thread:`, `msg:thread:`, `msg:task:`, `msg:recall:`, `msg:staff:`, `comms:template:`, `comms:msg:`, `comms:rule:`, `comms:noshow:`, `comms:campaign:`, `sc:goal:`, `sc:seeded`, `th:visit:`, `th:idx`, `th:seeded`, `erx:rx:`, `erx:idx`, `erx:allergy:`, `erx:pdmp:`, `erx:seeded`, `ai:insight:`, `ai:risk:`, `ai:note:`, `ai:seeded`
 - **Demo mode**: All data seeded automatically on first KV read
 - **Scorecards**: KPIs computed deterministically on-the-fly (no KV writes); only goals use KV
 
 ## User Guide
-1. **Home** `/` — Phase overview with links to all 14 modules
+1. **Home** `/` — Phase overview with links to all 15 modules
 2. **Intake** `/intake?demo=true` — Start patient intake wizard
 3. **Dashboard** `/dashboard` — Command center, today's schedule, flow board
 4. **Patients** `/patients` — Search/register patients, verify insurance
@@ -192,6 +209,7 @@
 13. **Provider Scorecards** `/scorecards` — Select provider from sidebar → view scorecard, benchmarks, trends, goals; use date-range pills (7d/30d/90d/YTD); switch to Practice tab for leaderboard
 14. **Telehealth** `/telehealth` — Click "New Visit" or select from sidebar → view queue → open detail pane → questionnaire / review / messages; filter queue by PENDING / URGENT / LIVE
 15. **eRx** `/erx` — Dashboard → Prescriptions (write Rx, sign, manage refills) → Formulary (drug catalog) → PDMP (monitoring); use interaction-check before signing
+16. **AI CDS** `/ai` — Dashboard → ICD-10 (catalog + smart suggest) → Guidelines (lookup) → Risk Scoring (compute by category) → Notes (AI SOAP generation)
 
 ## Keyboard Shortcuts
 - `N` — New item (superbill, order depending on page)
@@ -202,9 +220,9 @@
 ## Deployment
 - **Platform**: Cloudflare Pages (Hono SSR Workers)
 - **Status**: ✅ Active (sandbox dev server)
-- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~751 KB, 91 modules)
+- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~826 KB, 94 modules)
 - **Start**: `pm2 start ecosystem.config.cjs`
-- **Last Updated**: 2026-03-07
+- **Last Updated**: 2026-03-07 (v2.3.0)
 
 ## Pending / Next Steps
 - **Phase 8A** — AI Clinical Decision Support: ICD-10 code suggestions, drug interaction alerts, clinical guidelines lookup

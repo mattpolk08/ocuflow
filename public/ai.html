@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OculoFlow — AI Clinical Decision Support</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #020817; color: #e2e8f0; }
+    .nav-link { display:flex; align-items:center; gap:6px; padding:6px 10px; border-radius:8px; font-size:12px; font-weight:500; color:#94a3b8; text-decoration:none; white-space:nowrap; transition:all .15s; }
+    .nav-link:hover { background:#1e293b; color:#fff; }
+    .nav-link.active { background:#6366f1; color:#fff; }
+    .tab-btn { padding:8px 16px; border-radius:8px; font-size:13px; font-weight:500; color:#94a3b8; cursor:pointer; transition:all .15s; border:none; background:transparent; }
+    .tab-btn.active { background:#6366f1; color:#fff; }
+    .card { background:#0f172a; border:1px solid #1e293b; border-radius:12px; padding:20px; }
+    .badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+    .badge-info    { background:#0ea5e920; color:#38bdf8; }
+    .badge-warning { background:#f59e0b20; color:#fbbf24; }
+    .badge-critical{ background:#ef444420; color:#f87171; }
+    .badge-low     { background:#22c55e20; color:#4ade80; }
+    .badge-moderate{ background:#f59e0b20; color:#fbbf24; }
+    .badge-high    { background:#f9731620; color:#fb923c; }
+    .badge-contra  { background:#ef444420; color:#f87171; }
+    .badge-major   { background:#f9731620; color:#fb923c; }
+    .badge-minor   { background:#22c55e20; color:#4ade80; }
+    .btn-primary   { background:#6366f1; color:#fff; border:none; padding:8px 18px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; transition:background .15s; }
+    .btn-primary:hover { background:#4f46e5; }
+    .btn-ghost     { background:transparent; color:#94a3b8; border:1px solid #334155; padding:6px 14px; border-radius:8px; font-size:12px; font-weight:500; cursor:pointer; transition:all .15s; }
+    .btn-ghost:hover { background:#1e293b; color:#fff; }
+    .input-field   { background:#020817; border:1px solid #334155; color:#e2e8f0; border-radius:8px; padding:8px 12px; font-size:13px; width:100%; outline:none; }
+    .input-field:focus { border-color:#6366f1; }
+    .input-field::placeholder { color:#475569; }
+    textarea.input-field { resize:vertical; font-family:monospace; }
+    .suggestion-card { background:#0f172a; border:1px solid #1e293b; border-radius:10px; padding:14px; cursor:pointer; transition:all .15s; }
+    .suggestion-card:hover { border-color:#6366f1; background:#1e293b; }
+    .confidence-bar { height:4px; border-radius:2px; background:#1e293b; overflow:hidden; }
+    .confidence-fill { height:100%; border-radius:2px; background:linear-gradient(90deg,#6366f1,#8b5cf6); transition:width .3s; }
+    .insight-card { background:#0f172a; border:1px solid #1e293b; border-radius:10px; padding:14px 16px; transition:all .15s; }
+    .insight-card.priority-CRITICAL { border-left:3px solid #ef4444; }
+    .insight-card.priority-WARNING  { border-left:3px solid #f59e0b; }
+    .insight-card.priority-INFO     { border-left:3px solid #6366f1; }
+    .guideline-card { background:#0f172a; border:1px solid #1e293b; border-radius:10px; padding:16px; }
+    .note-section { background:#020817; border:1px solid #1e293b; border-radius:8px; padding:12px; margin-bottom:8px; }
+    .risk-ring { position:relative; display:inline-flex; align-items:center; justify-content:center; }
+    .toast { position:fixed; bottom:24px; right:24px; background:#1e293b; border:1px solid #334155; border-radius:10px; padding:12px 18px; font-size:13px; z-index:9999; opacity:0; pointer-events:none; transition:opacity .2s; }
+    .toast.show { opacity:1; pointer-events:auto; }
+    .spinner { border:2px solid #1e293b; border-top:2px solid #6366f1; border-radius:50%; width:20px; height:20px; animation:spin .8s linear infinite; display:inline-block; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    ::-webkit-scrollbar { width:4px; height:4px; }
+    ::-webkit-scrollbar-track { background:#020817; }
+    ::-webkit-scrollbar-thumb { background:#334155; border-radius:2px; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<!-- ── Navigation ──────────────────────────────────────────────────────────── -->
+<nav class="sticky top-0 z-50 bg-slate-950/95 backdrop-blur border-b border-slate-800 px-4 py-2 flex items-center gap-2 overflow-x-auto">
+  <a href="/" class="flex items-center gap-2 mr-3 flex-shrink-0">
+    <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center">
+      <i class="fas fa-eye text-white text-xs"></i>
+    </div>
+    <span class="text-sm font-bold text-white hidden sm:block">OculoFlow</span>
+  </a>
+  <a href="/intake"     class="nav-link"><i class="fas fa-mobile-screen w-3 text-center"></i>Intake</a>
+  <a href="/dashboard"  class="nav-link"><i class="fas fa-gauge-high w-3 text-center"></i>Dashboard</a>
+  <a href="/patients"   class="nav-link"><i class="fas fa-users w-3 text-center"></i>Patients</a>
+  <a href="/schedule"   class="nav-link"><i class="fas fa-calendar-days w-3 text-center"></i>Schedule</a>
+  <a href="/exam"       class="nav-link"><i class="fas fa-eye w-3 text-center"></i>Exam</a>
+  <a href="/billing"    class="nav-link"><i class="fas fa-file-invoice-dollar w-3 text-center"></i>Billing</a>
+  <a href="/reports"    class="nav-link"><i class="fas fa-chart-line w-3 text-center"></i>Reports</a>
+  <a href="/optical"    class="nav-link"><i class="fas fa-glasses w-3 text-center"></i>Optical</a>
+  <a href="/portal"     class="nav-link"><i class="fas fa-user-circle w-3 text-center"></i>Portal</a>
+  <a href="/messaging"  class="nav-link"><i class="fas fa-comment-medical w-3 text-center"></i>Messaging</a>
+  <a href="/reminders"  class="nav-link"><i class="fas fa-bell w-3 text-center"></i>Reminders</a>
+  <a href="/scorecards" class="nav-link"><i class="fas fa-chart-bar w-3 text-center"></i>Scorecards</a>
+  <a href="/telehealth" class="nav-link"><i class="fas fa-video w-3 text-center"></i>Telehealth</a>
+  <a href="/erx"        class="nav-link"><i class="fas fa-prescription-bottle w-3 text-center"></i>eRx</a>
+  <a href="/ai"         class="nav-link active"><i class="fas fa-brain w-3 text-center"></i>AI CDS</a>
+</nav>
+
+<!-- ── Header ─────────────────────────────────────────────────────────────── -->
+<div class="px-6 pt-5 pb-3 flex items-center justify-between flex-wrap gap-3">
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center">
+      <i class="fas fa-brain text-indigo-400"></i>
+    </div>
+    <div>
+      <h1 class="text-xl font-bold text-white">AI Clinical Decision Support</h1>
+      <p class="text-xs text-slate-500">ICD-10 Suggestions · Drug Interactions · Guidelines · Risk Scoring · Note Generation</p>
+    </div>
+  </div>
+  <div class="flex items-center gap-2">
+    <span id="ai-status-dot" class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+    <span id="ai-status-text" class="text-xs text-slate-500">AI Engine Ready</span>
+    <span class="badge badge-info ml-1"><i class="fas fa-robot text-xs"></i> oculoflow-nlp-v1</span>
+  </div>
+</div>
+
+<!-- ── Tabs ────────────────────────────────────────────────────────────────── -->
+<div class="px-6 mb-4 flex gap-1 border-b border-slate-800 pb-0">
+  <button class="tab-btn active" onclick="switchTab('dashboard')"><i class="fas fa-gauge-high mr-1"></i>Overview</button>
+  <button class="tab-btn" onclick="switchTab('icd10')"><i class="fas fa-stethoscope mr-1"></i>ICD-10 Suggest</button>
+  <button class="tab-btn" onclick="switchTab('interactions')"><i class="fas fa-pills mr-1"></i>Interactions</button>
+  <button class="tab-btn" onclick="switchTab('guidelines')"><i class="fas fa-book-medical mr-1"></i>Guidelines</button>
+  <button class="tab-btn" onclick="switchTab('notes')"><i class="fas fa-file-medical mr-1"></i>Note Generator</button>
+  <button class="tab-btn" onclick="switchTab('risk')"><i class="fas fa-triangle-exclamation mr-1"></i>Risk Scores</button>
+</div>
+
+<!-- ── DASHBOARD TAB ───────────────────────────────────────────────────────── -->
+<div id="tab-dashboard" class="tab-panel px-6 pb-8">
+
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
+    <div class="card text-center">
+      <p class="text-2xl font-bold text-white" id="kpi-pending">—</p>
+      <p class="text-xs text-slate-500 mt-1">Pending Insights</p>
+    </div>
+    <div class="card text-center">
+      <p class="text-2xl font-bold text-red-400" id="kpi-critical">—</p>
+      <p class="text-xs text-slate-500 mt-1">Critical Alerts</p>
+    </div>
+    <div class="card text-center">
+      <p class="text-2xl font-bold text-indigo-400" id="kpi-icd">—</p>
+      <p class="text-xs text-slate-500 mt-1">ICD Suggestions Today</p>
+    </div>
+    <div class="card text-center">
+      <p class="text-2xl font-bold text-indigo-400" id="kpi-notes">—</p>
+      <p class="text-xs text-slate-500 mt-1">Notes Generated</p>
+    </div>
+    <div class="card text-center">
+      <p class="text-2xl font-bold text-violet-400" id="kpi-risk">—</p>
+      <p class="text-xs text-slate-500 mt-1">Risk Scores</p>
+    </div>
+    <div class="card text-center">
+      <p class="text-2xl font-bold text-orange-400" id="kpi-ddi">—</p>
+      <p class="text-xs text-slate-500 mt-1">Interaction Alerts</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+    <!-- Active Insights -->
+    <div class="lg:col-span-2 card">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-semibold text-white text-sm"><i class="fas fa-bell text-indigo-400 mr-2"></i>Active Insights & Alerts</h3>
+        <button class="btn-ghost text-xs" onclick="switchTab('icd10')">Run ICD Suggest →</button>
+      </div>
+      <div id="insights-list" class="space-y-2">
+        <div class="text-center text-slate-500 text-sm py-6"><div class="spinner mx-auto mb-2"></div>Loading insights…</div>
+      </div>
+    </div>
+
+    <!-- Risk Distribution + Top Risk -->
+    <div class="space-y-4">
+      <div class="card">
+        <h3 class="font-semibold text-white text-sm mb-3"><i class="fas fa-chart-pie text-violet-400 mr-2"></i>Risk Distribution</h3>
+        <canvas id="risk-chart" height="160"></canvas>
+      </div>
+      <div class="card">
+        <h3 class="font-semibold text-white text-sm mb-3"><i class="fas fa-triangle-exclamation text-orange-400 mr-2"></i>Top Risk Patients</h3>
+        <div id="top-risk-list" class="space-y-2 text-sm text-slate-400">
+          <div class="spinner mx-auto my-3"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── ICD-10 SUGGEST TAB ──────────────────────────────────────────────────── -->
+<div id="tab-icd10" class="tab-panel hidden px-6 pb-8">
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    <!-- Input Panel -->
+    <div class="card">
+      <h3 class="font-semibold text-white mb-4"><i class="fas fa-stethoscope text-indigo-400 mr-2"></i>Clinical Input</h3>
+
+      <label class="text-xs text-slate-400 mb-1 block">Chief Complaint / Free Text</label>
+      <textarea id="icd-freetext" class="input-field mb-3" rows="3" placeholder="e.g. Patient presents with decreased vision, elevated IOP, and cup-disc ratio 0.8…"></textarea>
+
+      <label class="text-xs text-slate-400 mb-1 block">Symptoms (one per line)</label>
+      <textarea id="icd-symptoms" class="input-field mb-3" rows="4" placeholder="elevated IOP&#10;cup disc ratio 0.75&#10;visual field defect&#10;glaucoma history"></textarea>
+
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <label class="text-xs text-slate-400 mb-1 block">Patient Age</label>
+          <input id="icd-age" type="number" class="input-field" placeholder="e.g. 65" min="0" max="120" />
+        </div>
+        <div>
+          <label class="text-xs text-slate-400 mb-1 block">Patient Sex</label>
+          <select id="icd-sex" class="input-field">
+            <option value="">Any</option>
+            <option value="M">Male</option>
+            <option value="F">Female</option>
+          </select>
+        </div>
+      </div>
+
+      <label class="text-xs text-slate-400 mb-1 block">Existing Diagnoses (skip from results)</label>
+      <input id="icd-existing" class="input-field mb-4" placeholder="H40.10X0, E11.311 (comma-separated)" />
+
+      <button class="btn-primary w-full" onclick="runIcdSuggest()">
+        <i class="fas fa-brain mr-2"></i>Generate ICD-10 Suggestions
+      </button>
+      <p class="text-xs text-slate-600 text-center mt-2">Powered by OculoFlow NLP v1 — deterministic ophthalmology model</p>
+    </div>
+
+    <!-- Results Panel -->
+    <div>
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-semibold text-white"><i class="fas fa-list-check text-indigo-400 mr-2"></i>Suggested ICD-10 Codes</h3>
+        <span id="icd-result-count" class="badge badge-info hidden"></span>
+      </div>
+      <div id="icd-results" class="space-y-2">
+        <div class="card text-center text-slate-500 text-sm py-12">
+          <i class="fas fa-brain text-4xl text-slate-700 block mb-3"></i>
+          Enter clinical information and click "Generate" to get AI-powered ICD-10 code suggestions
+        </div>
+      </div>
+
+      <!-- ICD Catalog Search -->
+      <div class="mt-5 card">
+        <h4 class="font-semibold text-white text-sm mb-3"><i class="fas fa-search text-slate-400 mr-2"></i>ICD-10 Catalog Search</h4>
+        <div class="flex gap-2 mb-3">
+          <input id="icd-search" class="input-field flex-1" placeholder="Search code or description…" oninput="searchIcd()" />
+          <select id="icd-cat-filter" class="input-field w-40" onchange="searchIcd()">
+            <option value="">All Categories</option>
+          </select>
+        </div>
+        <div id="icd-search-results" class="space-y-1 max-h-64 overflow-y-auto"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── INTERACTIONS TAB ────────────────────────────────────────────────────── -->
+<div id="tab-interactions" class="tab-panel hidden px-6 pb-8">
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    <!-- Interaction Checker -->
+    <div class="card">
+      <h3 class="font-semibold text-white mb-4"><i class="fas fa-pills text-orange-400 mr-2"></i>Drug Interaction Checker</h3>
+      <label class="text-xs text-slate-400 mb-1 block">Drug IDs to Check (comma-separated)</label>
+      <input id="ddi-ids" class="input-field mb-2" placeholder="e.g. drug-001, drug-002, drug-003" />
+      <p class="text-xs text-slate-600 mb-3">Use drug IDs from eRx formulary (drug-001 through drug-021)</p>
+      <button class="btn-primary w-full" onclick="checkInteractions()">
+        <i class="fas fa-search mr-2"></i>Check Interactions
+      </button>
+
+      <div id="ddi-result" class="mt-4 hidden">
+        <div id="ddi-summary" class="mb-3"></div>
+        <div id="ddi-list" class="space-y-3"></div>
+      </div>
+    </div>
+
+    <!-- All Known Interactions -->
+    <div class="card">
+      <h3 class="font-semibold text-white mb-4"><i class="fas fa-database text-slate-400 mr-2"></i>Known Interaction Database</h3>
+      <div class="flex gap-2 mb-3">
+        <select id="ddi-sev-filter" class="input-field" onchange="loadAllInteractions()">
+          <option value="">All Severities</option>
+          <option value="CONTRAINDICATED">Contraindicated</option>
+          <option value="MAJOR">Major</option>
+          <option value="MODERATE">Moderate</option>
+          <option value="MINOR">Minor</option>
+        </select>
+      </div>
+      <div id="all-ddi-list" class="space-y-2 max-h-96 overflow-y-auto">
+        <div class="text-center text-slate-500 text-sm py-4"><div class="spinner mx-auto mb-2"></div>Loading…</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── GUIDELINES TAB ─────────────────────────────────────────────────────── -->
+<div id="tab-guidelines" class="tab-panel hidden px-6 pb-8">
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Search -->
+    <div class="card">
+      <h3 class="font-semibold text-white mb-4"><i class="fas fa-search text-indigo-400 mr-2"></i>Guideline Search</h3>
+
+      <input id="gl-search" class="input-field mb-3" placeholder="Search guidelines…" oninput="searchGuidelines()" />
+
+      <label class="text-xs text-slate-400 mb-1 block">Filter by Topic</label>
+      <select id="gl-topic" class="input-field mb-3" onchange="searchGuidelines()">
+        <option value="">All Topics</option>
+      </select>
+
+      <label class="text-xs text-slate-400 mb-1 block">Or Lookup by ICD-10 Code</label>
+      <div class="flex gap-2">
+        <input id="gl-icd" class="input-field flex-1" placeholder="H40.10X0" />
+        <button class="btn-primary px-4" onclick="lookupByIcd()"><i class="fas fa-arrow-right"></i></button>
+      </div>
+      <p class="text-xs text-slate-600 mt-2">Finds guidelines applicable to the entered ICD-10 code</p>
+    </div>
+
+    <!-- Results -->
+    <div class="lg:col-span-2">
+      <div id="gl-results" class="space-y-3">
+        <div class="text-center text-slate-500 text-sm py-6"><div class="spinner mx-auto mb-2"></div>Loading guidelines…</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── NOTE GENERATOR TAB ─────────────────────────────────────────────────── -->
+<div id="tab-notes" class="tab-panel hidden px-6 pb-8">
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    <!-- Input -->
+    <div class="card">
+      <h3 class="font-semibold text-white mb-4"><i class="fas fa-file-medical text-teal-400 mr-2"></i>Generate Clinical Note</h3>
+
+      <label class="text-xs text-slate-400 mb-1 block">Patient ID (optional)</label>
+      <input id="note-pid" class="input-field mb-3" placeholder="e.g. pat-001" />
+
+      <label class="text-xs text-slate-400 mb-1 block">Chief Complaint <span class="text-red-400">*</span></label>
+      <input id="note-cc" class="input-field mb-3" placeholder="e.g. Elevated intraocular pressure with visual field changes" />
+
+      <label class="text-xs text-slate-400 mb-1 block">Symptoms (one per line)</label>
+      <textarea id="note-symptoms" class="input-field mb-3" rows="3" placeholder="elevated IOP&#10;cup disc ratio 0.75&#10;visual field defect"></textarea>
+
+      <label class="text-xs text-slate-400 mb-1 block">Exam Findings (key: value pairs)</label>
+      <textarea id="note-findings" class="input-field mb-3" rows="4" placeholder='VA: 20/40 OD, 20/25 OS&#10;IOP: 22 OD, 18 OS&#10;SLE: Clear cornea OU, deep AC, no cells&#10;DFE: CDR 0.75 OD, 0.65 OS, no NV'></textarea>
+
+      <label class="text-xs text-slate-400 mb-1 block">Diagnoses / ICD-10 Codes</label>
+      <input id="note-dx" class="input-field mb-4" placeholder="H40.1110 Primary open-angle glaucoma, right eye" />
+
+      <button class="btn-primary w-full" onclick="generateNote()">
+        <i class="fas fa-magic mr-2"></i>Generate Clinical Note
+      </button>
+    </div>
+
+    <!-- Output -->
+    <div>
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-semibold text-white"><i class="fas fa-file-lines text-teal-400 mr-2"></i>Generated Note</h3>
+        <button id="note-copy-btn" class="btn-ghost text-xs hidden" onclick="copyNote()"><i class="fas fa-copy mr-1"></i>Copy</button>
+      </div>
+      <div id="note-output" class="space-y-2">
+        <div class="card text-center text-slate-500 text-sm py-12">
+          <i class="fas fa-file-medical text-4xl text-slate-700 block mb-3"></i>
+          Fill in the clinical details and click "Generate" to create an AI-assisted SOAP note
+        </div>
+      </div>
+
+      <!-- Note History -->
+      <div class="mt-5 card">
+        <h4 class="font-semibold text-white text-sm mb-3"><i class="fas fa-history text-slate-400 mr-2"></i>Recent Notes</h4>
+        <div id="note-history" class="space-y-2 text-sm text-slate-400">
+          <p class="text-center py-2">No notes generated yet</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── RISK SCORES TAB ────────────────────────────────────────────────────── -->
+<div id="tab-risk" class="tab-panel hidden px-6 pb-8">
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Compute Form -->
+    <div class="card">
+      <h3 class="font-semibold text-white mb-4"><i class="fas fa-calculator text-violet-400 mr-2"></i>Compute Risk Score</h3>
+
+      <label class="text-xs text-slate-400 mb-1 block">Patient ID <span class="text-red-400">*</span></label>
+      <input id="risk-pid" class="input-field mb-3" placeholder="e.g. pat-001" />
+
+      <label class="text-xs text-slate-400 mb-1 block">Patient Name <span class="text-red-400">*</span></label>
+      <input id="risk-pname" class="input-field mb-3" placeholder="e.g. Margaret Sullivan" />
+
+      <label class="text-xs text-slate-400 mb-1 block">Risk Category <span class="text-red-400">*</span></label>
+      <select id="risk-cat" class="input-field mb-4">
+        <option value="">Select category…</option>
+        <option value="GLAUCOMA_PROGRESSION">Glaucoma Progression</option>
+        <option value="DIABETIC_RETINOPATHY_PROGRESSION">Diabetic Retinopathy Progression</option>
+        <option value="AMD_PROGRESSION">AMD Progression</option>
+        <option value="VISION_LOSS">Vision Loss</option>
+        <option value="SURGICAL_RISK">Surgical Risk</option>
+        <option value="MEDICATION_ADHERENCE">Medication Adherence</option>
+        <option value="NO_SHOW_RISK">No-Show Risk</option>
+        <option value="READMISSION_RISK">Readmission Risk</option>
+      </select>
+
+      <button class="btn-primary w-full" onclick="computeRisk()">
+        <i class="fas fa-calculator mr-2"></i>Compute Risk Score
+      </button>
+
+      <!-- Result -->
+      <div id="risk-result" class="mt-4 hidden"></div>
+    </div>
+
+    <!-- Risk Score List -->
+    <div class="lg:col-span-2 card">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-semibold text-white text-sm"><i class="fas fa-list text-violet-400 mr-2"></i>Patient Risk Scores</h3>
+        <div class="flex gap-2">
+          <input id="risk-filter-pid" class="input-field w-36 text-xs" placeholder="Filter by patient…" oninput="loadRiskScores()" />
+          <select id="risk-filter-cat" class="input-field w-44 text-xs" onchange="loadRiskScores()">
+            <option value="">All Categories</option>
+            <option value="GLAUCOMA_PROGRESSION">Glaucoma</option>
+            <option value="DIABETIC_RETINOPATHY_PROGRESSION">Diabetic DR</option>
+            <option value="AMD_PROGRESSION">AMD</option>
+            <option value="VISION_LOSS">Vision Loss</option>
+            <option value="SURGICAL_RISK">Surgical</option>
+            <option value="MEDICATION_ADHERENCE">Adherence</option>
+            <option value="NO_SHOW_RISK">No-Show</option>
+            <option value="READMISSION_RISK">Readmission</option>
+          </select>
+        </div>
+      </div>
+      <div id="risk-list" class="space-y-3">
+        <div class="text-center text-slate-500 text-sm py-8"><div class="spinner mx-auto mb-2"></div>Loading risk scores…</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Toast ────────────────────────────────────────────────────────────────── -->
+<div id="toast" class="toast"><i class="fas fa-check-circle text-emerald-400 mr-2"></i><span id="toast-msg"></span></div>
+
+<script src="/static/ai.js"></script>
+</body>
+</html>
