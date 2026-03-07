@@ -13,6 +13,7 @@
 // Phase 6A: Appointment Reminders & Communications
 // Phase 7A: Provider Scorecards & Benchmarking
 // Phase 7B: Telehealth / Async Video Visit
+// Phase 7C: E-Prescribing & PDMP
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Hono } from 'hono'
@@ -34,6 +35,7 @@ import messagingRoutes   from './routes/messaging'
 import remindersRoutes   from './routes/reminders'
 import scorecardsRoutes  from './routes/scorecards'
 import telehealthRoutes  from './routes/telehealth'
+import erxRoutes         from './routes/erx'
 // Import HTML as raw string (Vite ?raw import)
 import intakeHtml    from '../public/intake.html?raw'
 import dashboardHtml from '../public/dashboard.html?raw'
@@ -48,6 +50,7 @@ import messagingHtml   from '../public/messaging.html?raw'
 import remindersHtml   from '../public/reminders.html?raw'
 import scorecardsHtml  from '../public/scorecards.html?raw'
 import telehealthHtml  from '../public/telehealth.html?raw'
+import erxHtml         from '../public/erx.html?raw'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
@@ -111,8 +114,11 @@ app.get('/reminders', (c) => c.html(remindersHtml))
 // ── Provider Scorecards & Benchmarking ───────────────────────────────────────
 app.get('/scorecards', (c) => c.html(scorecardsHtml))
 
-// ── Telehealth / Async Video Visit ───────────────────────────────────────────
+// ── Telehealth / Async Video Visit ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── ───────────────────────────────────────────
 app.get('/telehealth', (c) => c.html(telehealthHtml))
+
+// ── E-Prescribing & PDMP ─────────────────────────────────────────────────────
+app.get('/erx', (c) => c.html(erxHtml))
 
 // ── API Routes ────────────────────────────────────────────────────────────────
 app.route('/api/auth',      authRoutes)
@@ -129,15 +135,17 @@ app.route('/api/messaging',  messagingRoutes)
 app.route('/api/reminders',  remindersRoutes)
 app.route('/api/scorecards', scorecardsRoutes)
 app.route('/api/telehealth', telehealthRoutes)
+app.route('/api/erx',        erxRoutes)
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (c) => {
   return c.json({
     status: 'ok',
     service: 'OculoFlow',
-    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth'],
+    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx'],
     timestamp: new Date().toISOString(),
-    version: '2.1.0',
+    version: '2.2.0',
+
   })
 })
 
@@ -386,6 +394,23 @@ app.get('/', (c) => {
         <div class="flex items-center gap-1.5 mt-3 text-xs text-teal-400 font-medium">
           <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
           Open Telehealth →
+        </div>
+      </a>
+
+      <a href="/erx" class="group bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-emerald-500 rounded-2xl p-5 transition-all duration-200 cursor-pointer">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center group-hover:bg-emerald-500/30 transition-colors">
+            <i class="fas fa-prescription-bottle text-emerald-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Phase 7C — Live</span>
+            <p class="text-sm font-semibold text-white">E-Prescribing</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">Electronic prescriptions with 21-drug formulary, SIG builder, drug interaction checks, PDMP monitoring, allergy records, and pharmacy routing.</p>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-emerald-400 font-medium">
+          <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+          Open eRx →
         </div>
       </a>
     </div>

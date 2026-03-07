@@ -2,7 +2,7 @@
 
 ## Project Overview
 - **Name**: OculoFlow
-- **Version**: 2.1.0
+- **Version**: 2.2.0
 - **Goal**: Full-stack ophthalmology EHR and practice management system built on Cloudflare Pages + Hono
 - **Stack**: TypeScript · Hono · Cloudflare Workers · KV Storage · Vite · Tailwind CSS (CDN) · Chart.js
 
@@ -20,6 +20,7 @@
 - **Reminders & Comms**: …/reminders
 - **Provider Scorecards**: …/scorecards
 - **Telehealth**: …/telehealth
+- **eRx (E-Prescribing)**: …/erx
 - **API Health**: …/api/health
 - **GitHub**: https://github.com/mattpolk08/ocuflow
 
@@ -130,6 +131,23 @@
 - API: `GET /visits?filter=PENDING|URGENT|LIVE|MY_QUEUE&providerId=`, `POST /visits`, `PATCH /:id/status|assign`, `POST /:id/questionnaire|review|info-request|messages`, `PATCH /:id/info-request/:irId`
 - Tests: 19/19 smoke tests passed
 
+### Phase 7C — E-Prescribing & PDMP *(v2.2.0)*
+- Full electronic prescription lifecycle with 21-drug ophthalmology formulary and SIG builder
+- **5 tabs**: Dashboard (KPI cards), Prescriptions (list + detail/write), Formulary (drug catalog), PDMP (monitoring), Settings (preferences)
+- **Dashboard tab**: pending review count, signed today, sent today, refill requests, PDMP alerts, drug interaction alerts, recent prescriptions list, pending refills queue, PDMP alert summary
+- **Prescriptions tab**: filterable prescription queue (All / Pending / Active / Signed / Refills) + write Rx panel with full SIG builder — drug search, dosage form, strength, directions, quantity, supply days, refills, pharmacy routing, allergy check, interaction check
+- **Formulary tab**: 21-drug catalog organized by category (Glaucoma, Anti-VEGF, Anti-Infective, Anti-Inflammatory, Dry Eye, Decongestant/Antihistamine, Pupil Dilation, Anesthesia, Diagnostic), drug detail cards with contraindications and interactions
+- **PDMP tab**: controlled substance monitoring reports, state query simulation, patient history view, risk score indicators
+- **Prescription lifecycle**: DRAFT → PENDING_REVIEW → SIGNED → SENT → FILLED / CANCELLED / EXPIRED / DENIED
+- **Drug interactions**: `POST /api/erx/interactions/check` — check a drug against a patient's current regimen
+- **Patient allergies**: per-patient allergy record with severity classification (MILD / MODERATE / SEVERE / LIFE_THREATENING), allergen type (MEDICATION / ENVIRONMENTAL / FOOD), allergy notes
+- **PDMP checks**: on-demand state PDMP query per patient + requestedBy audit trail
+- **Refill workflow**: patients or pharmacy request refills → provider review queue → approve/deny
+- Routes: `GET /erx`, `GET|POST|PATCH /api/erx/*` (19 endpoints)
+- Seed: 7 sample prescriptions (Timolol, Latanoprost, Cyclosporine, Moxifloxacin, Prednisolone, Ketorolac, Aflibercept); 3 pharmacies; 21-drug formulary; 2 seeded PDMP reports; 2 allergy records
+- API valid statuses: `DRAFT`, `PENDING_REVIEW`, `SIGNED`, `SENT`, `FILLED`, `CANCELLED`, `EXPIRED`, `DENIED`
+- Tests: 26/26 smoke, 59/61 functional (2 test-data edge cases: `ACTIVE` not a valid eRx status → proper 400 validation)
+
 ## API Summary
 
 | Module        | Base Path              | Key Endpoints                                                                         |
@@ -148,17 +166,18 @@
 | Reminders     | /api/reminders         | GET /dashboard, /templates, /messages, /rules, /no-shows, /campaigns; POST /messages/send, /messages/reminder, /messages/:id/response, /no-shows, /no-shows/:id/followup, /campaigns, /campaigns/:id/launch; PATCH /templates/:id, /rules/:id, /no-shows/:id, /campaigns/:id/status |
 | Scorecards    | /api/scorecards        | GET /providers, /summary(?range=), /providers/:id(?range=), /providers/:id/volume|efficiency|revenue|quality|benchmarks|snapshots, /goals(?providerId=); POST /goals; PATCH /goals/:id; DELETE /goals/:id |
 | Telehealth    | /api/telehealth        | GET /dashboard, /visits(?filter=&providerId=), /visits/:id, /visits/:id/messages; POST /visits, /visits/:id/questionnaire, /visits/:id/review, /visits/:id/info-request, /visits/:id/messages; PATCH /visits/:id/status, /visits/:id/assign, /visits/:id/info-request/:irId |
+| eRx           | /api/erx               | GET /ping, /dashboard, /prescriptions(?patientId=&status=&providerId=), /prescriptions/:id, /formulary, /formulary/:id, /formulary/categories/list, /pharmacies, /pharmacies/:id, /pdmp(?patientId=), /allergies/:patientId; POST /prescriptions, /prescriptions/:id/sign, /prescriptions/:id/refill, /interactions/check, /pdmp/check, /allergies/:patientId; PATCH /prescriptions/:id, /prescriptions/:id/status |
 | Health        | /api/health            | GET — version, phases, timestamp                                                      |
 
 ## Data Architecture
 - **Storage**: Cloudflare Workers KV (`OCULOFLOW_KV` binding)
 - **Pattern**: In-memory seed guard + KV index key + individual record keys
-- **Key prefixes**: `patient:`, `appt:`, `exam:`, `sb:`, `optical:frame:`, `optical:order:`, `portal:session:`, `portal:appt-req:`, `portal:thread:`, `msg:thread:`, `msg:task:`, `msg:recall:`, `msg:staff:`, `comms:template:`, `comms:msg:`, `comms:rule:`, `comms:noshow:`, `comms:campaign:`, `sc:goal:`, `sc:seeded`, `th:visit:`, `th:idx`, `th:seeded`
+- **Key prefixes**: `patient:`, `appt:`, `exam:`, `sb:`, `optical:frame:`, `optical:order:`, `portal:session:`, `portal:appt-req:`, `portal:thread:`, `msg:thread:`, `msg:task:`, `msg:recall:`, `msg:staff:`, `comms:template:`, `comms:msg:`, `comms:rule:`, `comms:noshow:`, `comms:campaign:`, `sc:goal:`, `sc:seeded`, `th:visit:`, `th:idx`, `th:seeded`, `erx:rx:`, `erx:idx`, `erx:allergy:`, `erx:pdmp:`, `erx:seeded`
 - **Demo mode**: All data seeded automatically on first KV read
 - **Scorecards**: KPIs computed deterministically on-the-fly (no KV writes); only goals use KV
 
 ## User Guide
-1. **Home** `/` — Phase overview with links to all 13 modules
+1. **Home** `/` — Phase overview with links to all 14 modules
 2. **Intake** `/intake?demo=true` — Start patient intake wizard
 3. **Dashboard** `/dashboard` — Command center, today's schedule, flow board
 4. **Patients** `/patients` — Search/register patients, verify insurance
@@ -172,6 +191,7 @@
 12. **Reminders & Comms** `/reminders` — Overview dashboard → Message Log (filter by status/type) → No-Shows (send follow-ups) → Campaigns (launch) → Templates (edit/preview) → Automation Rules (toggle)
 13. **Provider Scorecards** `/scorecards` — Select provider from sidebar → view scorecard, benchmarks, trends, goals; use date-range pills (7d/30d/90d/YTD); switch to Practice tab for leaderboard
 14. **Telehealth** `/telehealth` — Click "New Visit" or select from sidebar → view queue → open detail pane → questionnaire / review / messages; filter queue by PENDING / URGENT / LIVE
+15. **eRx** `/erx` — Dashboard → Prescriptions (write Rx, sign, manage refills) → Formulary (drug catalog) → PDMP (monitoring); use interaction-check before signing
 
 ## Keyboard Shortcuts
 - `N` — New item (superbill, order depending on page)
@@ -182,12 +202,11 @@
 ## Deployment
 - **Platform**: Cloudflare Pages (Hono SSR Workers)
 - **Status**: ✅ Active (sandbox dev server)
-- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~683 KB, 88 modules)
+- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~751 KB, 91 modules)
 - **Start**: `pm2 start ecosystem.config.cjs`
 - **Last Updated**: 2026-03-07
 
 ## Pending / Next Steps
-- **Phase 7C** — E-Prescribing & PDMP: electronic prescription creation, controlled substance PDMP lookup, pharmacy routing
 - **Phase 8A** — AI Clinical Decision Support: ICD-10 code suggestions, drug interaction alerts, clinical guidelines lookup
 - **Fix**: `isNewPatient` duplicate key warning in `src/lib/patients.ts:36`
 - **Enhancement**: Real login flow for portal (patient account creation / password reset)
