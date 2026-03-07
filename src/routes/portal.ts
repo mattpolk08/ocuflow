@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// OculoFlow — Phase 4A: Patient Portal Routes
+// OculoFlow — Phase 4A + B3: Patient Portal Routes
+// B3 adds: magic-link login, password login, account creation, password reset
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Hono } from 'hono'
@@ -8,10 +9,19 @@ import {
   createAppointmentRequest, listAppointmentRequests, updateAppointmentRequest,
   sendMessage, listMessageThreads, getThreadMessages, markThreadRead,
   getPortalDashboard, ensureMessageSeed,
+  // B3 real auth
+  initiatePortalMagicLink, verifyPortalMagicLink,
+  createPortalAccount, getPortalAccount, portalPasswordLogin,
+  initiatePasswordReset, completePasswordReset, createPortalSession,
 } from '../lib/portal'
 import type { AppointmentRequestType, MessageCategory } from '../types/portal'
 
-type Bindings = { OCULOFLOW_KV: KVNamespace; DEMO_MODE?: string }
+type Bindings = {
+  OCULOFLOW_KV:         KVNamespace
+  DEMO_MODE?:           string
+  SENDGRID_API_KEY?:    string
+  SENDGRID_FROM_EMAIL?: string
+}
 type ApiResp  = { success: boolean; data?: unknown; message?: string; error?: string }
 
 const portalRoutes = new Hono<{ Bindings: Bindings }>()
@@ -284,6 +294,151 @@ portalRoutes.get('/balance', async (c) => {
       })
     }
     return c.json<ApiResp>({ success: true, data: { totalBalance: total, items } })
+  } catch (err) {
+    return c.json<ApiResp>({ success: false, error: String(err) }, 500)
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase B3 — Real Auth Routes
+// POST /api/portal/auth/magic-link        — initiate magic-link / OTP
+// POST /api/portal/auth/magic-verify      — verify token or OTP → session
+// POST /api/portal/auth/register          — create portal account
+// POST /api/portal/auth/password-login    — email + password login
+// POST /api/portal/auth/password-reset    — initiate password reset
+// POST /api/portal/auth/password-set      — complete reset (token/OTP + new pw)
+// GET  /api/portal/auth/account           — get account info (session required)
+// ─────────────────────────────────────────────────────────────────────────────
+
+portalRoutes.post('/auth/magic-link', async (c) => {
+  try {
+    const body = await c.req.json() as { email: string }
+    if (!body.email) return c.json<ApiResp>({ success: false, error: 'email required' }, 400)
+
+    const emailCfg = c.env.SENDGRID_API_KEY && !c.env.SENDGRID_API_KEY.startsWith('SG.XXXXXXXX')
+      ? { apiKey: c.env.SENDGRID_API_KEY, fromEmail: c.env.SENDGRID_FROM_EMAIL ?? 'noreply@oculoflow.com', fromName: 'OculoFlow Portal' }
+      : null
+
+    const baseUrl = `https://${c.req.header('host') ?? 'oculoflow.pages.dev'}`
+    const result  = await initiatePortalMagicLink(c.env.OCULOFLOW_KV, body.email, emailCfg, baseUrl)
+    return c.json<ApiResp>({
+      success: result.success,
+      data: result.demo ? { demo: true, token: result.token, otp: result.otp, note: 'Demo mode — credentials returned directly' } : { sent: true },
+      message: result.demo ? 'Demo: use the returned token or OTP to log in' : 'Check your email for a login link and 6-digit code',
+    })
+  } catch (err) {
+    return c.json<ApiResp>({ success: false, error: String(err) }, 500)
+  }
+})
+
+portalRoutes.post('/auth/magic-verify', async (c) => {
+  try {
+    const body = await c.req.json() as { token?: string; email?: string; otp?: string }
+    const verify = await verifyPortalMagicLink(c.env.OCULOFLOW_KV, body)
+    if (!verify.success) return c.json<ApiResp>({ success: false, error: verify.error }, 401)
+
+    const session = await createPortalSession(c.env.OCULOFLOW_KV, verify.patientId!)
+    if (!session) return c.json<ApiResp>({ success: false, error: 'Patient not found' }, 404)
+    return c.json<ApiResp>({ success: true, data: session, message: `Welcome back, ${session.patientName}` })
+  } catch (err) {
+    return c.json<ApiResp>({ success: false, error: String(err) }, 500)
+  }
+})
+
+portalRoutes.post('/auth/register', async (c) => {
+  try {
+    const body = await c.req.json() as { patientId: string; email: string; password?: string; lastName?: string; dob?: string }
+    if (!body.patientId || !body.email) {
+      return c.json<ApiResp>({ success: false, error: 'patientId and email required' }, 400)
+    }
+
+    // Verify patient identity before creating account
+    if (body.lastName && body.dob) {
+      const loginResult = await portalLogin(c.env.OCULOFLOW_KV, { lastName: body.lastName, dob: body.dob })
+      if (!loginResult.success || loginResult.session?.patientId !== body.patientId) {
+        return c.json<ApiResp>({ success: false, error: 'Patient identity verification failed' }, 401)
+      }
+      // Clean up the verification session
+      if (loginResult.session) await portalLogout(c.env.OCULOFLOW_KV, loginResult.session.sessionId)
+    }
+
+    const result = await createPortalAccount(c.env.OCULOFLOW_KV, {
+      patientId: body.patientId,
+      email: body.email,
+      password: body.password,
+    })
+    if (!result.success) return c.json<ApiResp>({ success: false, error: result.error }, 409)
+    return c.json<ApiResp>({ success: true, data: result.account, message: 'Portal account created' }, 201)
+  } catch (err) {
+    return c.json<ApiResp>({ success: false, error: String(err) }, 500)
+  }
+})
+
+portalRoutes.post('/auth/password-login', async (c) => {
+  try {
+    const body = await c.req.json() as { email: string; password: string }
+    if (!body.email || !body.password) {
+      return c.json<ApiResp>({ success: false, error: 'email and password required' }, 400)
+    }
+    const result = await portalPasswordLogin(c.env.OCULOFLOW_KV, body.email, body.password)
+    if (!result.success) return c.json<ApiResp>({ success: false, error: result.error }, 401)
+
+    const session = await createPortalSession(c.env.OCULOFLOW_KV, result.patientId!)
+    if (!session) return c.json<ApiResp>({ success: false, error: 'Patient not found' }, 404)
+    return c.json<ApiResp>({ success: true, data: session, message: `Welcome back, ${session.patientName}` })
+  } catch (err) {
+    return c.json<ApiResp>({ success: false, error: String(err) }, 500)
+  }
+})
+
+portalRoutes.post('/auth/password-reset', async (c) => {
+  try {
+    const body = await c.req.json() as { email: string }
+    if (!body.email) return c.json<ApiResp>({ success: false, error: 'email required' }, 400)
+
+    const emailCfg = c.env.SENDGRID_API_KEY && !c.env.SENDGRID_API_KEY.startsWith('SG.XXXXXXXX')
+      ? { apiKey: c.env.SENDGRID_API_KEY, fromEmail: c.env.SENDGRID_FROM_EMAIL ?? 'noreply@oculoflow.com', fromName: 'OculoFlow Portal' }
+      : null
+
+    const baseUrl = `https://${c.req.header('host') ?? 'oculoflow.pages.dev'}`
+    const result  = await initiatePasswordReset(c.env.OCULOFLOW_KV, body.email, emailCfg, baseUrl)
+    return c.json<ApiResp>({
+      success: result.success,
+      data: result.demo ? { demo: true, token: result.token, note: 'Demo mode — use token + new password to complete reset' } : { sent: true },
+      message: result.demo ? 'Demo: use the returned token to set a new password' : 'Check your email for reset instructions',
+    })
+  } catch (err) {
+    return c.json<ApiResp>({ success: false, error: String(err) }, 500)
+  }
+})
+
+portalRoutes.post('/auth/password-set', async (c) => {
+  try {
+    const body = await c.req.json() as { token?: string; email?: string; otp?: string; newPassword: string }
+    if (!body.newPassword) return c.json<ApiResp>({ success: false, error: 'newPassword required' }, 400)
+    if (body.newPassword.length < 8) return c.json<ApiResp>({ success: false, error: 'Password must be at least 8 characters' }, 400)
+
+    const result = await completePasswordReset(c.env.OCULOFLOW_KV, body)
+    if (!result.success) return c.json<ApiResp>({ success: false, error: result.error }, 401)
+    return c.json<ApiResp>({ success: true, message: 'Password updated — you can now log in with your email and new password' })
+  } catch (err) {
+    return c.json<ApiResp>({ success: false, error: String(err) }, 500)
+  }
+})
+
+portalRoutes.get('/auth/account', async (c) => {
+  try {
+    const session = await resolveSession(c)
+    if (!session) return c.json<ApiResp>({ success: false, error: 'Session required' }, 401)
+    const account = await getPortalAccount(c.env.OCULOFLOW_KV, session.patientId)
+    return c.json<ApiResp>({
+      success: true,
+      data: account ? {
+        email: account.email, loginMethod: account.loginMethod,
+        emailVerified: account.emailVerified, lastLogin: account.lastLogin,
+        hasPassword: !!account.passwordHash,
+      } : { email: session.patientEmail, loginMethod: 'dob', emailVerified: false, hasPassword: false },
+    })
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
   }

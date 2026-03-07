@@ -1,5 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// OculoFlow — Phase 4A: Patient Portal Library
+// OculoFlow — Phase 4A + B3: Patient Portal Library
+// Phase B3 adds: real email-based magic-link auth, patient account creation,
+// password reset, email/DOB-based login, OTP verification
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type {
@@ -485,4 +487,332 @@ export async function getPortalDashboard(
     unreadMessages,
     recentMessages: threads.slice(0, 5),
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase B3 — Patient Portal Real Auth
+// Magic-link login (email + 6-digit OTP), patient account creation,
+// password change, and email/DOB direct login
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { sendEmail, type EmailConfig } from './sms'
+
+const KV_PORTAL_ACCOUNT_PFX  = 'portal:account:'       // by patientId
+const KV_PORTAL_EMAIL_IDX    = 'portal:email:'         // email → patientId
+const KV_PORTAL_MAGIC_PFX    = 'portal:magic:'         // magic-link tokens
+const KV_PORTAL_OTP_PFX      = 'portal:otp:'           // OTP codes
+const MAGIC_LINK_TTL         = 60 * 15                 // 15 minutes
+const OTP_TTL                = 60 * 10                 // 10 minutes
+const SESSION_TTL            = 60 * 60 * 8             // 8 hours (extended)
+
+export interface PortalAccount {
+  patientId:     string
+  email:         string
+  passwordHash?: string  // PBKDF2 hex (optional — can use magic-link only)
+  createdAt:     string
+  updatedAt:     string
+  lastLogin?:    string
+  loginMethod:   'magic_link' | 'password' | 'dob'
+  emailVerified: boolean
+}
+
+// ── Crypto helpers ─────────────────────────────────────────────────────────────
+async function hashPassword(password: string, salt?: string): Promise<{ hash: string; salt: string }> {
+  const s = salt ?? Array.from(crypto.getRandomValues(new Uint8Array(16)))
+    .map(b => b.toString(16).padStart(2, '0')).join('')
+  const enc = new TextEncoder()
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits'])
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: enc.encode(s), iterations: 100_000, hash: 'SHA-256' },
+    keyMaterial, 256
+  )
+  const hash = Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('')
+  return { hash, salt: s }
+}
+
+async function verifyPassword(password: string, storedHash: string, salt: string): Promise<boolean> {
+  const { hash } = await hashPassword(password, salt)
+  return hash === storedHash
+}
+
+function generateOtp(): string {
+  // 6-digit numeric OTP
+  const arr = new Uint32Array(1)
+  crypto.getRandomValues(arr)
+  return String(arr[0] % 1_000_000).padStart(6, '0')
+}
+
+function generateToken(): string {
+  const arr = new Uint8Array(32)
+  crypto.getRandomValues(arr)
+  return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+// ── Account CRUD ───────────────────────────────────────────────────────────────
+
+export async function getPortalAccount(kv: KVNamespace, patientId: string): Promise<PortalAccount | null> {
+  const raw = await kv.get(`${KV_PORTAL_ACCOUNT_PFX}${patientId}`)
+  return raw ? JSON.parse(raw) : null
+}
+
+export async function getPortalAccountByEmail(kv: KVNamespace, email: string): Promise<PortalAccount | null> {
+  const emailKey = email.toLowerCase().trim()
+  const patientId = await kv.get(`${KV_PORTAL_EMAIL_IDX}${emailKey}`)
+  if (!patientId) return null
+  return getPortalAccount(kv, patientId)
+}
+
+export async function createPortalAccount(
+  kv: KVNamespace,
+  opts: { patientId: string; email: string; password?: string }
+): Promise<{ success: boolean; account?: PortalAccount; error?: string }> {
+  const emailKey = opts.email.toLowerCase().trim()
+
+  // Check if account already exists
+  const existing = await getPortalAccount(kv, opts.patientId)
+  if (existing) return { success: false, error: 'Portal account already exists for this patient' }
+
+  // Check email uniqueness
+  const existingEmail = await kv.get(`${KV_PORTAL_EMAIL_IDX}${emailKey}`)
+  if (existingEmail) return { success: false, error: 'An account with this email already exists' }
+
+  const now = new Date().toISOString()
+  const account: PortalAccount & { passwordHash?: string; salt?: string } = {
+    patientId: opts.patientId,
+    email: emailKey,
+    createdAt: now,
+    updatedAt: now,
+    loginMethod: opts.password ? 'password' : 'magic_link',
+    emailVerified: false,
+  }
+
+  if (opts.password) {
+    const { hash, salt } = await hashPassword(opts.password)
+    account.passwordHash = hash
+    ;(account as any).salt = salt
+  }
+
+  await kv.put(`${KV_PORTAL_ACCOUNT_PFX}${opts.patientId}`, JSON.stringify(account))
+  await kv.put(`${KV_PORTAL_EMAIL_IDX}${emailKey}`, opts.patientId)
+
+  // Return without sensitive fields
+  const { passwordHash: _, ...safeAccount } = account as any
+  return { success: true, account: safeAccount }
+}
+
+// ── Magic-Link Flow ────────────────────────────────────────────────────────────
+
+export async function initiatePortalMagicLink(
+  kv: KVNamespace,
+  email: string,
+  emailConfig: EmailConfig | null,
+  baseUrl: string
+): Promise<{ success: boolean; token?: string; otp?: string; demo?: boolean; error?: string }> {
+  const emailKey = email.toLowerCase().trim()
+
+  // Find patient by email (check portal accounts first, then patient records)
+  let patientId: string | null = null
+  const account = await getPortalAccountByEmail(kv, emailKey)
+  if (account) {
+    patientId = account.patientId
+  } else {
+    // Search patient records by email
+    const idxRaw = await kv.get('patients:index')
+    const ids: string[] = idxRaw ? JSON.parse(idxRaw) : []
+    for (const pid of ids) {
+      const raw = await kv.get(`patient:${pid}`)
+      if (!raw) continue
+      const p = JSON.parse(raw)
+      if (p.email?.toLowerCase() === emailKey) { patientId = pid; break }
+    }
+  }
+
+  if (!patientId) {
+    // Don't reveal whether email exists (security)
+    return { success: true, demo: true }
+  }
+
+  const token = generateToken()
+  const otp   = generateOtp()
+  const magic = { patientId, email: emailKey, otp, createdAt: new Date().toISOString() }
+
+  await kv.put(`${KV_PORTAL_MAGIC_PFX}${token}`, JSON.stringify(magic), { expirationTtl: MAGIC_LINK_TTL })
+  await kv.put(`${KV_PORTAL_OTP_PFX}${emailKey}`, JSON.stringify({ token, otp, patientId, createdAt: magic.createdAt }), { expirationTtl: OTP_TTL })
+
+  const magicUrl = `${baseUrl}/portal?magic=${token}`
+
+  // Send email (real SendGrid if configured, otherwise demo mode)
+  const isRealSendGrid = emailConfig && emailConfig.apiKey &&
+    !emailConfig.apiKey.startsWith('SG.XXXXXXXX') &&
+    !emailConfig.apiKey.includes('your-sendgrid-key') &&
+    emailConfig.apiKey.startsWith('SG.') &&
+    emailConfig.apiKey.length > 30
+
+  if (isRealSendGrid) {
+    await sendEmail(
+      {
+        to: emailKey,
+        subject: 'Your OculoFlow Patient Portal Login',
+        html: `<p>Click the link below to log in to your patient portal (valid for 15 minutes):</p>
+<p><a href="${magicUrl}" style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">Log In to Portal</a></p>
+<p>Or enter this 6-digit code: <strong>${otp}</strong></p>
+<p>If you did not request this, please ignore this email.</p>`,
+        text: `Log in to OculoFlow Portal: ${magicUrl}\nOr enter code: ${otp}\nExpires in 15 minutes.`,
+      },
+      emailConfig!
+    )
+    return { success: true }
+  }
+
+  // Demo mode — return token + OTP directly
+  return { success: true, token, otp, demo: true }
+}
+
+export async function verifyPortalMagicLink(
+  kv: KVNamespace,
+  opts: { token?: string; email?: string; otp?: string }
+): Promise<{ success: boolean; patientId?: string; error?: string }> {
+  // Token-based verification
+  if (opts.token) {
+    const raw = await kv.get(`${KV_PORTAL_MAGIC_PFX}${opts.token}`)
+    if (!raw) return { success: false, error: 'Invalid or expired magic link' }
+    const magic = JSON.parse(raw)
+    await kv.delete(`${KV_PORTAL_MAGIC_PFX}${opts.token}`)  // single use
+    return { success: true, patientId: magic.patientId }
+  }
+
+  // OTP-based verification
+  if (opts.email && opts.otp) {
+    const emailKey = opts.email.toLowerCase().trim()
+    const raw = await kv.get(`${KV_PORTAL_OTP_PFX}${emailKey}`)
+    if (!raw) return { success: false, error: 'No pending OTP for this email' }
+    const stored = JSON.parse(raw)
+    if (stored.otp !== opts.otp) return { success: false, error: 'Invalid OTP code' }
+    await kv.delete(`${KV_PORTAL_OTP_PFX}${emailKey}`)
+    return { success: true, patientId: stored.patientId }
+  }
+
+  return { success: false, error: 'token or (email + otp) required' }
+}
+
+// ── Password-based Login ───────────────────────────────────────────────────────
+
+export async function portalPasswordLogin(
+  kv: KVNamespace,
+  email: string,
+  password: string
+): Promise<{ success: boolean; patientId?: string; error?: string }> {
+  const account = await getPortalAccountByEmail(kv, email)
+  if (!account) return { success: false, error: 'Invalid email or password' }
+
+  const raw = await kv.get(`${KV_PORTAL_ACCOUNT_PFX}${account.patientId}`)
+  if (!raw) return { success: false, error: 'Invalid email or password' }
+  const full = JSON.parse(raw)
+
+  if (!full.passwordHash || !full.salt) return { success: false, error: 'No password set — please use magic link login' }
+
+  const ok = await verifyPassword(password, full.passwordHash, full.salt)
+  if (!ok) return { success: false, error: 'Invalid email or password' }
+
+  return { success: true, patientId: account.patientId }
+}
+
+// ── Password Reset ─────────────────────────────────────────────────────────────
+
+export async function initiatePasswordReset(
+  kv: KVNamespace,
+  email: string,
+  emailConfig: EmailConfig | null,
+  baseUrl: string
+): Promise<{ success: boolean; token?: string; demo?: boolean }> {
+  // Reuse magic-link flow for reset — same security, different UI prompt
+  return initiatePortalMagicLink(kv, email, emailConfig, `${baseUrl}/portal?reset=1`)
+}
+
+export async function completePasswordReset(
+  kv: KVNamespace,
+  opts: { token?: string; email?: string; otp?: string; newPassword: string }
+): Promise<{ success: boolean; error?: string }> {
+  const verify = await verifyPortalMagicLink(kv, { token: opts.token, email: opts.email, otp: opts.otp })
+  if (!verify.success || !verify.patientId) return { success: false, error: verify.error }
+
+  const raw = await kv.get(`${KV_PORTAL_ACCOUNT_PFX}${verify.patientId}`)
+  if (!raw) {
+    // Auto-create account on password reset if it doesn't exist
+    const emailKey = opts.email?.toLowerCase().trim() ?? ''
+    await createPortalAccount(kv, { patientId: verify.patientId, email: emailKey, password: opts.newPassword })
+    return { success: true }
+  }
+
+  const account = JSON.parse(raw)
+  const { hash, salt } = await hashPassword(opts.newPassword)
+  account.passwordHash  = hash
+  account.salt          = salt
+  account.loginMethod   = 'password'
+  account.updatedAt     = new Date().toISOString()
+
+  await kv.put(`${KV_PORTAL_ACCOUNT_PFX}${verify.patientId}`, JSON.stringify(account))
+  return { success: true }
+}
+
+// ── Unified portal session creator (for B3) ────────────────────────────────────
+
+export async function createPortalSession(
+  kv: KVNamespace,
+  patientId: string
+): Promise<PortalSession | null> {
+  // Load patient data
+  const idxRaw = await kv.get('patients:index')
+  const ids: string[] = idxRaw ? JSON.parse(idxRaw) : []
+  // Try direct key first
+  let patientRaw = await kv.get(`patient:${patientId}`)
+  if (!patientRaw) {
+    for (const pid of ids) {
+      const raw = await kv.get(`patient:${pid}`)
+      if (!raw) continue
+      const p = JSON.parse(raw)
+      if (p.id === patientId) { patientRaw = raw; break }
+    }
+  }
+  if (!patientRaw) return null
+  const patient = JSON.parse(patientRaw)
+
+  const now = new Date()
+  const expires = new Date(now.getTime() + SESSION_TTL * 1000)
+  const session: PortalSession = {
+    sessionId:    uid('psess'),
+    patientId:    patient.id,
+    patientName:  patient.name ?? `${patient.firstName} ${patient.lastName}`,
+    patientEmail: patient.email ?? '',
+    patientDob:   patient.dob ?? patient.dateOfBirth ?? '',
+    createdAt:    now.toISOString(),
+    expiresAt:    expires.toISOString(),
+    lastActivity: now.toISOString(),
+  }
+
+  await kv.put(`${KV_PORTAL_SESSION_PFX}${session.sessionId}`, JSON.stringify(session), {
+    expirationTtl: SESSION_TTL,
+  })
+
+  // Update last login on account
+  const accountRaw = await kv.get(`${KV_PORTAL_ACCOUNT_PFX}${patientId}`)
+  if (accountRaw) {
+    const acc = JSON.parse(accountRaw)
+    acc.lastLogin = now.toISOString()
+    await kv.put(`${KV_PORTAL_ACCOUNT_PFX}${patientId}`, JSON.stringify(acc))
+  }
+
+  return session
+}
+
+// Auto-create portal account for any patient if they don't have one yet
+export async function ensurePortalAccount(
+  kv: KVNamespace,
+  patientId: string,
+  email: string
+): Promise<PortalAccount> {
+  const existing = await getPortalAccount(kv, patientId)
+  if (existing) return existing
+  const result = await createPortalAccount(kv, { patientId, email })
+  return result.account!
 }

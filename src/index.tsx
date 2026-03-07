@@ -49,6 +49,8 @@ import rcmRoutes         from './routes/rcm'
 import mfaRoutes         from './routes/mfa'
 import engagementRoutes  from './routes/engagement'
 import analyticsRoutes   from './routes/analytics'
+import notificationsRoutes from './routes/notifications'
+import docRoutes         from './routes/documents'
 // Import HTML as raw string (Vite ?raw import)
 import intakeHtml    from '../public/intake.html?raw'
 import dashboardHtml from '../public/dashboard.html?raw'
@@ -75,6 +77,7 @@ import analyticsHtml   from '../public/analytics.html?raw'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
+  OCULOFLOW_R2?: R2Bucket
   JWT_SECRET?: string
   OPENAI_API_KEY: string
   TWILIO_ACCOUNT_SID: string
@@ -191,8 +194,16 @@ app.route('/api/reports',   reportsRoutes)
 app.use('/api/optical/*',   requireAuth, requireRole('OPTICAL', 'ADMIN', 'FRONT_DESK', 'PROVIDER'), auditMiddleware)
 app.route('/api/optical',   opticalRoutes)
 
-app.use('/api/portal/*',    requireAuth, auditMiddleware)
-app.route('/api/portal',     portalRoutes)
+// Portal: /auth/* endpoints are public (magic-link, registration, login, password reset)
+// Other portal endpoints use portal session (X-Portal-Session header), not JWT
+app.use('/api/portal/*', async (c, next) => {
+  const path = c.req.path
+  // Allow portal auth endpoints without staff JWT
+  if (path.startsWith('/api/portal/auth/')) return next()
+  // For other portal paths, use auditMiddleware without requireAuth (portal uses own sessions)
+  return auditMiddleware(c, next)
+})
+app.route('/api/portal', portalRoutes)
 
 app.use('/api/messaging/*', requireAuth, auditMiddleware)
 app.route('/api/messaging',  messagingRoutes)
@@ -237,15 +248,22 @@ app.route('/api/engagement', engagementRoutes)
 app.use('/api/analytics/*',  requireAuth, requireRole('BILLING', 'ADMIN'), auditMiddleware)
 app.route('/api/analytics',  analyticsRoutes)
 
+// ── Phase B1 — Notifications (Twilio SMS + SendGrid Email + Eligibility) ─────
+app.use('/api/notifications/*', requireAuth, auditMiddleware)
+app.route('/api/notifications', notificationsRoutes)
+
+// ── Phase B2 — Documents & PDF Generation ────────────────────────────────────
+app.use('/api/documents/*',  requireAuth, auditMiddleware)
+app.route('/api/documents',  docRoutes)
+
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (c) => {
   return c.json({
     status: 'ok',
     service: 'OculoFlow',
-    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx', '8a-ai-cds', '8b-prior-auth', '9a-rcm', '9b-engagement', 'a1-auth', 'a2-audit-hipaa', 'a3-live-deploy', 'a4-mfa', '10a-analytics'],
+    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx', '8a-ai-cds', '8b-prior-auth', '9a-rcm', '9b-engagement', 'a1-auth', 'a2-audit-hipaa', 'a3-live-deploy', 'a4-mfa', '10a-analytics', 'b1-notifications', 'b2-documents', 'b3-portal-auth'],
     timestamp: new Date().toISOString(),
-    version: '2.8.0',
-
+    version: '2.9.0',
   })
 })
 
@@ -596,6 +614,60 @@ app.get('/', (c) => {
         <div class="flex items-center gap-1.5 mt-3 text-xs text-amber-400 font-medium">
           <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
           Open Analytics →
+        </div>
+      </a>
+
+      <!-- Phase B1 -->
+      <a href="/api/notifications/status" class="group block bg-slate-800/50 rounded-2xl p-5 border border-slate-700/50 hover:border-sky-500/50 hover:bg-slate-800 transition-all">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-sky-500/20 flex items-center justify-center group-hover:bg-sky-500/30 transition-colors">
+            <i class="fas fa-bell text-sky-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-sky-400 uppercase tracking-wider">Phase B1 — Live</span>
+            <p class="text-sm font-semibold text-white">Real Notifications</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">Twilio SMS, SendGrid email, and Availity insurance eligibility integrations. Appointment reminders, recall outreach, OTP delivery, and survey invites.</p>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-sky-400 font-medium">
+          <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+          View Status →
+        </div>
+      </a>
+
+      <!-- Phase B2 -->
+      <a href="/api/documents/storage/status" class="group block bg-slate-800/50 rounded-2xl p-5 border border-slate-700/50 hover:border-teal-500/50 hover:bg-slate-800 transition-all">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-teal-500/20 flex items-center justify-center group-hover:bg-teal-500/30 transition-colors">
+            <i class="fas fa-file-pdf text-teal-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-teal-400 uppercase tracking-wider">Phase B2 — Live</span>
+            <p class="text-sm font-semibold text-white">Documents & PDF Generation</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">Superbill, patient statement, and referral letter PDF generation. Clinical photo uploads with R2 (or KV fallback). Attach files to exams, PA, and messaging.</p>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-teal-400 font-medium">
+          <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+          Storage Status →
+        </div>
+      </a>
+
+      <!-- Phase B3 -->
+      <a href="/portal" class="group block bg-slate-800/50 rounded-2xl p-5 border border-slate-700/50 hover:border-purple-500/50 hover:bg-slate-800 transition-all">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center group-hover:bg-purple-500/30 transition-colors">
+            <i class="fas fa-user-lock text-purple-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-purple-400 uppercase tracking-wider">Phase B3 — Live</span>
+            <p class="text-sm font-semibold text-white">Portal Real Auth</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">Email magic-link + 6-digit OTP login, patient account creation, PBKDF2 password auth, and self-service password reset via SendGrid.</p>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-purple-400 font-medium">
+          <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+          Open Portal →
         </div>
       </a>
     </div>
