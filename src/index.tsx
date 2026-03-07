@@ -11,6 +11,7 @@
 // Phase 4A: Patient Portal
 // Phase 5A: Clinical Messaging & Task Board
 // Phase 6A: Appointment Reminders & Communications
+// Phase 7A: Provider Scorecards & Benchmarking
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Hono } from 'hono'
@@ -30,6 +31,7 @@ import opticalRoutes   from './routes/optical'
 import portalRoutes      from './routes/portal'
 import messagingRoutes   from './routes/messaging'
 import remindersRoutes   from './routes/reminders'
+import scorecardsRoutes  from './routes/scorecards'
 // Import HTML as raw string (Vite ?raw import)
 import intakeHtml    from '../public/intake.html?raw'
 import dashboardHtml from '../public/dashboard.html?raw'
@@ -42,6 +44,7 @@ import opticalHtml   from '../public/optical.html?raw'
 import portalHtml      from '../public/portal.html?raw'
 import messagingHtml   from '../public/messaging.html?raw'
 import remindersHtml   from '../public/reminders.html?raw'
+import scorecardsHtml  from '../public/scorecards.html?raw'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
@@ -102,6 +105,9 @@ app.get('/messaging', (c) => c.html(messagingHtml))
 // ── Reminders & Communications ────────────────────────────────────────────────
 app.get('/reminders', (c) => c.html(remindersHtml))
 
+// ── Provider Scorecards & Benchmarking ───────────────────────────────────────
+app.get('/scorecards', (c) => c.html(scorecardsHtml))
+
 // ── API Routes ────────────────────────────────────────────────────────────────
 app.route('/api/auth',      authRoutes)
 app.route('/api/intake',    intakeRoutes)
@@ -115,15 +121,16 @@ app.route('/api/optical',   opticalRoutes)
 app.route('/api/portal',     portalRoutes)
 app.route('/api/messaging',  messagingRoutes)
 app.route('/api/reminders',  remindersRoutes)
+app.route('/api/scorecards', scorecardsRoutes)
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (c) => {
   return c.json({
     status: 'ok',
     service: 'OculoFlow',
-    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders'],
+    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards'],
     timestamp: new Date().toISOString(),
-    version: '1.9.0',
+    version: '2.0.0',
   })
 })
 
@@ -338,6 +345,23 @@ app.get('/', (c) => {
         <div class="flex items-center gap-1.5 mt-3 text-xs text-indigo-400 font-medium">
           <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
           Open Comms Hub →
+        </div>
+      </a>
+
+      <a href="/scorecards" class="group bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-violet-500 rounded-2xl p-5 transition-all duration-200 cursor-pointer">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-violet-500/20 flex items-center justify-center group-hover:bg-violet-500/30 transition-colors">
+            <i class="fas fa-chart-bar text-violet-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-violet-400 uppercase tracking-wider">Phase 7A — Live</span>
+            <p class="text-sm font-semibold text-white">Provider Scorecards</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">Per-provider KPIs, benchmark comparisons vs. practice &amp; national averages, weekly trends, goals tracking, and practice leaderboard.</p>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-violet-400 font-medium">
+          <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+          Open Scorecards →
         </div>
       </a>
     </div>
