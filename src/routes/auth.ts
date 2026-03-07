@@ -336,4 +336,15 @@ authRoutes.get('/seed', async (c) => {
   return c.json({ success: true, data: { seeded: true } }, 200)
 })
 
+// ── POST /api/auth/unlock-dev  (demo mode only — clears login lockout) ────────
+authRoutes.post('/unlock-dev', async (c) => {
+  if (c.env.DEMO_MODE !== 'true') {
+    return c.json({ success: false, error: 'Not available' }, 404)
+  }
+  const { email } = await c.req.json().catch(() => ({ email: '' }))
+  if (!email) return c.json({ success: false, error: 'email required' }, 400)
+  await clearLoginFailures(c.env.OCULOFLOW_KV, email)
+  return c.json({ success: true, message: `Lockout cleared for ${email}` })
+})
+
 export default authRoutes
