@@ -15,6 +15,8 @@
 // Phase 7B: Telehealth / Async Video Visit
 // Phase 7C: E-Prescribing & PDMP
 // Phase 8A: AI Clinical Decision Support
+// Phase 8B: Automated Prior Authorization
+// Phase 9A: Revenue Cycle Management
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Hono } from 'hono'
@@ -38,6 +40,8 @@ import scorecardsRoutes  from './routes/scorecards'
 import telehealthRoutes  from './routes/telehealth'
 import erxRoutes         from './routes/erx'
 import aiRoutes          from './routes/ai'
+import { paRoutes }      from './routes/priorauth'
+import rcmRoutes         from './routes/rcm'
 // Import HTML as raw string (Vite ?raw import)
 import intakeHtml    from '../public/intake.html?raw'
 import dashboardHtml from '../public/dashboard.html?raw'
@@ -54,6 +58,8 @@ import scorecardsHtml  from '../public/scorecards.html?raw'
 import telehealthHtml  from '../public/telehealth.html?raw'
 import erxHtml         from '../public/erx.html?raw'
 import aiHtml          from '../public/ai.html?raw'
+import priorauthHtml   from '../public/priorauth.html?raw'
+import rcmHtml         from '../public/rcm.html?raw'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
@@ -126,6 +132,12 @@ app.get('/erx', (c) => c.html(erxHtml))
 // ── AI Clinical Decision Support ─────────────────────────────────────────────
 app.get('/ai', (c) => c.html(aiHtml))
 
+// ── Prior Authorization ───────────────────────────────────────────────────────
+app.get('/priorauth', (c) => c.html(priorauthHtml))
+
+// ── Revenue Cycle Management ─────────────────────────────────────────────────
+app.get('/rcm', (c) => c.html(rcmHtml))
+
 // ── API Routes ────────────────────────────────────────────────────────────────
 app.route('/api/auth',      authRoutes)
 app.route('/api/intake',    intakeRoutes)
@@ -143,15 +155,17 @@ app.route('/api/scorecards', scorecardsRoutes)
 app.route('/api/telehealth', telehealthRoutes)
 app.route('/api/erx',        erxRoutes)
 app.route('/api/ai',         aiRoutes)
+app.route('/api/pa',         paRoutes)
+app.route('/api/rcm',        rcmRoutes)
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (c) => {
   return c.json({
     status: 'ok',
     service: 'OculoFlow',
-    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx', '8a-ai-cds'],
+    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx', '8a-ai-cds', '8b-prior-auth', '9a-rcm'],
     timestamp: new Date().toISOString(),
-    version: '2.3.0',
+    version: '2.5.0',
 
   })
 })
@@ -435,6 +449,40 @@ app.get('/', (c) => {
         <div class="flex items-center gap-1.5 mt-3 text-xs text-indigo-400 font-medium">
           <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
           Open AI CDS →
+        </div>
+      </a>
+
+      <a href="/priorauth" class="group bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-violet-500 rounded-2xl p-5 transition-all duration-200 cursor-pointer">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-violet-500/20 flex items-center justify-center group-hover:bg-violet-500/30 transition-colors">
+            <i class="fas fa-clipboard-check text-violet-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-violet-400 uppercase tracking-wider">Phase 8B — Live</span>
+            <p class="text-sm font-semibold text-white">Prior Authorization</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">Submit PA requests to payers, track approval status, manage appeals, schedule peer-to-peer reviews, and monitor expiring authorizations.</p>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-violet-400 font-medium">
+          <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+          Open Prior Auth →
+        </div>
+      </a>
+
+      <a href="/rcm" class="group bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-sky-500 rounded-2xl p-5 transition-all duration-200 cursor-pointer">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-sky-500/20 flex items-center justify-center group-hover:bg-sky-500/30 transition-colors">
+            <i class="fas fa-dollar-sign text-sky-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-sky-400 uppercase tracking-wider">Phase 9A — Live</span>
+            <p class="text-sm font-semibold text-white">Revenue Cycle Management</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">Claims lifecycle management, payment posting, ERA/remittance processing, patient statements, payment plans, and AR aging dashboard.</p>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-sky-400 font-medium">
+          <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+          Open RCM →
         </div>
       </a>
     </div>

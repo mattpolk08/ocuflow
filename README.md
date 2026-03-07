@@ -2,7 +2,7 @@
 
 ## Project Overview
 - **Name**: OculoFlow
-- **Version**: 2.3.0
+- **Version**: 2.5.0
 - **Goal**: Full-stack ophthalmology EHR and practice management system built on Cloudflare Pages + Hono
 - **Stack**: TypeScript · Hono · Cloudflare Workers · KV Storage · Vite · Tailwind CSS (CDN) · Chart.js
 
@@ -22,6 +22,8 @@
 - **Telehealth**: …/telehealth
 - **eRx (E-Prescribing)**: …/erx
 - **AI Clinical Decision Support**: …/ai
+- **Prior Authorization**: …/priorauth
+- **Revenue Cycle Management**: …/rcm
 - **API Health**: …/api/health
 - **GitHub**: https://github.com/mattpolk08/ocuflow
 
@@ -164,6 +166,38 @@
 - Key prefix: `ai:insight:`, `ai:risk:`, `ai:note:`, `ai:seeded`
 - Tests: 31/31 smoke, **60/60 functional** ✅
 
+### Phase 8B — Automated Prior Authorization *(v2.4.0)*
+- End-to-end prior authorization lifecycle management from submission through appeal
+- **5 tabs**: Dashboard (PA activity overview), Requests (list + detail), Criteria (clinical criteria catalog), Payers, Settings
+- **Dashboard tab**: `totalActive`, `pendingSubmission`, `awaitingDecision`, `approved`, `denied`, `appealed`, `expiringSoon`, `avgDecisionDays`, `approvalRate`; recent activity list; urgency/status breakdown
+- **Requests tab**: filterable PA queue by status/payer/urgency + full detail pane with documents, notes, appeal workflow, peer-to-peer scheduling
+- **PA lifecycle**: `DRAFT` → `SUBMITTED` → `PENDING_INFO` → `UNDER_REVIEW` → `APPROVED` / `DENIED` → `APPEALED` → `APPEAL_APPROVED` / `APPEAL_DENIED`
+- **Document management**: attach clinical notes, operative reports, imaging, labs per request; `type`, `name`, `uploadedBy`, `sizeKb`
+- **Notes**: internal/external notes per request with `authorId`, `authorName`, `authorRole`, `isInternal`
+- **Appeals**: first/second level + external review; `appealType`, `reason`, `supportingDocuments`, `requestedBy`
+- **Peer-to-peer scheduling**: schedule clinician-to-payer review call; `scheduledDate`, `physicianName`, `physicianNpi`, `insuranceRepName`, `conferenceNumber`
+- **Criteria catalog**: payer-specific and universal PA criteria lookup; filter by `payerId` or `serviceCode`
+- Routes: `GET /priorauth`, `GET|POST|PATCH|DELETE /api/pa/*` (16 endpoints)
+- Seed: 6 PA requests across all status states; 8 criteria entries; 5 payers
+- Key prefix: `pa:req:`, `pa:idx`, `pa:seeded`
+- Tests: 27/27 smoke, **62/62 functional** ✅
+
+### Phase 9A — Revenue Cycle Management *(v2.5.0)*
+- Full claims lifecycle management with payment posting, ERA/remittance processing, patient statements, and payment plans
+- **5 tabs**: Overview (AR dashboard), Claims (list + detail), Remittance/ERA, Statements, Payment Plans
+- **Overview tab**: `totalCharges`, `totalCollected`, `totalOutstanding`, `collectionRate`, `cleanClaimRate`, `denialRate`, `avgDaysToPayment`, `claimsInFlight`; AR aging buckets (CURRENT/1-30/31-60/61-90/91-120/120+); top denial reasons with counts and amounts; payer mix breakdown; recent activity table
+- **Claims tab**: searchable/filterable claim queue (by patient, claim #, payer, status); full claim detail pane with claim lines, payments, denials, notes; inline payment posting and denial management; status update workflow
+- **Claim lifecycle**: `DRAFT` → `READY_TO_SUBMIT` → `SUBMITTED` → `ACKNOWLEDGED` → `PENDING` / `UNDER_REVIEW` → `PARTIAL_PAYMENT` → `PAID` / `DENIED` → `APPEALED` → `APPEAL_APPROVED` / `APPEAL_DENIED` / `VOIDED` / `WRITTEN_OFF`
+- **Payment posting**: amount, method (EFT/CHECK/CREDIT_CARD/CASH/PATIENT_PORTAL/ADJUSTMENT/WRITE_OFF), reference #, trace #, auto-calculates totalPaid and outstanding balance
+- **Denial management**: reason codes (12 denial types: NOT_COVERED, AUTHORIZATION_REQUIRED, MEDICAL_NECESSITY, etc.), description, appeal deadline tracking
+- **ERA/Remittance**: Electronic Remittance Advice records (RECEIVED → POSTED), EFT trace, check #, claims count
+- **Patient Statements**: generate/track statements (DRAFT → SENT → VIEWED → PAID / OVERDUE)
+- **Payment Plans**: installment plans with auto-generated payment schedule, SCHEDULED/PAID/MISSED per-payment tracking, ACTIVE/COMPLETED/DEFAULTED status
+- Routes: `GET /rcm`, `GET|POST|PATCH|DELETE /api/rcm/*` (20 endpoints)
+- Seed: 8 claims (PAID, PENDING, DENIED, DRAFT, PARTIAL_PAYMENT, APPEALED, WRITTEN_OFF, READY_TO_SUBMIT); 3 ERAs; 3 patient statements; 1 payment plan
+- Key prefix: `rcm:claim:`, `rcm:era:`, `rcm:stmt:`, `rcm:pp:`, `rcm:seeded`
+- Tests: 28/28 smoke, **87/87 functional** ✅
+
 ## API Summary
 
 | Module        | Base Path              | Key Endpoints                                                                         |
@@ -184,17 +218,19 @@
 | Telehealth    | /api/telehealth        | GET /dashboard, /visits(?filter=&providerId=), /visits/:id, /visits/:id/messages; POST /visits, /visits/:id/questionnaire, /visits/:id/review, /visits/:id/info-request, /visits/:id/messages; PATCH /visits/:id/status, /visits/:id/assign, /visits/:id/info-request/:irId |
 | eRx           | /api/erx               | GET /ping, /dashboard, /prescriptions(?patientId=&status=&providerId=), /prescriptions/:id, /formulary, /formulary/:id, /formulary/categories/list, /pharmacies, /pharmacies/:id, /pdmp(?patientId=), /allergies/:patientId; POST /prescriptions, /prescriptions/:id/sign, /prescriptions/:id/refill, /interactions/check, /pdmp/check, /allergies/:patientId; PATCH /prescriptions/:id, /prescriptions/:id/status |
 | AI CDS        | /api/ai                | GET /ping, /dashboard, /icd10(?category=), /icd10/categories, /icd10/:code, /interactions, /guidelines(?topic=&source=&q=), /guidelines/topics, /guidelines/:id, /guidelines/by-icd/:code, /risk(?patientId=&category=), /risk/categories, /insights(?type=&priority=&dismissed=), /notes; POST /icd10/suggest, /interactions/check, /guidelines/lookup, /risk/compute, /notes/generate; PATCH /insights/:id/dismiss |
+| Prior Auth    | /api/pa                | GET /ping, /dashboard, /requests(?status=&payerId=&urgency=), /requests/:id, /criteria(?payerId=&serviceCode=), /payers, /statuses; POST /requests, /requests/:id/documents, /requests/:id/notes, /requests/:id/appeal, /requests/:id/peer-to-peer; PATCH /requests/:id/status; DELETE /requests/:id |
+| RCM           | /api/rcm               | GET /ping, /dashboard, /claims(?status=&patientId=&payerId=), /claims/:id, /eras, /eras/:id, /statements(?patientId=), /statements/:id, /payment-plans(?patientId=), /payment-plans/:id, /statuses; POST /claims, /eras, /statements, /payment-plans, /claims/:id/payments, /claims/:id/denials, /claims/:id/notes; PATCH /claims/:id/status; DELETE /claims/:id |
 | Health        | /api/health            | GET — version, phases, timestamp                                                      |
 
 ## Data Architecture
 - **Storage**: Cloudflare Workers KV (`OCULOFLOW_KV` binding)
 - **Pattern**: In-memory seed guard + KV index key + individual record keys
-- **Key prefixes**: `patient:`, `appt:`, `exam:`, `sb:`, `optical:frame:`, `optical:order:`, `portal:session:`, `portal:appt-req:`, `portal:thread:`, `msg:thread:`, `msg:task:`, `msg:recall:`, `msg:staff:`, `comms:template:`, `comms:msg:`, `comms:rule:`, `comms:noshow:`, `comms:campaign:`, `sc:goal:`, `sc:seeded`, `th:visit:`, `th:idx`, `th:seeded`, `erx:rx:`, `erx:idx`, `erx:allergy:`, `erx:pdmp:`, `erx:seeded`, `ai:insight:`, `ai:risk:`, `ai:note:`, `ai:seeded`
+- **Key prefixes**: `patient:`, `appt:`, `exam:`, `sb:`, `optical:frame:`, `optical:order:`, `portal:session:`, `portal:appt-req:`, `portal:thread:`, `msg:thread:`, `msg:task:`, `msg:recall:`, `msg:staff:`, `comms:template:`, `comms:msg:`, `comms:rule:`, `comms:noshow:`, `comms:campaign:`, `sc:goal:`, `sc:seeded`, `th:visit:`, `th:idx`, `th:seeded`, `erx:rx:`, `erx:idx`, `erx:allergy:`, `erx:pdmp:`, `erx:seeded`, `ai:insight:`, `ai:risk:`, `ai:note:`, `ai:seeded`, `pa:req:`, `pa:idx`, `pa:seeded`, `rcm:claim:`, `rcm:era:`, `rcm:stmt:`, `rcm:pp:`, `rcm:seeded`
 - **Demo mode**: All data seeded automatically on first KV read
 - **Scorecards**: KPIs computed deterministically on-the-fly (no KV writes); only goals use KV
 
 ## User Guide
-1. **Home** `/` — Phase overview with links to all 15 modules
+1. **Home** `/` — Phase overview with links to all 17 modules
 2. **Intake** `/intake?demo=true` — Start patient intake wizard
 3. **Dashboard** `/dashboard` — Command center, today's schedule, flow board
 4. **Patients** `/patients` — Search/register patients, verify insurance
@@ -210,6 +246,8 @@
 14. **Telehealth** `/telehealth` — Click "New Visit" or select from sidebar → view queue → open detail pane → questionnaire / review / messages; filter queue by PENDING / URGENT / LIVE
 15. **eRx** `/erx` — Dashboard → Prescriptions (write Rx, sign, manage refills) → Formulary (drug catalog) → PDMP (monitoring); use interaction-check before signing
 16. **AI CDS** `/ai` — Dashboard → ICD-10 (catalog + smart suggest) → Guidelines (lookup) → Risk Scoring (compute by category) → Notes (AI SOAP generation)
+17. **Prior Auth** `/priorauth` — Dashboard → Requests (submit/manage PAs, upload docs, add notes, file appeals, schedule P2P) → Criteria (lookup) → Payers
+18. **RCM** `/rcm` — Overview (AR dashboard, aging buckets) → Claims (post payments, add denials, update status) → Remittance (ERA records) → Statements → Payment Plans
 
 ## Keyboard Shortcuts
 - `N` — New item (superbill, order depending on page)
@@ -220,13 +258,13 @@
 ## Deployment
 - **Platform**: Cloudflare Pages (Hono SSR Workers)
 - **Status**: ✅ Active (sandbox dev server)
-- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~826 KB, 94 modules)
+- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~919 KB, 100 modules)
 - **Start**: `pm2 start ecosystem.config.cjs`
-- **Last Updated**: 2026-03-07 (v2.3.0)
+- **Last Updated**: 2026-03-07 (v2.5.0)
 
 ## Pending / Next Steps
-- **Phase 8A** — AI Clinical Decision Support: ICD-10 code suggestions, drug interaction alerts, clinical guidelines lookup
-- **Fix**: `isNewPatient` duplicate key warning in `src/lib/patients.ts:36`
+- **Phase 9B** — Patient Engagement & Loyalty (care gap detection, recall campaigns, satisfaction surveys)
+- **Phase 10A** — Analytics & Business Intelligence (payer contract analysis, provider productivity benchmarks, population health dashboards)
 - **Enhancement**: Real login flow for portal (patient account creation / password reset)
 - **Enhancement**: File attachment support in clinical messaging threads
 - **Enhancement**: Webhooks / real Twilio/SendGrid integration for outbound reminders
