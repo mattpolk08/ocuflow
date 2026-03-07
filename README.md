@@ -2,7 +2,7 @@
 
 ## Project Overview
 - **Name**: OculoFlow
-- **Version**: 1.6.0
+- **Version**: 1.7.0
 - **Goal**: Full-stack ophthalmology EHR and practice management system built on Cloudflare Pages + Hono
 - **Stack**: TypeScript · Hono · Cloudflare Workers · KV Storage · Vite · Tailwind CSS (CDN) · Chart.js
 
@@ -15,6 +15,7 @@
 - **Billing**: …/billing
 - **Reports**: …/reports
 - **Optical**: …/optical
+- **Patient Portal**: …/portal
 - **API Health**: …/api/health
 - **GitHub**: https://github.com/mattpolk08/ocuflow
 
@@ -62,6 +63,15 @@
 - Seed: 6 frames, 5 lenses, 3 contact lenses, 2 Rx, 3 orders
 - Order workflow: DRAFT → APPROVED → SENT_TO_LAB → IN_PRODUCTION → QC → RECEIVED → READY_FOR_PICKUP → DISPENSED
 
+### Phase 4A — Patient Portal
+- Patient-facing self-service portal with session-based authentication
+- Login modes: demo (any patient by ID) and real (last name + DOB)
+- **6 tabs**: Overview (dashboard), Appointments (request/view), Records (Rx/exam history), Optical (order tracker), Billing (balance), Messages (secure threads)
+- Routes: `GET /portal`, `GET|POST /api/portal/*` (12 endpoints)
+- Auth: `POST /api/portal/auth/demo` → `sessionId` → pass as `X-Portal-Session` header
+- Seed data: 3 message threads, linked to existing patients/Rx/optical orders
+- "Staff App" back-link in header; portal nav is tab-based (no cross-page navigation)
+
 ## API Summary
 
 | Module        | Base Path           | Key Endpoints                                               |
@@ -75,12 +85,13 @@
 | Billing       | /api/billing        | GET /superbills, /ar, /cpt; POST /superbills/:id/status     |
 | Reports       | /api/reports        | GET /dashboard, /revenue, /providers, /payer-mix, /ar-aging |
 | Optical       | /api/optical        | GET /inventory, /orders, /frames, /lenses, /contact-lenses  |
+| Portal        | /api/portal         | POST /auth/demo, GET /auth/session, /dashboard, /appointments, /messages, /rx, /optical-orders, /balance |
 | Health        | /api/health         | GET — version, phases, timestamp                            |
 
 ## Data Architecture
 - **Storage**: Cloudflare Workers KV (`OCULOFLOW_KV` binding)
 - **Pattern**: In-memory seed guard + KV index key + individual record keys
-- **Key prefixes**: `patient:`, `appt:`, `exam:`, `sb:`, `optical:frame:`, `optical:order:`, etc.
+- **Key prefixes**: `patient:`, `appt:`, `exam:`, `sb:`, `optical:frame:`, `optical:order:`, `portal:session:`, `portal:appt-req:`, `portal:thread:`, etc.
 - **Demo mode**: All data seeded automatically on first KV read
 
 ## User Guide
@@ -93,6 +104,7 @@
 7. **Billing** `/billing` — Build superbills, manage claims queue, post payments
 8. **Reports** `/reports` — Analytics dashboard with date-range picker
 9. **Optical** `/optical` — Manage frames/lenses/CL inventory, track lab orders, view Rx
+10. **Patient Portal** `/portal` — Patient self-service: hit "Demo Login", then navigate Overview / Appointments / Records / Optical / Billing / Messages tabs
 
 ## Keyboard Shortcuts
 - `N` — New item (superbill, order depending on page)
@@ -102,12 +114,14 @@
 ## Deployment
 - **Platform**: Cloudflare Pages (Hono SSR Workers)
 - **Status**: ✅ Active (sandbox dev server)
-- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~423 KB, 73 modules)
+- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~470 KB, 76 modules)
 - **Start**: `pm2 start ecosystem.config.cjs`
 - **Last Updated**: 2026-03-07
 
 ## Pending / Next Steps
-- **Phase 3B** — Patient Portal: self-service appointment requests, Rx/glasses status, exam summaries, balance/payment
-- **Phase 3C** — Secure Clinical Messaging: inter-staff messages, task assignments, recall lists
+- **Phase 4B** — Clinical Messaging & Task Board: secure inter-staff messages, task assignments, recall lists, priority inbox
+- **Phase 4C** — Telehealth / Video Visit: async patient questionnaire + provider review workflow
+- **Phase 5A** — Provider Analytics & Benchmarking: individual provider scorecards, patient outcomes tracking
 - **Fix**: `isNewPatient` duplicate key warning in `src/lib/patients.ts:36`
 - **Fix**: Appointment type enum exposure in schedule UI (show valid types in UI dropdown)
+- **Enhancement**: Real login flow for portal (patient account creation / password reset)
