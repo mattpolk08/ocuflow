@@ -2,7 +2,7 @@
 
 ## Project Overview
 - **Name**: OculoFlow
-- **Version**: 1.7.0
+- **Version**: 1.8.0
 - **Goal**: Full-stack ophthalmology EHR and practice management system built on Cloudflare Pages + Hono
 - **Stack**: TypeScript · Hono · Cloudflare Workers · KV Storage · Vite · Tailwind CSS (CDN) · Chart.js
 
@@ -16,6 +16,7 @@
 - **Reports**: …/reports
 - **Optical**: …/optical
 - **Patient Portal**: …/portal
+- **Clinical Messaging**: …/messaging
 - **API Health**: …/api/health
 - **GitHub**: https://github.com/mattpolk08/ocuflow
 
@@ -72,6 +73,16 @@
 - Seed data: 3 message threads, linked to existing patients/Rx/optical orders
 - "Staff App" back-link in header; portal nav is tab-based (no cross-page navigation)
 
+### Phase 5A — Clinical Messaging & Task Board
+- 3-pane staff inbox with priority-coded threads (STAT/URGENT/Normal)
+- **Views**: Inbox, STAT messages, Patient Care, Referrals, Billing, Archived
+- **Task Board**: All tasks, My tasks, Overdue — with status transitions, comments, due dates
+- **Recall List**: Patient recall tracking with status workflow (PENDING→CONTACTED→SCHEDULED)
+- Routes: `GET /messaging`, `GET|POST|PATCH /api/messaging/*` (18 endpoints)
+- Staff: 6 seeded (Dr. Chen, Dr. Patel, Dr. Torres, Maria Gonzalez, James Okafor, Lisa Park)
+- Seed: 5 threads (19 messages), 8 tasks, 5 recalls; dashboard counters
+- Features: reply (Ctrl+Enter), mark-read, pin/archive, inline status buttons, task comments, recall contact logging, live search/filter
+
 ## API Summary
 
 | Module        | Base Path           | Key Endpoints                                               |
@@ -86,12 +97,13 @@
 | Reports       | /api/reports        | GET /dashboard, /revenue, /providers, /payer-mix, /ar-aging |
 | Optical       | /api/optical        | GET /inventory, /orders, /frames, /lenses, /contact-lenses  |
 | Portal        | /api/portal         | POST /auth/demo, GET /auth/session, /dashboard, /appointments, /messages, /rx, /optical-orders, /balance |
+| Messaging     | /api/messaging      | GET /dashboard, /staff, /threads, /threads/:id/messages; POST /threads, /threads/:id/reply, /threads/:id/read; PATCH /threads/:id/archive, /pin; GET|POST|PATCH /tasks, /recalls |
 | Health        | /api/health         | GET — version, phases, timestamp                            |
 
 ## Data Architecture
 - **Storage**: Cloudflare Workers KV (`OCULOFLOW_KV` binding)
 - **Pattern**: In-memory seed guard + KV index key + individual record keys
-- **Key prefixes**: `patient:`, `appt:`, `exam:`, `sb:`, `optical:frame:`, `optical:order:`, `portal:session:`, `portal:appt-req:`, `portal:thread:`, etc.
+- **Key prefixes**: `patient:`, `appt:`, `exam:`, `sb:`, `optical:frame:`, `optical:order:`, `portal:session:`, `portal:appt-req:`, `portal:thread:`, `msg:thread:`, `msg:task:`, `msg:recall:`, `msg:staff:`, etc.
 - **Demo mode**: All data seeded automatically on first KV read
 
 ## User Guide
@@ -105,6 +117,7 @@
 8. **Reports** `/reports` — Analytics dashboard with date-range picker
 9. **Optical** `/optical` — Manage frames/lenses/CL inventory, track lab orders, view Rx
 10. **Patient Portal** `/portal` — Patient self-service: hit "Demo Login", then navigate Overview / Appointments / Records / Optical / Billing / Messages tabs
+11. **Clinical Messaging** `/messaging` — Staff inbox: browse threads, reply, manage tasks (create/complete/comment), work recall list
 
 ## Keyboard Shortcuts
 - `N` — New item (superbill, order depending on page)
@@ -114,14 +127,14 @@
 ## Deployment
 - **Platform**: Cloudflare Pages (Hono SSR Workers)
 - **Status**: ✅ Active (sandbox dev server)
-- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~470 KB, 76 modules)
+- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~529 KB, 79 modules)
 - **Start**: `pm2 start ecosystem.config.cjs`
 - **Last Updated**: 2026-03-07
 
 ## Pending / Next Steps
-- **Phase 4B** — Clinical Messaging & Task Board: secure inter-staff messages, task assignments, recall lists, priority inbox
-- **Phase 4C** — Telehealth / Video Visit: async patient questionnaire + provider review workflow
-- **Phase 5A** — Provider Analytics & Benchmarking: individual provider scorecards, patient outcomes tracking
+- **Phase 5B** — Provider Scorecards & Benchmarking: individual KPIs, patient volume trends, exam efficiency, revenue per provider
+- **Phase 5C** — Telehealth / Async Video Visit: patient pre-visit questionnaire + provider review workflow
+- **Phase 6A** — Appointment Reminders & Patient Communications: automated SMS/email reminders, 2-way confirmation
 - **Fix**: `isNewPatient` duplicate key warning in `src/lib/patients.ts:36`
-- **Fix**: Appointment type enum exposure in schedule UI (show valid types in UI dropdown)
 - **Enhancement**: Real login flow for portal (patient account creation / password reset)
+- **Enhancement**: File attachment support in messaging threads
