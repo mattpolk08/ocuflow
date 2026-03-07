@@ -2,12 +2,13 @@
 
 ## Project Overview
 - **Name**: OculoFlow
-- **Version**: 2.5.0
+- **Version**: 2.6.0
 - **Goal**: Full-stack ophthalmology EHR and practice management system built on Cloudflare Pages + Hono
 - **Stack**: TypeScript · Hono · Cloudflare Workers · KV Storage · Vite · Tailwind CSS (CDN) · Chart.js
 
 ## Live URLs (Sandbox)
 - **Home**: https://3000-iifn0r2yzm6jt3tc1fv0q-5634da27.sandbox.novita.ai/
+- **Login**: …/login
 - **Dashboard**: …/dashboard
 - **Patients**: …/patients
 - **Schedule**: …/schedule
@@ -182,7 +183,7 @@
 - Key prefix: `pa:req:`, `pa:idx`, `pa:seeded`
 - Tests: 27/27 smoke, **62/62 functional** ✅
 
-### Phase 9A — Revenue Cycle Management *(v2.5.0)*
+### Phase 9A — Revenue Cycle Management *(v2.6.0)*
 - Full claims lifecycle management with payment posting, ERA/remittance processing, patient statements, and payment plans
 - **5 tabs**: Overview (AR dashboard), Claims (list + detail), Remittance/ERA, Statements, Payment Plans
 - **Overview tab**: `totalCharges`, `totalCollected`, `totalOutstanding`, `collectionRate`, `cleanClaimRate`, `denialRate`, `avgDaysToPayment`, `claimsInFlight`; AR aging buckets (CURRENT/1-30/31-60/61-90/91-120/120+); top denial reasons with counts and amounts; payer mix breakdown; recent activity table
@@ -198,11 +199,28 @@
 - Key prefix: `rcm:claim:`, `rcm:era:`, `rcm:stmt:`, `rcm:pp:`, `rcm:seeded`
 - Tests: 28/28 smoke, **87/87 functional** ✅
 
-## API Summary
+### Phase A1 — Authentication & Authorization *(v2.6.0)*
+- Full staff authentication system with JWT (HS256), PBKDF2 password hashing, KV session store, and role-based access control
+- **Staff roles**: ADMIN · PROVIDER · BILLING · FRONT_DESK · NURSE · OPTICAL (with permission matrix)
+- **Login page** (`/login`): email/password form, password visibility toggle, demo credentials panel (auto-fills form), redirect-after-login, shake animation on error
+- **Token pair**: 8-hour access token + 30-day refresh token (both HS256 JWTs with unique `jti` for revocation)
+- **Token refresh**: silent `POST /api/auth/refresh` with session validation; access token renewed without re-login
+- **Logout**: revokes refresh token via KV revocation list + invalidates KV session
+- **PBKDF2**: 100,000 iterations, SHA-256, 16-byte random salt; constant-time hash comparison
+- **`requireAuth` middleware**: validates Bearer JWT, checks revocation list, injects `c.var.auth` (AuthContext)
+- **`requireRole(…roles)` factory**: ADMIN always passes; role mismatch → 403
+- **Route protection**: all 17 staff API route groups (`/api/dashboard`, `/api/patients`, … `/api/rcm`) require JWT; role guards on billing/reports/optical/erx/rcm
+- **`/api/auth/users`** CRUD: list (ADMIN), create (ADMIN), password change (self or ADMIN), activate/deactivate (ADMIN)
+- **Seed users** (6): admin@oculoflow.com / Admin@123!, emily.chen@… / Provider@123!, raj.patel@… / Provider@123!, billing@… / Billing@123!, frontdesk@… / FrontDesk@123!, optical@… / Optical@123!
+- **`/api/auth/demo-credentials`**: returns seed credentials when `DEMO_MODE=true` (never exposed in production)
+- **`auth-nav.js`** shared frontend script: injected into all 16 staff pages — redirects unauthenticated users to `/login?next=…`, wraps all API calls with `oFetch()` (adds Bearer header, handles 401 → silent refresh → redirect), injects user role chip and logout button into page nav
+- Routes: `GET /login`, `POST /api/auth/login|logout|refresh`, `GET /api/auth/me|users|demo-credentials|seed`, `POST /api/auth/users`, `PATCH /api/auth/users/:id/password|active`
+- Key prefixes: `auth:user:`, `auth:email:`, `auth:session:`, `auth:revoked:`, `auth:user:idx`, `auth:seeded`
+- Tests: **Smoke 26/26**, **Functional 37/37** ✅
 
 | Module        | Base Path              | Key Endpoints                                                                         |
 |---------------|------------------------|---------------------------------------------------------------------------------------|
-| Auth          | /api/auth              | POST /login, /logout, /session                                                        |
+| **Auth**      | /api/auth              | POST /login, /logout, /refresh; GET /me, /users, /demo-credentials; POST /users; PATCH /users/:id/password\|active |
 | Intake        | /api/intake            | POST /start, /verify-otp, /insurance, /sign                                           |
 | Dashboard     | /api/dashboard         | GET /summary, /appointments, /flow                                                    |
 | Patients      | /api/patients          | GET /, /:id, POST /, PUT /:id, POST /:id/insurance                                    |
@@ -225,7 +243,7 @@
 ## Data Architecture
 - **Storage**: Cloudflare Workers KV (`OCULOFLOW_KV` binding)
 - **Pattern**: In-memory seed guard + KV index key + individual record keys
-- **Key prefixes**: `patient:`, `appt:`, `exam:`, `sb:`, `optical:frame:`, `optical:order:`, `portal:session:`, `portal:appt-req:`, `portal:thread:`, `msg:thread:`, `msg:task:`, `msg:recall:`, `msg:staff:`, `comms:template:`, `comms:msg:`, `comms:rule:`, `comms:noshow:`, `comms:campaign:`, `sc:goal:`, `sc:seeded`, `th:visit:`, `th:idx`, `th:seeded`, `erx:rx:`, `erx:idx`, `erx:allergy:`, `erx:pdmp:`, `erx:seeded`, `ai:insight:`, `ai:risk:`, `ai:note:`, `ai:seeded`, `pa:req:`, `pa:idx`, `pa:seeded`, `rcm:claim:`, `rcm:era:`, `rcm:stmt:`, `rcm:pp:`, `rcm:seeded`
+- **Key prefixes**: `auth:user:`, `auth:email:`, `auth:session:`, `auth:revoked:`, `auth:user:idx`, `auth:seeded`, `patient:`, `appt:`, `exam:`, `sb:`, `optical:frame:`, `optical:order:`, `portal:session:`, `portal:appt-req:`, `portal:thread:`, `msg:thread:`, `msg:task:`, `msg:recall:`, `msg:staff:`, `comms:template:`, `comms:msg:`, `comms:rule:`, `comms:noshow:`, `comms:campaign:`, `sc:goal:`, `sc:seeded`, `th:visit:`, `th:idx`, `th:seeded`, `erx:rx:`, `erx:idx`, `erx:allergy:`, `erx:pdmp:`, `erx:seeded`, `ai:insight:`, `ai:risk:`, `ai:note:`, `ai:seeded`, `pa:req:`, `pa:idx`, `pa:seeded`, `rcm:claim:`, `rcm:era:`, `rcm:stmt:`, `rcm:pp:`, `rcm:seeded`
 - **Demo mode**: All data seeded automatically on first KV read
 - **Scorecards**: KPIs computed deterministically on-the-fly (no KV writes); only goals use KV
 
@@ -260,7 +278,7 @@
 - **Status**: ✅ Active (sandbox dev server)
 - **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~919 KB, 100 modules)
 - **Start**: `pm2 start ecosystem.config.cjs`
-- **Last Updated**: 2026-03-07 (v2.5.0)
+- **Last Updated**: 2026-03-07
 
 ## Pending / Next Steps
 - **Phase 9B** — Patient Engagement & Loyalty (care gap detection, recall campaigns, satisfaction surveys)
