@@ -10,6 +10,7 @@
 // Phase 3A: Optical Dispensary
 // Phase 4A: Patient Portal
 // Phase 5A: Clinical Messaging & Task Board
+// Phase 6A: Appointment Reminders & Communications
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Hono } from 'hono'
@@ -28,6 +29,7 @@ import reportsRoutes   from './routes/reports'
 import opticalRoutes   from './routes/optical'
 import portalRoutes      from './routes/portal'
 import messagingRoutes   from './routes/messaging'
+import remindersRoutes   from './routes/reminders'
 // Import HTML as raw string (Vite ?raw import)
 import intakeHtml    from '../public/intake.html?raw'
 import dashboardHtml from '../public/dashboard.html?raw'
@@ -39,6 +41,7 @@ import reportsHtml   from '../public/reports.html?raw'
 import opticalHtml   from '../public/optical.html?raw'
 import portalHtml      from '../public/portal.html?raw'
 import messagingHtml   from '../public/messaging.html?raw'
+import remindersHtml   from '../public/reminders.html?raw'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
@@ -96,6 +99,9 @@ app.get('/portal', (c) => c.html(portalHtml))
 // ── Clinical Messaging & Task Board ──────────────────────────────────────────
 app.get('/messaging', (c) => c.html(messagingHtml))
 
+// ── Reminders & Communications ────────────────────────────────────────────────
+app.get('/reminders', (c) => c.html(remindersHtml))
+
 // ── API Routes ────────────────────────────────────────────────────────────────
 app.route('/api/auth',      authRoutes)
 app.route('/api/intake',    intakeRoutes)
@@ -108,15 +114,16 @@ app.route('/api/reports',   reportsRoutes)
 app.route('/api/optical',   opticalRoutes)
 app.route('/api/portal',     portalRoutes)
 app.route('/api/messaging',  messagingRoutes)
+app.route('/api/reminders',  remindersRoutes)
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (c) => {
   return c.json({
     status: 'ok',
     service: 'OculoFlow',
-    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging'],
+    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders'],
     timestamp: new Date().toISOString(),
-    version: '1.8.0',
+    version: '1.9.0',
   })
 })
 
@@ -314,6 +321,23 @@ app.get('/', (c) => {
         <div class="flex items-center gap-1.5 mt-3 text-xs text-indigo-400 font-medium">
           <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
           Open Messaging →
+        </div>
+      </a>
+
+      <a href="/reminders" class="group bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-indigo-500 rounded-2xl p-5 transition-all duration-200 cursor-pointer">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center group-hover:bg-indigo-500/30 transition-colors">
+            <i class="fas fa-bell text-indigo-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Phase 6A — Live</span>
+            <p class="text-sm font-semibold text-white">Reminders & Comms</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">Automated SMS/email reminders, 2-way patient confirmation, no-show tracking, outreach campaigns, and message templates.</p>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-indigo-400 font-medium">
+          <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+          Open Comms Hub →
         </div>
       </a>
     </div>
