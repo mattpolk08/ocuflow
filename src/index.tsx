@@ -25,7 +25,7 @@ import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { secureHeaders } from 'hono/secure-headers'
 import { serveStatic } from 'hono/cloudflare-workers'
-import { requireAuth, requireRole } from './middleware/auth'
+import { requireAuth, requireRole, rateLimitMiddleware, auditMiddleware } from './middleware/auth'
 import authRoutes      from './routes/auth'
 import intakeRoutes    from './routes/intake'
 import dashboardRoutes from './routes/dashboard'
@@ -86,6 +86,8 @@ app.use('/api/*', cors({
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
 }))
+// Per-IP rate limiting (300 req/min) — Phase A2
+app.use('/api/*', rateLimitMiddleware)
 
 // ── Static Assets ─────────────────────────────────────────────────────────────
 app.use('/static/*', serveStatic({ root: './' }))
@@ -152,53 +154,53 @@ app.route('/api/auth',      authRoutes)
 // Patient intake — public (patient-facing)
 app.route('/api/intake',    intakeRoutes)
 
-// Staff-only API routes — protected by JWT
-app.use('/api/dashboard/*', requireAuth)
+// Staff-only API routes — protected by JWT + PHI audit logging
+app.use('/api/dashboard/*', requireAuth, auditMiddleware)
 app.route('/api/dashboard', dashboardRoutes)
 
-app.use('/api/patients/*',  requireAuth)
+app.use('/api/patients/*',  requireAuth, auditMiddleware)
 app.route('/api/patients',  patientRoutes)
 
-app.use('/api/schedule/*',  requireAuth)
+app.use('/api/schedule/*',  requireAuth, auditMiddleware)
 app.route('/api/schedule',  scheduleRoutes)
 
-app.use('/api/exams/*',     requireAuth)
+app.use('/api/exams/*',     requireAuth, auditMiddleware)
 app.route('/api/exams',     examRoutes)
 
-app.use('/api/billing/*',   requireAuth, requireRole('BILLING', 'ADMIN', 'PROVIDER'))
+app.use('/api/billing/*',   requireAuth, requireRole('BILLING', 'ADMIN', 'PROVIDER'), auditMiddleware)
 app.route('/api/billing',   billingRoutes)
 
-app.use('/api/reports/*',   requireAuth, requireRole('BILLING', 'ADMIN', 'PROVIDER'))
+app.use('/api/reports/*',   requireAuth, requireRole('BILLING', 'ADMIN', 'PROVIDER'), auditMiddleware)
 app.route('/api/reports',   reportsRoutes)
 
-app.use('/api/optical/*',   requireAuth, requireRole('OPTICAL', 'ADMIN', 'FRONT_DESK', 'PROVIDER'))
+app.use('/api/optical/*',   requireAuth, requireRole('OPTICAL', 'ADMIN', 'FRONT_DESK', 'PROVIDER'), auditMiddleware)
 app.route('/api/optical',   opticalRoutes)
 
-app.use('/api/portal/*',    requireAuth)
+app.use('/api/portal/*',    requireAuth, auditMiddleware)
 app.route('/api/portal',     portalRoutes)
 
-app.use('/api/messaging/*', requireAuth)
+app.use('/api/messaging/*', requireAuth, auditMiddleware)
 app.route('/api/messaging',  messagingRoutes)
 
-app.use('/api/reminders/*', requireAuth)
+app.use('/api/reminders/*', requireAuth, auditMiddleware)
 app.route('/api/reminders',  remindersRoutes)
 
-app.use('/api/scorecards/*', requireAuth)
+app.use('/api/scorecards/*', requireAuth, auditMiddleware)
 app.route('/api/scorecards', scorecardsRoutes)
 
-app.use('/api/telehealth/*', requireAuth)
+app.use('/api/telehealth/*', requireAuth, auditMiddleware)
 app.route('/api/telehealth', telehealthRoutes)
 
-app.use('/api/erx/*',        requireAuth, requireRole('PROVIDER', 'ADMIN', 'NURSE'))
+app.use('/api/erx/*',        requireAuth, requireRole('PROVIDER', 'ADMIN', 'NURSE'), auditMiddleware)
 app.route('/api/erx',        erxRoutes)
 
-app.use('/api/ai/*',         requireAuth)
+app.use('/api/ai/*',         requireAuth, auditMiddleware)
 app.route('/api/ai',         aiRoutes)
 
-app.use('/api/pa/*',         requireAuth)
+app.use('/api/pa/*',         requireAuth, auditMiddleware)
 app.route('/api/pa',         paRoutes)
 
-app.use('/api/rcm/*',        requireAuth, requireRole('BILLING', 'ADMIN', 'PROVIDER'))
+app.use('/api/rcm/*',        requireAuth, requireRole('BILLING', 'ADMIN', 'PROVIDER'), auditMiddleware)
 app.route('/api/rcm',        rcmRoutes)
 
 // ── Health Check ──────────────────────────────────────────────────────────────
@@ -206,9 +208,9 @@ app.get('/api/health', (c) => {
   return c.json({
     status: 'ok',
     service: 'OculoFlow',
-    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx', '8a-ai-cds', '8b-prior-auth', '9a-rcm', 'a1-auth'],
+    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx', '8a-ai-cds', '8b-prior-auth', '9a-rcm', 'a1-auth', 'a2-audit-hipaa', 'a3-live-deploy'],
     timestamp: new Date().toISOString(),
-    version: '2.6.0',
+    version: '2.7.0',
 
   })
 })

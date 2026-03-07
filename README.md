@@ -2,7 +2,7 @@
 
 ## Project Overview
 - **Name**: OculoFlow
-- **Version**: 2.6.0
+- **Version**: 2.7.0
 - **Goal**: Full-stack ophthalmology EHR and practice management system built on Cloudflare Pages + Hono
 - **Stack**: TypeScript · Hono · Cloudflare Workers · KV Storage · Vite · Tailwind CSS (CDN) · Chart.js
 
@@ -183,7 +183,7 @@
 - Key prefix: `pa:req:`, `pa:idx`, `pa:seeded`
 - Tests: 27/27 smoke, **62/62 functional** ✅
 
-### Phase 9A — Revenue Cycle Management *(v2.6.0)*
+### Phase 9A — Revenue Cycle Management *(v2.5.0)*
 - Full claims lifecycle management with payment posting, ERA/remittance processing, patient statements, and payment plans
 - **5 tabs**: Overview (AR dashboard), Claims (list + detail), Remittance/ERA, Statements, Payment Plans
 - **Overview tab**: `totalCharges`, `totalCollected`, `totalOutstanding`, `collectionRate`, `cleanClaimRate`, `denialRate`, `avgDaysToPayment`, `claimsInFlight`; AR aging buckets (CURRENT/1-30/31-60/61-90/91-120/120+); top denial reasons with counts and amounts; payer mix breakdown; recent activity table
@@ -217,6 +217,25 @@
 - Routes: `GET /login`, `POST /api/auth/login|logout|refresh`, `GET /api/auth/me|users|demo-credentials|seed`, `POST /api/auth/users`, `PATCH /api/auth/users/:id/password|active`
 - Key prefixes: `auth:user:`, `auth:email:`, `auth:session:`, `auth:revoked:`, `auth:user:idx`, `auth:seeded`
 - Tests: **Smoke 26/26**, **Functional 37/37** ✅
+
+### Phase A2 — Audit Logging & HIPAA Controls *(v2.7.0)*
+- **HIPAA §164.312(b) Audit Log**: every PHI read/write and auth event recorded in KV (6-year TTL); events: `AUTH_LOGIN`, `AUTH_LOGIN_FAILED`, `AUTH_LOCKED_OUT`, `AUTH_LOGOUT`, `AUTH_TOKEN_REFRESH`, `PHI_READ`, `PHI_CREATE`, `PHI_UPDATE`, `PHI_DELETE`, `ACCESS_DENIED`
+- **Audit record fields**: `id`, `timestamp`, `event`, `userId`, `userEmail`, `userRole`, `resource`, `resourceId`, `action`, `outcome`, `ip`, `userAgent`, `detail` (no raw PHI in detail)
+- **Login lockout**: 5 failed attempts per email in 15-min window → 15-min lockout (stored in KV); automatic unlock after window expires
+- **API Rate limiting**: per-IP sliding-window counter (300 req/min); `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` headers on all API responses; 429 + `retryAfter` on violation; `/api/health` excluded for monitoring bypass
+- **KV minimum TTL compliance**: all rate-limit KV writes enforce ≥60s TTL (Cloudflare requirement)
+- **`GET /api/auth/audit`** (ADMIN only): query audit log with filters `?event=`, `?resource=`, `?userId=`, `?limit=` (max 500); returns last 5,000 records newest-first
+- **`auditMiddleware`**: auto-records PHI access on every protected route (event determined by HTTP method); writes AFTER handler completes to capture HTTP status as outcome
+- **`rateLimitMiddleware`**: applied globally to `/api/*`; skips health + static endpoints
+- Key prefixes: `audit:log:`, `audit:idx`, `ratelimit:login:`, `ratelimit:api:`
+- Tests: **Smoke 21/21** ✅
+
+### Phase A3 — Live Cloudflare Deployment *(v2.7.0)*
+- **Production KV namespace** `OCULOFLOW_KV` created (`id: 3de6133cdd914fa7b9b6eea4142322e0`); bound to Pages project for both production and preview environments
+- **`JWT_SECRET`** stored as Cloudflare Pages encrypted secret (`wrangler pages secret put`)
+- **`DEMO_MODE=true`** and `PRACTICE_NAME` set as `vars` in `wrangler.jsonc`
+- **Deployed** to Cloudflare Pages at **https://oculoflow.pages.dev** (global edge network)
+- All 19 pages return HTTP 200 on live; JWT auth, KV session storage, audit logging all verified on live production
 
 | Module        | Base Path              | Key Endpoints                                                                         |
 |---------------|------------------------|---------------------------------------------------------------------------------------|
@@ -274,14 +293,19 @@
 - `Ctrl+Enter` — Send reply (messaging page)
 
 ## Deployment
-- **Platform**: Cloudflare Pages (Hono SSR Workers)
-- **Status**: ✅ Active (sandbox dev server)
-- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~919 KB, 100 modules)
-- **Start**: `pm2 start ecosystem.config.cjs`
+- **Platform**: Cloudflare Pages (Hono SSR Workers + KV Storage)
+- **Status**: ✅ Live at **https://oculoflow.pages.dev**
+- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~942 KB, 105 modules)
+- **Start (local)**: `pm2 start ecosystem.config.cjs`
+- **Deploy**: `npm run build && npx wrangler pages deploy dist --project-name oculoflow`
+- **KV Namespace**: `OCULOFLOW_KV` (id: 3de6133cdd914fa7b9b6eea4142322e0)
+- **Secrets**: `JWT_SECRET` (set via `wrangler pages secret put`)
 - **Last Updated**: 2026-03-07
+- **Version**: 2.7.0
 
 ## Pending / Next Steps
 - **Phase 9B** — Patient Engagement & Loyalty (care gap detection, recall campaigns, satisfaction surveys)
+- **Phase A4** — Multi-Factor Authentication (TOTP/email OTP for staff login, trusted-device management)
 - **Phase 10A** — Analytics & Business Intelligence (payer contract analysis, provider productivity benchmarks, population health dashboards)
 - **Enhancement**: Real login flow for portal (patient account creation / password reset)
 - **Enhancement**: File attachment support in clinical messaging threads
