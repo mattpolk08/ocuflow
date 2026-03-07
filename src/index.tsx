@@ -5,6 +5,7 @@
 // Phase 1B: Patient Registration & Insurance Verification
 // Phase 1C: Scheduling Engine
 // Phase 1D: Exam Record
+// Phase 2A: Billing & Claims
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Hono } from 'hono'
@@ -18,12 +19,14 @@ import dashboardRoutes from './routes/dashboard'
 import patientRoutes   from './routes/patients'
 import scheduleRoutes  from './routes/scheduling'
 import examRoutes      from './routes/exams'
+import billingRoutes   from './routes/billing'
 // Import HTML as raw string (Vite ?raw import)
 import intakeHtml    from '../public/intake.html?raw'
 import dashboardHtml from '../public/dashboard.html?raw'
 import patientsHtml  from '../public/patients.html?raw'
 import scheduleHtml  from '../public/schedule.html?raw'
 import examHtml      from '../public/exam.html?raw'
+import billingHtml   from '../public/billing.html?raw'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
@@ -66,6 +69,9 @@ app.get('/schedule', (c) => c.html(scheduleHtml))
 app.get('/exam', (c) => c.html(examHtml))
 app.get('/exam/:id', (c) => c.html(examHtml))
 
+// ── Billing & Claims ─────────────────────────────────────────────────────────
+app.get('/billing', (c) => c.html(billingHtml))
+
 // ── API Routes ────────────────────────────────────────────────────────────────
 app.route('/api/auth',      authRoutes)
 app.route('/api/intake',    intakeRoutes)
@@ -73,15 +79,16 @@ app.route('/api/dashboard', dashboardRoutes)
 app.route('/api/patients',  patientRoutes)
 app.route('/api/schedule',  scheduleRoutes)
 app.route('/api/exams',     examRoutes)
+app.route('/api/billing',   billingRoutes)
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (c) => {
   return c.json({
     status: 'ok',
     service: 'OculoFlow',
-    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam'],
+    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing'],
     timestamp: new Date().toISOString(),
-    version: '1.3.0',
+    version: '1.4.0',
   })
 })
 
@@ -197,18 +204,22 @@ app.get('/', (c) => {
         </div>
       </a>
 
-      <div class="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 opacity-60">
+      <a href="/billing" class="group bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-blue-500 rounded-2xl p-5 transition-all duration-200 cursor-pointer">
         <div class="flex items-center gap-3 mb-3">
-          <div class="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center">
-            <i class="fas fa-file-invoice-dollar text-slate-400"></i>
+          <div class="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center group-hover:bg-blue-500/30 transition-colors">
+            <i class="fas fa-file-invoice-dollar text-blue-400"></i>
           </div>
           <div>
-            <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Phase 3 — Planned</span>
-            <p class="text-sm font-semibold text-slate-300">Billing & Claims</p>
+            <span class="text-xs font-semibold text-blue-400 uppercase tracking-wider">Phase 2A — Live</span>
+            <p class="text-sm font-semibold text-white">Billing & Claims</p>
           </div>
         </div>
-        <p class="text-xs text-slate-500 leading-relaxed">ICD-10/CPT claim scrubbing, Stripe/Square payments, and AR management.</p>
-      </div>
+        <p class="text-xs text-slate-400 leading-relaxed">Superbill builder, CPT/ICD-10 coding, claims queue, copay collection, and AR management.</p>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-blue-400 font-medium">
+          <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+          Open Billing →
+        </div>
+      </a>
     </div>
 
     <!-- API health indicator -->

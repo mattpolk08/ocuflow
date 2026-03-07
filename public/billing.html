@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Billing & Claims — OculoFlow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" />
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+    /* Nav */
+    .nav-item { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 8px;
+                font-size: 12px; font-weight: 500; color: #94a3b8; text-decoration: none; cursor: pointer;
+                transition: all .15s ease; white-space: nowrap; }
+    .nav-item:hover  { background: rgba(51,65,85,.6); color: #f1f5f9; }
+    .nav-item.active { background: rgba(59,130,246,.15); color: #60a5fa; }
+
+    /* Status badges */
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px;
+             border-radius: 9999px; font-size: 11px; font-weight: 600; letter-spacing: .03em; }
+    .badge-draft           { background:#1e293b; color:#94a3b8; }
+    .badge-pending_review  { background:rgba(234,179,8,.15); color:#eab308; }
+    .badge-reviewed        { background:rgba(59,130,246,.15); color:#60a5fa; }
+    .badge-submitted       { background:rgba(168,85,247,.15); color:#c084fc; }
+    .badge-paid            { background:rgba(34,197,94,.15); color:#4ade80; }
+    .badge-partially_paid  { background:rgba(249,115,22,.15); color:#fb923c; }
+    .badge-denied          { background:rgba(239,68,68,.15); color:#f87171; }
+    .badge-voided          { background:rgba(100,116,139,.15); color:#94a3b8; }
+
+    /* Superbill row hover */
+    .sb-row { transition: background .12s; cursor: pointer; }
+    .sb-row:hover { background: rgba(51,65,85,.4); }
+    .sb-row.selected { background: rgba(59,130,246,.08); border-left: 2px solid #3b82f6; }
+
+    /* Drawer */
+    #detail-drawer {
+      width: 480px; min-width: 480px;
+      transition: transform .25s cubic-bezier(.4,0,.2,1), opacity .25s;
+    }
+    #detail-drawer.hidden-right {
+      transform: translateX(100%); opacity: 0; pointer-events: none;
+    }
+    #detail-drawer.visible {
+      transform: translateX(0); opacity: 1; pointer-events: auto;
+    }
+
+    /* Line item table */
+    .li-table th { font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .07em; }
+    .li-table td { font-size: 13px; color: #e2e8f0; padding: 6px 8px; }
+    .li-row:hover td { background: rgba(51,65,85,.3); }
+
+    /* Modals */
+    .modal-bg { background: rgba(0,0,0,.6); backdrop-filter: blur(4px); }
+
+    /* AR stat cards */
+    .stat-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 16px 20px; }
+
+    /* CPT autocomplete */
+    #cpt-dropdown { max-height: 220px; overflow-y: auto; }
+    .cpt-opt:hover { background: rgba(59,130,246,.15); }
+
+    /* Tab underline */
+    .view-tab { position: relative; padding: 8px 14px; font-size: 13px; font-weight: 500;
+                color: #64748b; cursor: pointer; transition: color .15s; white-space: nowrap; }
+    .view-tab:hover { color: #94a3b8; }
+    .view-tab.active { color: #60a5fa; }
+    .view-tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px;
+                               height: 2px; background: #3b82f6; border-radius: 2px 2px 0 0; }
+
+    /* Print superbill button shine */
+    @keyframes shine { 0%{background-position:-200%} 100%{background-position:200%} }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen flex flex-col">
+
+<!-- ── TOP NAV ─────────────────────────────────────────────────────────────── -->
+<header class="h-12 bg-slate-900/80 border-b border-slate-800 flex items-center px-4 gap-3 sticky top-0 z-30 backdrop-blur">
+  <a href="/" class="flex items-center gap-2 mr-2">
+    <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center">
+      <i class="fas fa-eye text-white text-xs"></i>
+    </div>
+    <span class="font-bold text-sm text-white">OculoFlow</span>
+  </a>
+  <div class="h-5 w-px bg-slate-700"></div>
+  <nav class="flex items-center gap-1">
+    <a href="/dashboard" class="nav-item"><i class="fas fa-gauge-high"></i> Dashboard</a>
+    <a href="/patients"  class="nav-item"><i class="fas fa-users"></i> Patients</a>
+    <a href="/schedule"  class="nav-item"><i class="fas fa-calendar-days"></i> Schedule</a>
+    <a href="/exam"      class="nav-item"><i class="fas fa-eye"></i> Exam</a>
+    <a href="/billing"   class="nav-item active"><i class="fas fa-file-invoice-dollar"></i> Billing</a>
+  </nav>
+  <div class="ml-auto flex items-center gap-2">
+    <button id="btn-new-sb" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors">
+      <i class="fas fa-plus"></i> New Superbill
+    </button>
+  </div>
+</header>
+
+<!-- ── MAIN LAYOUT ─────────────────────────────────────────────────────────── -->
+<div class="flex flex-1 overflow-hidden">
+
+  <!-- LEFT SIDEBAR -->
+  <aside class="w-52 border-r border-slate-800 bg-slate-900/50 flex flex-col p-3 gap-1 overflow-y-auto">
+    <p class="text-[10px] font-semibold uppercase tracking-widest text-slate-500 px-2 mb-1 mt-1">Views</p>
+    <div class="nav-item active" id="sb-filter-all" data-filter="ALL"><i class="fas fa-list-ul"></i> All Superbills</div>
+    <div class="nav-item" id="sb-filter-draft"          data-filter="DRAFT"><i class="fas fa-pencil"></i> Draft</div>
+    <div class="nav-item" id="sb-filter-pending_review" data-filter="PENDING_REVIEW"><i class="fas fa-clock"></i> Pending Review</div>
+    <div class="nav-item" id="sb-filter-reviewed"       data-filter="REVIEWED"><i class="fas fa-check"></i> Reviewed</div>
+    <div class="nav-item" id="sb-filter-submitted"      data-filter="SUBMITTED"><i class="fas fa-paper-plane"></i> Submitted</div>
+    <div class="nav-item" id="sb-filter-paid"           data-filter="PAID"><i class="fas fa-circle-dollar-to-slot"></i> Paid</div>
+    <div class="nav-item" id="sb-filter-denied"         data-filter="DENIED"><i class="fas fa-triangle-exclamation"></i> Denied</div>
+
+    <div class="h-px bg-slate-800 my-2"></div>
+    <p class="text-[10px] font-semibold uppercase tracking-widest text-slate-500 px-2 mb-1">Quick Links</p>
+    <a href="/patients" class="nav-item"><i class="fas fa-users"></i> Patients</a>
+    <a href="/schedule" class="nav-item"><i class="fas fa-calendar-days"></i> Schedule</a>
+    <a href="/exam"     class="nav-item"><i class="fas fa-stethoscope"></i> Exam Record</a>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main class="flex-1 flex flex-col overflow-hidden">
+
+    <!-- AR STAT BAR -->
+    <div id="ar-bar" class="px-5 py-4 border-b border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <!-- filled by JS -->
+    </div>
+
+    <!-- VIEW TABS + SEARCH -->
+    <div class="flex items-center gap-2 px-5 border-b border-slate-800 bg-slate-900/30">
+      <div class="view-tab active" data-view="superbills" id="tab-superbills">Superbills</div>
+      <div class="view-tab" data-view="claims" id="tab-claims">Claims Queue</div>
+      <div class="view-tab" data-view="cpt" id="tab-cpt">CPT Catalog</div>
+      <div class="ml-auto flex items-center gap-2 py-2">
+        <div class="relative">
+          <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
+          <input id="sb-search" type="text" placeholder="Search patient, claim #, CPT…"
+            class="pl-8 pr-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200 placeholder-slate-500 w-56 focus:outline-none focus:border-blue-500 transition-colors" />
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEWS AREA + DRAWER -->
+    <div class="flex flex-1 overflow-hidden">
+
+      <!-- SUPERBILLS LIST VIEW -->
+      <div id="view-superbills" class="flex-1 overflow-y-auto">
+        <table class="w-full text-sm">
+          <thead class="sticky top-0 bg-slate-900 z-10">
+            <tr class="border-b border-slate-800">
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Patient</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Date</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Provider</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Codes</th>
+              <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Charge</th>
+              <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Balance</th>
+              <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+              <th class="px-4 py-3"></th>
+            </tr>
+          </thead>
+          <tbody id="sb-tbody">
+            <!-- filled by JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- CLAIMS QUEUE VIEW -->
+      <div id="view-claims" class="flex-1 overflow-y-auto hidden">
+        <div class="p-5">
+          <h2 class="text-base font-semibold mb-4 text-white">Claims Queue</h2>
+          <div id="claims-list" class="space-y-3"><!-- filled by JS --></div>
+        </div>
+      </div>
+
+      <!-- CPT CATALOG VIEW -->
+      <div id="view-cpt" class="flex-1 overflow-y-auto hidden">
+        <div class="p-5">
+          <div class="flex items-center gap-3 mb-4">
+            <h2 class="text-base font-semibold text-white">CPT Code Catalog</h2>
+            <div class="relative ml-auto">
+              <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
+              <input id="cpt-catalog-search" type="text" placeholder="Filter CPT codes…"
+                class="pl-8 pr-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200 placeholder-slate-500 w-64 focus:outline-none focus:border-blue-500 transition-colors" />
+            </div>
+          </div>
+          <table class="w-full text-sm li-table">
+            <thead>
+              <tr class="border-b border-slate-800">
+                <th class="text-left px-3 py-2">Code</th>
+                <th class="text-left px-3 py-2">Description</th>
+                <th class="text-left px-3 py-2">Category</th>
+                <th class="text-right px-3 py-2">Fee</th>
+              </tr>
+            </thead>
+            <tbody id="cpt-catalog-tbody"><!-- filled by JS --></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- DETAIL DRAWER -->
+      <div id="detail-drawer" class="h-full border-l border-slate-800 bg-slate-900 overflow-y-auto flex flex-col hidden-right">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800 sticky top-0 bg-slate-900 z-10">
+          <h3 class="font-semibold text-sm text-white" id="drawer-title">Superbill Detail</h3>
+          <button id="btn-close-drawer" class="w-7 h-7 rounded-lg hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
+            <i class="fas fa-times text-xs"></i>
+          </button>
+        </div>
+        <div id="drawer-content" class="flex-1 p-4 space-y-4"><!-- filled by JS --></div>
+        <div id="drawer-actions" class="p-4 border-t border-slate-800 flex flex-wrap gap-2"><!-- filled by JS --></div>
+      </div>
+
+    </div><!-- /views+drawer -->
+  </main>
+</div><!-- /main layout -->
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- NEW SUPERBILL MODAL                                                       -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<div id="modal-new-sb" class="fixed inset-0 z-50 hidden items-center justify-center modal-bg">
+  <div class="bg-slate-900 rounded-2xl border border-slate-700 w-full max-w-md mx-4 shadow-2xl">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+      <h2 class="font-semibold text-white">New Superbill</h2>
+      <button class="modal-close w-7 h-7 rounded-lg hover:bg-slate-800 flex items-center justify-center text-slate-400"><i class="fas fa-times text-xs"></i></button>
+    </div>
+    <div class="p-5 space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1">Patient ID *</label>
+        <input id="new-sb-patient-id" type="text" placeholder="pt-001" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1">Patient Name *</label>
+        <input id="new-sb-patient-name" type="text" placeholder="First Last" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors" />
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Service Date *</label>
+          <input id="new-sb-date" type="date" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Copay ($)</label>
+          <input id="new-sb-copay" type="number" min="0" step="0.01" placeholder="0.00" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors" />
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1">Provider *</label>
+        <select id="new-sb-provider" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors">
+          <option value="dr-chen"  data-name="Dr. Sarah Chen, OD">Dr. Sarah Chen, OD</option>
+          <option value="dr-patel" data-name="Dr. Raj Patel, MD">Dr. Raj Patel, MD</option>
+        </select>
+      </div>
+      <div id="new-sb-error" class="hidden text-xs text-red-400 bg-red-950/50 border border-red-900 rounded-lg px-3 py-2"></div>
+    </div>
+    <div class="px-5 py-4 border-t border-slate-800 flex gap-2 justify-end">
+      <button class="modal-close px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-300 transition-colors">Cancel</button>
+      <button id="btn-create-sb" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white transition-colors">
+        <i class="fas fa-plus mr-1.5"></i>Create Superbill
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- PAYMENT MODAL                                                             -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<div id="modal-payment" class="fixed inset-0 z-50 hidden items-center justify-center modal-bg">
+  <div class="bg-slate-900 rounded-2xl border border-slate-700 w-full max-w-sm mx-4 shadow-2xl">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+      <h2 class="font-semibold text-white">Record Payment</h2>
+      <button class="modal-close w-7 h-7 rounded-lg hover:bg-slate-800 flex items-center justify-center text-slate-400"><i class="fas fa-times text-xs"></i></button>
+    </div>
+    <div class="p-5 space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1">Amount ($) *</label>
+        <input id="pay-amount" type="number" min="0" step="0.01" placeholder="0.00" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1">Paid By *</label>
+        <div class="flex gap-2">
+          <button class="pay-by-btn flex-1 py-2 rounded-lg border text-xs font-semibold transition-colors border-blue-500 bg-blue-500/10 text-blue-400" data-val="PATIENT">Patient</button>
+          <button class="pay-by-btn flex-1 py-2 rounded-lg border text-xs font-semibold transition-colors border-slate-700 bg-transparent text-slate-400" data-val="INSURANCE">Insurance</button>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1">Method *</label>
+        <select id="pay-method" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors">
+          <option value="CASH">Cash</option>
+          <option value="CREDIT_CARD">Credit Card</option>
+          <option value="DEBIT_CARD">Debit Card</option>
+          <option value="CHECK">Check</option>
+          <option value="INSURANCE">Insurance ERA</option>
+          <option value="WRITE_OFF">Write-off</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1">Reference (optional)</label>
+        <input id="pay-ref" type="text" placeholder="Check #, last 4 digits…" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors" />
+      </div>
+      <div id="pay-error" class="hidden text-xs text-red-400 bg-red-950/50 border border-red-900 rounded-lg px-3 py-2"></div>
+    </div>
+    <div class="px-5 py-4 border-t border-slate-800 flex gap-2 justify-end">
+      <button class="modal-close px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-300 transition-colors">Cancel</button>
+      <button id="btn-submit-payment" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold text-white transition-colors">
+        <i class="fas fa-check mr-1.5"></i>Post Payment
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- ADD CPT LINE MODAL                                                        -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<div id="modal-add-cpt" class="fixed inset-0 z-50 hidden items-center justify-center modal-bg">
+  <div class="bg-slate-900 rounded-2xl border border-slate-700 w-full max-w-lg mx-4 shadow-2xl">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+      <h2 class="font-semibold text-white">Add CPT Code</h2>
+      <button class="modal-close w-7 h-7 rounded-lg hover:bg-slate-800 flex items-center justify-center text-slate-400"><i class="fas fa-times text-xs"></i></button>
+    </div>
+    <div class="p-5 space-y-3">
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1">Search CPT Code</label>
+        <div class="relative">
+          <input id="cpt-search-input" type="text" placeholder="Type code or description (e.g. 92014, glaucoma)…"
+            class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors" />
+          <div id="cpt-dropdown" class="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg z-50 hidden"></div>
+        </div>
+      </div>
+      <div id="cpt-selected-preview" class="hidden bg-slate-800/60 rounded-lg p-3 border border-slate-700 text-sm">
+        <div class="flex items-center justify-between">
+          <span class="font-mono font-bold text-blue-400" id="cpt-sel-code"></span>
+          <span class="text-emerald-400 font-semibold" id="cpt-sel-fee"></span>
+        </div>
+        <p class="text-slate-300 mt-0.5 text-xs" id="cpt-sel-desc"></p>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Units</label>
+          <input id="cpt-units" type="number" min="1" value="1" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Modifier</label>
+          <select id="cpt-modifier" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors">
+            <option value="">None</option>
+            <option value="RT">RT – Right</option>
+            <option value="LT">LT – Left</option>
+            <option value="25">25 – Separate E&M</option>
+            <option value="57">57 – Decision for Surgery</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="px-5 py-4 border-t border-slate-800 flex gap-2 justify-end">
+      <button class="modal-close px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium text-slate-300 transition-colors">Cancel</button>
+      <button id="btn-add-cpt-line" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white transition-colors">
+        <i class="fas fa-plus mr-1.5"></i>Add Line
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-5 right-5 z-50 hidden items-center gap-2 px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-sm shadow-xl max-w-xs">
+  <i id="toast-icon" class="fas fa-check-circle text-emerald-400"></i>
+  <span id="toast-msg"></span>
+</div>
+
+<script src="/static/billing.js"></script>
+</body>
+</html>
