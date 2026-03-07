@@ -2,7 +2,7 @@
 
 ## Project Overview
 - **Name**: OculoFlow
-- **Version**: 2.0.0
+- **Version**: 2.1.0
 - **Goal**: Full-stack ophthalmology EHR and practice management system built on Cloudflare Pages + Hono
 - **Stack**: TypeScript · Hono · Cloudflare Workers · KV Storage · Vite · Tailwind CSS (CDN) · Chart.js
 
@@ -19,6 +19,7 @@
 - **Clinical Messaging**: …/messaging
 - **Reminders & Comms**: …/reminders
 - **Provider Scorecards**: …/scorecards
+- **Telehealth**: …/telehealth
 - **API Health**: …/api/health
 - **GitHub**: https://github.com/mattpolk08/ocuflow
 
@@ -98,6 +99,7 @@
 - Seed: 7 templates, 4 rules, 8 messages, 3 no-shows (Marcus Webb, Carlos Rivera, Linda Park), 3 campaigns
 
 ### Phase 7A — Provider Scorecards & Benchmarking *(v2.0.0)*
+
 - Per-provider KPI dashboards with deterministic simulation for 3 providers: Dr. Sarah Chen, Dr. Raj Patel, Dr. Amy Torres
 - **5 tabs**: Practice Overview, Provider Scorecard, Benchmarks, Trends, Goals
 - **Practice Overview**: provider leaderboard ranked by overall score, practice daily visit chart, visit-type breakdown (bar), revenue-by-payer (doughnut)
@@ -110,6 +112,23 @@
 - Seed: 8 goals across 3 providers; 8 benchmarks per provider; 8 weekly period snapshots
 - KPIs: Volume (visits, new/return patients, no-shows, daily series), Efficiency (avg exam min, doc time, completion %, on-time %, utilization %), Revenue (charged, collected, collection rate, AR, by-payer), Quality (satisfaction score, return-visit rate, referral rate, preventive care, coding accuracy, composite quality score)
 - Tests: 28/28 smoke, 36/36 functional
+
+### Phase 7B — Telehealth / Async Video Visit *(v2.1.0)*
+- Async video visit queue with pre-visit questionnaire + provider review & sign workflow
+- **5 tabs**: Overview (dashboard stats), Visit Queue (filterable sidebar + detail pane), Live Sessions, Completed, Settings
+- **Overview tab**: KPI cards (pending intake, awaiting review, under review, awaiting info, completed today, total this week, urgent pending, avg review time), recent visits list, upcoming live sessions panel
+- **Visit Queue tab**: filterable sidebar (ALL / PENDING / URGENT / LIVE / MY_QUEUE) + detail pane with full visit info — questionnaire viewer, review form, info-request thread, patient messages, status control, provider assignment
+- **Questionnaire viewer**: color-coded symptom severity bar, affected-eye badge, boolean flags (injury, vision changes, photophobia, floaters), pain scale
+- **Review form**: clinical findings, assessment, ICD-10 plan, Rx items (drug + sig), follow-up scheduling, referral field, patient instructions, internal notes, "Save Draft" + "Sign & Complete"
+- **Info requests**: provider → patient request thread; patient response recorded with `patientResponse` + `respondedAt`; auto-resolves visit back to UNDER_REVIEW when all answered
+- **Patient messages**: live message thread between provider/staff and patient
+- **New Visit wizard**: 3-step modal (Patient Info → Symptoms → Confirm) with field validation
+- Visit urgency indicators: ROUTINE / URGENT (amber glow) / EMERGENT (red pulse animation)
+- Status chips: INTAKE_PENDING · INTAKE_COMPLETE · UNDER_REVIEW · AWAITING_INFO · COMPLETED · CANCELLED
+- Routes: `GET /telehealth`, `GET|POST|PATCH /api/telehealth/*` (12 endpoints)
+- Seed: 7 visits with questionnaires, reviews, info-requests, messages across all status states
+- API: `GET /visits?filter=PENDING|URGENT|LIVE|MY_QUEUE&providerId=`, `POST /visits`, `PATCH /:id/status|assign`, `POST /:id/questionnaire|review|info-request|messages`, `PATCH /:id/info-request/:irId`
+- Tests: 19/19 smoke tests passed
 
 ## API Summary
 
@@ -128,17 +147,18 @@
 | Messaging     | /api/messaging         | GET /dashboard, /staff, /threads; POST /threads, /threads/:id/reply; PATCH archive/pin; GET|POST|PATCH /tasks, /recalls |
 | Reminders     | /api/reminders         | GET /dashboard, /templates, /messages, /rules, /no-shows, /campaigns; POST /messages/send, /messages/reminder, /messages/:id/response, /no-shows, /no-shows/:id/followup, /campaigns, /campaigns/:id/launch; PATCH /templates/:id, /rules/:id, /no-shows/:id, /campaigns/:id/status |
 | Scorecards    | /api/scorecards        | GET /providers, /summary(?range=), /providers/:id(?range=), /providers/:id/volume|efficiency|revenue|quality|benchmarks|snapshots, /goals(?providerId=); POST /goals; PATCH /goals/:id; DELETE /goals/:id |
+| Telehealth    | /api/telehealth        | GET /dashboard, /visits(?filter=&providerId=), /visits/:id, /visits/:id/messages; POST /visits, /visits/:id/questionnaire, /visits/:id/review, /visits/:id/info-request, /visits/:id/messages; PATCH /visits/:id/status, /visits/:id/assign, /visits/:id/info-request/:irId |
 | Health        | /api/health            | GET — version, phases, timestamp                                                      |
 
 ## Data Architecture
 - **Storage**: Cloudflare Workers KV (`OCULOFLOW_KV` binding)
 - **Pattern**: In-memory seed guard + KV index key + individual record keys
-- **Key prefixes**: `patient:`, `appt:`, `exam:`, `sb:`, `optical:frame:`, `optical:order:`, `portal:session:`, `portal:appt-req:`, `portal:thread:`, `msg:thread:`, `msg:task:`, `msg:recall:`, `msg:staff:`, `comms:template:`, `comms:msg:`, `comms:rule:`, `comms:noshow:`, `comms:campaign:`, `sc:goal:`, `sc:seeded`
+- **Key prefixes**: `patient:`, `appt:`, `exam:`, `sb:`, `optical:frame:`, `optical:order:`, `portal:session:`, `portal:appt-req:`, `portal:thread:`, `msg:thread:`, `msg:task:`, `msg:recall:`, `msg:staff:`, `comms:template:`, `comms:msg:`, `comms:rule:`, `comms:noshow:`, `comms:campaign:`, `sc:goal:`, `sc:seeded`, `th:visit:`, `th:idx`, `th:seeded`
 - **Demo mode**: All data seeded automatically on first KV read
 - **Scorecards**: KPIs computed deterministically on-the-fly (no KV writes); only goals use KV
 
 ## User Guide
-1. **Home** `/` — Phase overview with links to all 12 modules
+1. **Home** `/` — Phase overview with links to all 13 modules
 2. **Intake** `/intake?demo=true` — Start patient intake wizard
 3. **Dashboard** `/dashboard` — Command center, today's schedule, flow board
 4. **Patients** `/patients` — Search/register patients, verify insurance
@@ -151,6 +171,7 @@
 11. **Clinical Messaging** `/messaging` — Staff inbox: browse threads, reply, manage tasks and recall list
 12. **Reminders & Comms** `/reminders` — Overview dashboard → Message Log (filter by status/type) → No-Shows (send follow-ups) → Campaigns (launch) → Templates (edit/preview) → Automation Rules (toggle)
 13. **Provider Scorecards** `/scorecards` — Select provider from sidebar → view scorecard, benchmarks, trends, goals; use date-range pills (7d/30d/90d/YTD); switch to Practice tab for leaderboard
+14. **Telehealth** `/telehealth` — Click "New Visit" or select from sidebar → view queue → open detail pane → questionnaire / review / messages; filter queue by PENDING / URGENT / LIVE
 
 ## Keyboard Shortcuts
 - `N` — New item (superbill, order depending on page)
@@ -161,13 +182,13 @@
 ## Deployment
 - **Platform**: Cloudflare Pages (Hono SSR Workers)
 - **Status**: ✅ Active (sandbox dev server)
-- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~628 KB, 85 modules)
+- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~683 KB, 88 modules)
 - **Start**: `pm2 start ecosystem.config.cjs`
 - **Last Updated**: 2026-03-07
 
 ## Pending / Next Steps
-- **Phase 7B** — Telehealth / Async Video Visit: patient pre-visit questionnaire + provider async review workflow
 - **Phase 7C** — E-Prescribing & PDMP: electronic prescription creation, controlled substance PDMP lookup, pharmacy routing
+- **Phase 8A** — AI Clinical Decision Support: ICD-10 code suggestions, drug interaction alerts, clinical guidelines lookup
 - **Fix**: `isNewPatient` duplicate key warning in `src/lib/patients.ts:36`
 - **Enhancement**: Real login flow for portal (patient account creation / password reset)
 - **Enhancement**: File attachment support in clinical messaging threads
