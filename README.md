@@ -2,31 +2,18 @@
 
 ## Project Overview
 - **Name**: OculoFlow
-- **Version**: 2.7.0
+- **Version**: 2.8.0
 - **Goal**: Full-stack ophthalmology EHR and practice management system built on Cloudflare Pages + Hono
 - **Stack**: TypeScript · Hono · Cloudflare Workers · KV Storage · Vite · Tailwind CSS (CDN) · Chart.js
 
-## Live URLs (Sandbox)
-- **Home**: https://3000-iifn0r2yzm6jt3tc1fv0q-5634da27.sandbox.novita.ai/
-- **Login**: …/login
-- **Dashboard**: …/dashboard
-- **Patients**: …/patients
-- **Schedule**: …/schedule
-- **Exam**: …/exam
-- **Billing**: …/billing
-- **Reports**: …/reports
-- **Optical**: …/optical
-- **Patient Portal**: …/portal
-- **Clinical Messaging**: …/messaging
-- **Reminders & Comms**: …/reminders
-- **Provider Scorecards**: …/scorecards
-- **Telehealth**: …/telehealth
-- **eRx (E-Prescribing)**: …/erx
-- **AI Clinical Decision Support**: …/ai
-- **Prior Authorization**: …/priorauth
-- **Revenue Cycle Management**: …/rcm
-- **API Health**: …/api/health
+## Live URLs
+- **Production**: https://oculoflow.pages.dev
 - **GitHub**: https://github.com/mattpolk08/ocuflow
+- **Login**: https://oculoflow.pages.dev/login
+- **Analytics BI**: https://oculoflow.pages.dev/analytics
+- **Engagement**: https://oculoflow.pages.dev/engagement
+- **MFA Setup**: https://oculoflow.pages.dev/mfa-setup
+- **API Health**: https://oculoflow.pages.dev/api/health
 
 ## Completed Phases
 
@@ -237,6 +224,40 @@
 - **Deployed** to Cloudflare Pages at **https://oculoflow.pages.dev** (global edge network)
 - All 19 pages return HTTP 200 on live; JWT auth, KV session storage, audit logging all verified on live production
 
+### Phase A4 — Multi-Factor Authentication *(v2.8.0)*
+- **RFC 6238 TOTP** using Web Crypto API (SHA-1 HMAC, 30-second window, 6-digit codes) — fully Cloudflare Workers compatible
+- **Enrollment flow**: `POST /api/mfa/enroll/begin` returns Base32 secret + provisioning URI for QR code; `POST /api/mfa/enroll/confirm` activates with first valid TOTP code
+- **Recovery codes**: 8 single-use 8-digit recovery codes generated at enrollment; stored as hashed values; `POST /api/mfa/recovery/regenerate` requires TOTP verification
+- **Trusted devices**: 30-day device tokens stored in KV; `POST /api/mfa/trusted-device` registers after successful TOTP; `DELETE /api/mfa/trusted-device` revokes
+- **Login challenge**: on login, if MFA enabled and no trusted device → returns `mfaRequired: true` + short-lived `mfaToken`; frontend redirects to `/mfa-verify`
+- **MFA pages**: `/mfa-setup` (TOTP enrollment with QR code display + recovery codes) and `/mfa-verify` (challenge input with recovery code fallback)
+- Routes: `GET /api/mfa/status`, `POST /api/mfa/enroll/begin|confirm|verify`, `POST /api/mfa/trusted-device`, `DELETE /api/mfa/trusted-device|disable`, `POST /api/mfa/recovery/regenerate`
+- Key prefixes: `mfa:config:`, `mfa:pending:`, `mfa:trusted:`, `mfa:used:`
+
+### Phase 9B — Patient Engagement & Loyalty *(v2.8.0)*
+- **Care Gaps**: automated detection for 8 ophthalmology gap types (annual exam, glaucoma follow-up, diabetic eye exam, contact lens renewal, expired Rx, macular degeneration monitoring, dry eye follow-up, post-surgical check); status workflow OPEN → OUTREACH_SENT → SCHEDULED → CLOSED
+- **Recall Management**: patient recall campaigns with status tracking, SMS outreach, scheduling links; 5 recall statuses (PENDING → CONTACTED → SCHEDULED → COMPLETED / DECLINED)
+- **Satisfaction Surveys**: configurable survey templates (post-visit, annual, NPS) with Likert + free-text questions; patient survey response collection; score aggregation
+- **Loyalty Program**: point accrual for visits/referrals/survey completion; tier tracking (BRONZE/SILVER/GOLD/PLATINUM); loyalty account per patient
+- **Dashboard**: care gap summary, recall funnel metrics, survey response stats, loyalty program overview
+- Routes: `GET /api/engagement/ping|dashboard`, `GET|POST|PATCH /api/engagement/care-gaps|recalls|surveys|survey-responses|loyalty`
+- Key prefixes: `eng:caregap:`, `eng:recall:`, `eng:survey:`, `eng:survey-resp:`, `eng:loyalty:`
+- Seed: 5 care gaps, 4 recalls, 3 surveys, 3 loyalty accounts
+
+### Phase 10A — Analytics & Business Intelligence *(v2.8.0)*
+- **Executive KPI Dashboard**: monthly KPI snapshots with MoM delta — net revenue, visits, new patients, collection rate, denial rate, NPS score, no-show rate, care gap closure, recall compliance
+- **Payer Contract Analysis**: 6 seeded payer contracts (BCBS FL, Aetna, UHC, Medicare, Humana, Medicaid) with allowable vs. collected variance, denial rates, contract expiry alerts, status badges (ACTIVE/EXPIRING_SOON/RENEGOTIATING)
+- **Provider Productivity**: per-provider RVU produced vs. target, utilization %, avg revenue/visit, denial rate, documentation time, satisfaction score; RVU progress bars
+- **Population Health Trends**: 5 condition cohorts (Glaucoma, Diabetic Retinopathy, Dry Eye, Macular Degeneration, Myopia) with controlled %, treatment adherence, care gap counts, revenue potential
+- **Recall Compliance Metrics**: 3-month funnel (due → contacted → scheduled → completed), SMS/email response rates, revenue recovered
+- **6-Month Revenue Forecast**: seasonal model (Apr–Sep 2026) with confidence intervals, risk factors, and growth opportunities; Chart.js area chart with upper/lower bounds
+- **Role Access**: ADMIN + BILLING only; front-desk/nurse/optical denied with 403
+- **HIPAA Audit**: every dashboard access logged with `PHI_READ` audit event
+- Routes: `GET /api/analytics/ping|dashboard|kpi|kpi/:period|kpi-compare|payers|providers|population|recall|forecast`; `PATCH /api/analytics/payers/:id`
+- Key prefixes: `anl:kpi:`, `anl:payer:`, `anl:provprod:`, `anl:poptrend:`, `anl:recall:`, `anl:forecast:`
+- Seed: 4 KPI periods (Jan/Feb/Mar/Q1 2026), 6 payers, 4 providers, 5 conditions, 3 recall months, 1 forecast
+- Tests: **15/15 production verification** ✅
+
 | Module        | Base Path              | Key Endpoints                                                                         |
 |---------------|------------------------|---------------------------------------------------------------------------------------|
 | **Auth**      | /api/auth              | POST /login, /logout, /refresh; GET /me, /users, /demo-credentials; POST /users; PATCH /users/:id/password\|active |
@@ -295,19 +316,19 @@
 ## Deployment
 - **Platform**: Cloudflare Pages (Hono SSR Workers + KV Storage)
 - **Status**: ✅ Live at **https://oculoflow.pages.dev**
-- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~942 KB, 105 modules)
+- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~1.07 MB, 116 modules)
 - **Start (local)**: `pm2 start ecosystem.config.cjs`
 - **Deploy**: `npm run build && npx wrangler pages deploy dist --project-name oculoflow`
 - **KV Namespace**: `OCULOFLOW_KV` (id: 3de6133cdd914fa7b9b6eea4142322e0)
 - **Secrets**: `JWT_SECRET` (set via `wrangler pages secret put`)
 - **Last Updated**: 2026-03-07
-- **Version**: 2.7.0
+- **Version**: 2.8.0
 
 ## Pending / Next Steps
-- **Phase 9B** — Patient Engagement & Loyalty (care gap detection, recall campaigns, satisfaction surveys)
-- **Phase A4** — Multi-Factor Authentication (TOTP/email OTP for staff login, trusted-device management)
-- **Phase 10A** — Analytics & Business Intelligence (payer contract analysis, provider productivity benchmarks, population health dashboards)
+- **Enhancement**: Real Twilio/SendGrid credentials in production (replace demo simulation with live send)
+- **Enhancement**: Real insurance eligibility API (wire `src/lib/eligibility.ts` to Change Healthcare/Availity)
 - **Enhancement**: Real login flow for portal (patient account creation / password reset)
 - **Enhancement**: File attachment support in clinical messaging threads
-- **Enhancement**: Webhooks / real Twilio/SendGrid integration for outbound reminders
 - **Enhancement**: Real provider data feed to scorecards (currently computed from deterministic simulation)
+- **Phase 11A** — Multi-Location Support (multiple practice sites, provider scheduling across locations)
+- **Phase 11B** — Patient Mobile App (React Native companion for the patient portal)
