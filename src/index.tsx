@@ -17,6 +17,7 @@
 // Phase 8A: AI Clinical Decision Support
 // Phase 8B: Automated Prior Authorization
 // Phase 9A: Revenue Cycle Management
+// Phase A1: Authentication & Authorization
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Hono } from 'hono'
@@ -24,6 +25,7 @@ import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { secureHeaders } from 'hono/secure-headers'
 import { serveStatic } from 'hono/cloudflare-workers'
+import { requireAuth, requireRole } from './middleware/auth'
 import authRoutes      from './routes/auth'
 import intakeRoutes    from './routes/intake'
 import dashboardRoutes from './routes/dashboard'
@@ -60,9 +62,11 @@ import erxHtml         from '../public/erx.html?raw'
 import aiHtml          from '../public/ai.html?raw'
 import priorauthHtml   from '../public/priorauth.html?raw'
 import rcmHtml         from '../public/rcm.html?raw'
+import loginHtml       from '../public/login.html?raw'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
+  JWT_SECRET?: string
   OPENAI_API_KEY: string
   TWILIO_ACCOUNT_SID: string
   TWILIO_AUTH_TOKEN: string
@@ -138,24 +142,63 @@ app.get('/priorauth', (c) => c.html(priorauthHtml))
 // ── Revenue Cycle Management ─────────────────────────────────────────────────
 app.get('/rcm', (c) => c.html(rcmHtml))
 
+// ── Staff Login ───────────────────────────────────────────────────────────────
+app.get('/login', (c) => c.html(loginHtml))
+
 // ── API Routes ────────────────────────────────────────────────────────────────
+// Auth routes — public (login/logout/refresh) + self-protected (/me, /users)
 app.route('/api/auth',      authRoutes)
+
+// Patient intake — public (patient-facing)
 app.route('/api/intake',    intakeRoutes)
+
+// Staff-only API routes — protected by JWT
+app.use('/api/dashboard/*', requireAuth)
 app.route('/api/dashboard', dashboardRoutes)
+
+app.use('/api/patients/*',  requireAuth)
 app.route('/api/patients',  patientRoutes)
+
+app.use('/api/schedule/*',  requireAuth)
 app.route('/api/schedule',  scheduleRoutes)
+
+app.use('/api/exams/*',     requireAuth)
 app.route('/api/exams',     examRoutes)
+
+app.use('/api/billing/*',   requireAuth, requireRole('BILLING', 'ADMIN', 'PROVIDER'))
 app.route('/api/billing',   billingRoutes)
+
+app.use('/api/reports/*',   requireAuth, requireRole('BILLING', 'ADMIN', 'PROVIDER'))
 app.route('/api/reports',   reportsRoutes)
+
+app.use('/api/optical/*',   requireAuth, requireRole('OPTICAL', 'ADMIN', 'FRONT_DESK', 'PROVIDER'))
 app.route('/api/optical',   opticalRoutes)
+
+app.use('/api/portal/*',    requireAuth)
 app.route('/api/portal',     portalRoutes)
+
+app.use('/api/messaging/*', requireAuth)
 app.route('/api/messaging',  messagingRoutes)
+
+app.use('/api/reminders/*', requireAuth)
 app.route('/api/reminders',  remindersRoutes)
+
+app.use('/api/scorecards/*', requireAuth)
 app.route('/api/scorecards', scorecardsRoutes)
+
+app.use('/api/telehealth/*', requireAuth)
 app.route('/api/telehealth', telehealthRoutes)
+
+app.use('/api/erx/*',        requireAuth, requireRole('PROVIDER', 'ADMIN', 'NURSE'))
 app.route('/api/erx',        erxRoutes)
+
+app.use('/api/ai/*',         requireAuth)
 app.route('/api/ai',         aiRoutes)
+
+app.use('/api/pa/*',         requireAuth)
 app.route('/api/pa',         paRoutes)
+
+app.use('/api/rcm/*',        requireAuth, requireRole('BILLING', 'ADMIN', 'PROVIDER'))
 app.route('/api/rcm',        rcmRoutes)
 
 // ── Health Check ──────────────────────────────────────────────────────────────
@@ -163,9 +206,9 @@ app.get('/api/health', (c) => {
   return c.json({
     status: 'ok',
     service: 'OculoFlow',
-    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx', '8a-ai-cds', '8b-prior-auth', '9a-rcm'],
+    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx', '8a-ai-cds', '8b-prior-auth', '9a-rcm', 'a1-auth'],
     timestamp: new Date().toISOString(),
-    version: '2.5.0',
+    version: '2.6.0',
 
   })
 })
