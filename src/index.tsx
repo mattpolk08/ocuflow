@@ -222,7 +222,15 @@ app.route('/api/rcm',        rcmRoutes)
 app.route('/api/mfa',        mfaRoutes)
 
 // ── Patient Engagement & Loyalty ─────────────────────────────────────────────────────────────────
-app.use('/api/engagement/*', requireAuth, auditMiddleware)
+app.use('/api/engagement/*', async (c, next) => {
+  // /ping is public — skip auth
+  if (c.req.path === '/api/engagement/ping') return next()
+  return requireAuth(c, next)
+})
+app.use('/api/engagement/*', async (c, next) => {
+  if (c.req.path === '/api/engagement/ping') return next()
+  return auditMiddleware(c, next)
+})
 app.route('/api/engagement', engagementRoutes)
 
 // ── Analytics & BI ───────────────────────────────────────────────────────────
