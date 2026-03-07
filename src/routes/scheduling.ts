@@ -150,7 +150,9 @@ scheduleRoutes.get('/appointment/:id', async (c) => {
 
 // ── POST /api/schedule/appointment ───────────────────────────────────────
 scheduleRoutes.post('/appointment', async (c) => {
-  const body = await c.req.json<AppointmentCreateInput>()
+  const raw  = await c.req.json<AppointmentCreateInput & { time?: string }>()
+  // Accept 'time' as alias for 'startTime' for frontend convenience
+  const body: AppointmentCreateInput = { ...raw, startTime: raw.startTime ?? raw.time ?? '' }
 
   if (!body.patientName || !body.providerId || !body.date || !body.startTime || !body.appointmentType) {
     return c.json<ApiResponse>({
