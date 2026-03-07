@@ -1,0 +1,166 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// OculoFlow — Main Hono Application Entry Point
+// Phase 1: Digital Front Door — Patient Intake
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { Hono } from 'hono'
+import { cors } from 'hono/cors'
+import { logger } from 'hono/logger'
+import { secureHeaders } from 'hono/secure-headers'
+import { serveStatic } from 'hono/cloudflare-workers'
+import authRoutes from './routes/auth'
+import intakeRoutes from './routes/intake'
+// Import HTML as raw string (Vite ?raw import)
+import intakeHtml from '../public/intake.html?raw'
+
+type Bindings = {
+  OCULOFLOW_KV: KVNamespace
+  OPENAI_API_KEY: string
+  TWILIO_ACCOUNT_SID: string
+  TWILIO_AUTH_TOKEN: string
+  TWILIO_FROM_NUMBER: string
+  PRACTICE_NAME: string
+  DEMO_MODE: string
+}
+
+const app = new Hono<{ Bindings: Bindings }>()
+
+// ── Global Middleware ─────────────────────────────────────────────────────────
+app.use('*', logger())
+app.use('*', secureHeaders())
+app.use('/api/*', cors({
+  origin: ['*'],
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+}))
+
+// ── Static Assets ─────────────────────────────────────────────────────────────
+app.use('/static/*', serveStatic({ root: './' }))
+
+// ── Patient Intake Page ───────────────────────────────────────────────────────
+// Serves the mobile-first wizard at /intake?token=XXXX
+app.get('/intake', (c) => {
+  return c.html(intakeHtml)
+})
+
+// ── API Routes ────────────────────────────────────────────────────────────────
+app.route('/api/auth',   authRoutes)
+app.route('/api/intake', intakeRoutes)
+
+// ── Health Check ──────────────────────────────────────────────────────────────
+app.get('/api/health', (c) => {
+  return c.json({
+    status: 'ok',
+    service: 'OculoFlow Phase 1',
+    timestamp: new Date().toISOString(),
+    version: '1.0.0',
+  })
+})
+
+// ── Root — Command Center (Phase 2 placeholder) ───────────────────────────────
+app.get('/', (c) => {
+  return c.html(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OculoFlow — Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" />
+  <style>body { font-family: 'Inter', sans-serif; }</style>
+</head>
+<body class="bg-slate-950 text-white min-h-screen flex flex-col items-center justify-center p-6">
+
+  <div class="w-full max-w-2xl text-center">
+
+    <!-- Logo -->
+    <div class="w-20 h-20 mx-auto rounded-3xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center mb-6 shadow-2xl shadow-blue-900">
+      <i class="fas fa-eye text-white text-3xl"></i>
+    </div>
+    <h1 class="text-4xl font-bold mb-2 tracking-tight">OculoFlow</h1>
+    <p class="text-slate-400 text-lg mb-10">Next-Generation Ophthalmology EHR & Practice Management</p>
+
+    <!-- Phase Status Grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-10 text-left">
+
+      <a href="/intake?demo=true" class="group bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-blue-500 rounded-2xl p-5 transition-all duration-200 cursor-pointer">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center group-hover:bg-blue-500/30 transition-colors">
+            <i class="fas fa-mobile-screen text-blue-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-blue-400 uppercase tracking-wider">Phase 1 — Live</span>
+            <p class="text-sm font-semibold text-white">Digital Front Door</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">Patient intake wizard with 2FA authentication, insurance card OCR, and HIPAA e-signature.</p>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-blue-400 font-medium">
+          <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+          Try the Patient Intake →
+        </div>
+      </a>
+
+      <div class="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 opacity-60">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center">
+            <i class="fas fa-gauge-high text-slate-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Phase 1A — Next</span>
+            <p class="text-sm font-semibold text-slate-300">Command Center</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-500 leading-relaxed">Daily schedule view, patient flow board, and provider status tracking.</p>
+      </div>
+
+      <div class="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 opacity-60">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center">
+            <i class="fas fa-eye text-slate-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Phase 2A — Planned</span>
+            <p class="text-sm font-semibold text-slate-300">Exam Record</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-500 leading-relaxed">VA, IOP, Slit Lamp, Fundus, and full ophthalmology exam documentation.</p>
+      </div>
+
+      <div class="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 opacity-60">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center">
+            <i class="fas fa-file-invoice-dollar text-slate-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Phase 3 — Planned</span>
+            <p class="text-sm font-semibold text-slate-300">Billing & Claims</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-500 leading-relaxed">ICD-10/CPT claim scrubbing, Stripe/Square payments, and AR management.</p>
+      </div>
+    </div>
+
+    <!-- API health indicator -->
+    <div class="flex items-center justify-center gap-2 text-sm text-slate-500">
+      <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+      API healthy — <a href="/api/health" class="text-slate-400 hover:text-white underline ml-1">/api/health</a>
+    </div>
+  </div>
+
+</body>
+</html>`)
+})
+
+// ── 404 Fallback ──────────────────────────────────────────────────────────────
+app.notFound((c) => {
+  return c.json({ error: 'Not found', path: c.req.path }, 404)
+})
+
+// ── Error Handler ─────────────────────────────────────────────────────────────
+app.onError((err, c) => {
+  console.error('Unhandled error:', err)
+  return c.json({ error: 'Internal server error' }, 500)
+})
+
+export default app
