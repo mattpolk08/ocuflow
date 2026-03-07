@@ -35,13 +35,15 @@ import {
   ROOMS,
 } from '../lib/scheduling'
 import { APPOINTMENT_TYPES } from '../types/scheduling'
+import { requireRole } from '../middleware/auth'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
   DEMO_MODE: string
 }
+type Variables = { auth: import('../types/auth').AuthContext }
 
-const scheduleRoutes = new Hono<{ Bindings: Bindings }>()
+const scheduleRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 // ── GET /api/schedule/providers ──────────────────────────────────────────
 scheduleRoutes.get('/providers', (c) => {
@@ -149,7 +151,7 @@ scheduleRoutes.get('/appointment/:id', async (c) => {
 })
 
 // ── POST /api/schedule/appointment ───────────────────────────────────────
-scheduleRoutes.post('/appointment', async (c) => {
+scheduleRoutes.post('/appointment', requireRole('ADMIN', 'PROVIDER', 'FRONT_DESK', 'NURSE'), async (c) => {
   const raw  = await c.req.json<AppointmentCreateInput & { time?: string }>()
   // Accept 'time' as alias for 'startTime' for frontend convenience
   const body: AppointmentCreateInput = { ...raw, startTime: raw.startTime ?? raw.time ?? '' }
@@ -182,7 +184,7 @@ scheduleRoutes.post('/appointment', async (c) => {
 })
 
 // ── PUT /api/schedule/appointment/:id ────────────────────────────────────
-scheduleRoutes.put('/appointment/:id', async (c) => {
+scheduleRoutes.put('/appointment/:id', requireRole('ADMIN', 'PROVIDER', 'FRONT_DESK', 'NURSE'), async (c) => {
   const id      = c.req.param('id')
   const updates = await c.req.json()
 
@@ -202,7 +204,7 @@ scheduleRoutes.put('/appointment/:id', async (c) => {
 })
 
 // ── POST /api/schedule/appointment/:id/status ────────────────────────────
-scheduleRoutes.post('/appointment/:id/status', async (c) => {
+scheduleRoutes.post('/appointment/:id/status', requireRole('ADMIN', 'PROVIDER', 'FRONT_DESK', 'NURSE'), async (c) => {
   const id   = c.req.param('id')
   const body = await c.req.json<{ status: AppointmentStatus; room?: string; notes?: string }>()
 
@@ -231,7 +233,7 @@ scheduleRoutes.post('/appointment/:id/status', async (c) => {
 })
 
 // ── DELETE /api/schedule/appointment/:id ─────────────────────────────────
-scheduleRoutes.delete('/appointment/:id', async (c) => {
+scheduleRoutes.delete('/appointment/:id', requireRole('ADMIN', 'FRONT_DESK'), async (c) => {
   const id     = c.req.param('id')
   const reason = c.req.query('reason')
 
@@ -256,7 +258,7 @@ scheduleRoutes.get('/waitlist', async (c) => {
 })
 
 // ── POST /api/schedule/waitlist ───────────────────────────────────────────
-scheduleRoutes.post('/waitlist', async (c) => {
+scheduleRoutes.post('/waitlist', requireRole('ADMIN', 'FRONT_DESK', 'PROVIDER'), async (c) => {
   const body = await c.req.json()
   if (!body.patientName || !body.appointmentType) {
     return c.json<ApiResponse>({ success: false, error: 'patientName and appointmentType required' }, 400)
@@ -277,7 +279,7 @@ scheduleRoutes.post('/waitlist', async (c) => {
 })
 
 // ── DELETE /api/schedule/waitlist/:id ─────────────────────────────────────
-scheduleRoutes.delete('/waitlist/:id', async (c) => {
+scheduleRoutes.delete('/waitlist/:id', requireRole('ADMIN', 'FRONT_DESK'), async (c) => {
   const id = c.req.param('id')
   try {
     const ok = await removeFromWaitlist(c.env.OCULOFLOW_KV, id)

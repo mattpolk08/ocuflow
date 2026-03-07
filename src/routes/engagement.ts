@@ -9,6 +9,7 @@ import {
   getLoyaltyAccount, addLoyaltyPoints, listLoyaltyAccounts,
 } from '../lib/engagement'
 import type { CareGapStatus, RecallStatus } from '../lib/engagement'
+import { requireRole } from '../middleware/auth'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
@@ -19,9 +20,10 @@ type Bindings = {
   DEMO_MODE?: string
 }
 type Resp = { success: boolean; data?: unknown; error?: string; message?: string }
+type Variables = { auth: import('../types/auth').AuthContext }
 const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,6)}`
 
-const engagementRoutes = new Hono<{ Bindings: Bindings }>()
+const engagementRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 // ── Ping / seed ───────────────────────────────────────────────────────────────
 engagementRoutes.get('/ping', async (c) => {
@@ -58,7 +60,7 @@ engagementRoutes.get('/care-gaps/:id', async (c) => {
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
-engagementRoutes.post('/care-gaps', async (c) => {
+engagementRoutes.post('/care-gaps', requireRole('ADMIN', 'PROVIDER', 'NURSE'), async (c) => {
   try {
     const body = await c.req.json()
     const missing = ['patientId', 'patientName', 'gapType', 'dueDate', 'priority'].filter(k => !body[k])
@@ -71,7 +73,7 @@ engagementRoutes.post('/care-gaps', async (c) => {
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
-engagementRoutes.patch('/care-gaps/:id', async (c) => {
+engagementRoutes.patch('/care-gaps/:id', requireRole('ADMIN', 'PROVIDER', 'NURSE'), async (c) => {
   try {
     const body = await c.req.json()
     const gap = await updateCareGap(c.env.OCULOFLOW_KV, c.req.param('id'), body)
@@ -120,7 +122,7 @@ engagementRoutes.get('/recalls', async (c) => {
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
-engagementRoutes.post('/recalls', async (c) => {
+engagementRoutes.post('/recalls', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRONT_DESK'), async (c) => {
   try {
     const body = await c.req.json()
     const missing = ['patientId', 'patientName', 'recallType', 'dueDate'].filter(k => !body[k])
@@ -130,7 +132,7 @@ engagementRoutes.post('/recalls', async (c) => {
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
-engagementRoutes.patch('/recalls/:id', async (c) => {
+engagementRoutes.patch('/recalls/:id', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRONT_DESK'), async (c) => {
   try {
     const body = await c.req.json()
     const recall = await updateRecall(c.env.OCULOFLOW_KV, c.req.param('id'), body)
@@ -173,7 +175,7 @@ engagementRoutes.get('/surveys/:id', async (c) => {
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
-engagementRoutes.post('/surveys', async (c) => {
+engagementRoutes.post('/surveys', requireRole('ADMIN', 'PROVIDER'), async (c) => {
   try {
     const body = await c.req.json()
     if (!body.name || !body.type) return c.json<Resp>({ success: false, error: 'name and type required' }, 400)
@@ -185,7 +187,7 @@ engagementRoutes.post('/surveys', async (c) => {
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
-engagementRoutes.patch('/surveys/:id', async (c) => {
+engagementRoutes.patch('/surveys/:id', requireRole('ADMIN', 'PROVIDER'), async (c) => {
   try {
     const body = await c.req.json()
     const survey = await updateSurvey(c.env.OCULOFLOW_KV, c.req.param('id'), body)
@@ -245,7 +247,7 @@ engagementRoutes.get('/loyalty/:patientId', async (c) => {
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
-engagementRoutes.post('/loyalty/:patientId/points', async (c) => {
+engagementRoutes.post('/loyalty/:patientId/points', requireRole('ADMIN', 'FRONT_DESK'), async (c) => {
   try {
     const body = await c.req.json()
     if (!body.type || !body.points || !body.description) return c.json<Resp>({ success: false, error: 'type, points, description required' }, 400)

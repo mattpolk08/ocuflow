@@ -13,11 +13,13 @@ import {
   getMessagingDashboard,
 } from '../lib/messaging'
 import type { MessageCategory, MessagePriority, StaffRole, TaskCategory, TaskStatus, TaskPriority, RecallReason, RecallStatus } from '../types/messaging'
+import { requireRole } from '../middleware/auth'
 
 type Bindings = { OCULOFLOW_KV: KVNamespace }
+type Variables = { auth: import('../types/auth').AuthContext }
 type Resp     = { success: boolean; data?: unknown; message?: string; error?: string }
 
-const messagingRoutes = new Hono<{ Bindings: Bindings }>()
+const messagingRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 // ── Health / seed ──────────────────────────────────────────────────────────────
 
@@ -95,7 +97,7 @@ messagingRoutes.get('/threads/:id/messages', async (c) => {
   }
 })
 
-messagingRoutes.post('/threads', async (c) => {
+messagingRoutes.post('/threads', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRONT_DESK'), async (c) => {
   try {
     const body = await c.req.json()
     const required = ['subject', 'category', 'priority', 'participantIds', 'participantNames', 'createdById', 'createdByName', 'body', 'senderRole']
@@ -135,7 +137,7 @@ messagingRoutes.post('/threads/:id/read', async (c) => {
   }
 })
 
-messagingRoutes.patch('/threads/:id/archive', async (c) => {
+messagingRoutes.patch('/threads/:id/archive', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRONT_DESK'), async (c) => {
   try {
     const body = await c.req.json()
     await archiveThread(c.env.OCULOFLOW_KV, c.req.param('id'), body.archived ?? true)
@@ -177,7 +179,7 @@ messagingRoutes.get('/tasks/:id', async (c) => {
   }
 })
 
-messagingRoutes.post('/tasks', async (c) => {
+messagingRoutes.post('/tasks', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRONT_DESK'), async (c) => {
   try {
     const body = await c.req.json()
     const required = ['title', 'category', 'priority', 'assignedById', 'assignedByName']
@@ -201,7 +203,7 @@ messagingRoutes.post('/tasks', async (c) => {
   }
 })
 
-messagingRoutes.patch('/tasks/:id', async (c) => {
+messagingRoutes.patch('/tasks/:id', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRONT_DESK'), async (c) => {
   try {
     const body = await c.req.json()
     const task = await updateTask(c.env.OCULOFLOW_KV, c.req.param('id'), body)
@@ -240,7 +242,7 @@ messagingRoutes.get('/recalls', async (c) => {
   }
 })
 
-messagingRoutes.post('/recalls', async (c) => {
+messagingRoutes.post('/recalls', requireRole('ADMIN', 'FRONT_DESK', 'NURSE'), async (c) => {
   try {
     const body = await c.req.json()
     const required = ['patientId', 'patientName', 'patientPhone', 'patientEmail', 'reason', 'dueDate', 'priority']
@@ -257,7 +259,7 @@ messagingRoutes.post('/recalls', async (c) => {
   }
 })
 
-messagingRoutes.patch('/recalls/:id', async (c) => {
+messagingRoutes.patch('/recalls/:id', requireRole('ADMIN', 'FRONT_DESK', 'NURSE'), async (c) => {
   try {
     const body = await c.req.json()
     const recall = await updateRecall(c.env.OCULOFLOW_KV, c.req.param('id'), body)

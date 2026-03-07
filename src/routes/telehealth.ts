@@ -12,11 +12,13 @@ import {
   addMessage, getTelehealthDashboard,
 } from '../lib/telehealth'
 import type { VisitStatus, VisitType, Urgency } from '../types/telehealth'
+import { requireRole } from '../middleware/auth'
 
 type Bindings = { OCULOFLOW_KV: KVNamespace }
+type Variables = { auth: import('../types/auth').AuthContext }
 type Resp     = { success: boolean; data?: unknown; message?: string; error?: string }
 
-const telehealthRoutes = new Hono<{ Bindings: Bindings }>()
+const telehealthRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 // ── Ping / seed ────────────────────────────────────────────────────────────────
 telehealthRoutes.get('/ping', async (c) => {
@@ -51,7 +53,7 @@ telehealthRoutes.get('/visits/:id', async (c) => {
 })
 
 // ── Create new visit ──────────────────────────────────────────────────────────
-telehealthRoutes.post('/visits', async (c) => {
+telehealthRoutes.post('/visits', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRONT_DESK'), async (c) => {
   try {
     const body = await c.req.json()
     const missing = ['patientId', 'patientName', 'visitType', 'urgency', 'chiefComplaint'].filter(k => !body[k])
@@ -65,7 +67,7 @@ telehealthRoutes.post('/visits', async (c) => {
 })
 
 // ── Update visit status ────────────────────────────────────────────────────────
-telehealthRoutes.patch('/visits/:id/status', async (c) => {
+telehealthRoutes.patch('/visits/:id/status', requireRole('ADMIN', 'PROVIDER', 'NURSE'), async (c) => {
   try {
     const { status } = await c.req.json()
     const validStatuses: VisitStatus[] = ['INTAKE_PENDING','INTAKE_COMPLETE','UNDER_REVIEW','AWAITING_INFO','COMPLETED','CANCELLED']
@@ -77,7 +79,7 @@ telehealthRoutes.patch('/visits/:id/status', async (c) => {
 })
 
 // ── Assign visit to provider ───────────────────────────────────────────────────
-telehealthRoutes.patch('/visits/:id/assign', async (c) => {
+telehealthRoutes.patch('/visits/:id/assign', requireRole('ADMIN', 'PROVIDER'), async (c) => {
   try {
     const { providerId, providerName } = await c.req.json()
     if (!providerId || !providerName) return c.json<Resp>({ success: false, error: 'Missing providerId or providerName' }, 400)
@@ -116,7 +118,7 @@ telehealthRoutes.post('/visits/:id/questionnaire', async (c) => {
 })
 
 // ── Submit provider review ────────────────────────────────────────────────────
-telehealthRoutes.post('/visits/:id/review', async (c) => {
+telehealthRoutes.post('/visits/:id/review', requireRole('ADMIN', 'PROVIDER'), async (c) => {
   try {
     const body = await c.req.json()
     const missing = ['providerId', 'providerName', 'clinicalFindings', 'assessment', 'plan', 'patientInstructions'].filter(k => !body[k])

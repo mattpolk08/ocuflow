@@ -29,13 +29,15 @@ import {
   amendExam,
   deleteExam,
 } from '../lib/exams'
+import { requireRole } from '../middleware/auth'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
   DEMO_MODE: string
 }
+type Variables = { auth: import('../types/auth').AuthContext }
 
-const examRoutes = new Hono<{ Bindings: Bindings }>()
+const examRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 // ── GET /api/exams ─────────────────────────────────────────────────────────────
 examRoutes.get('/', async (c) => {
@@ -88,7 +90,7 @@ examRoutes.get('/:id', async (c) => {
 })
 
 // ── POST /api/exams ────────────────────────────────────────────────────────────
-examRoutes.post('/', async (c) => {
+examRoutes.post('/', requireRole('ADMIN', 'PROVIDER', 'NURSE'), async (c) => {
   const body = await c.req.json<ExamCreateInput>()
 
   if (!body.patientId || !body.patientName || !body.examDate || !body.examType || !body.providerId) {
@@ -116,7 +118,7 @@ examRoutes.post('/', async (c) => {
 })
 
 // ── PUT /api/exams/:id/section/:section ────────────────────────────────────────
-examRoutes.put('/:id/section/:section', async (c) => {
+examRoutes.put('/:id/section/:section', requireRole('ADMIN', 'PROVIDER', 'NURSE'), async (c) => {
   const id      = c.req.param('id')
   const section = c.req.param('section')
   const data    = await c.req.json()
@@ -140,7 +142,7 @@ examRoutes.put('/:id/section/:section', async (c) => {
 })
 
 // ── PUT /api/exams/:id/meta ────────────────────────────────────────────────────
-examRoutes.put('/:id/meta', async (c) => {
+examRoutes.put('/:id/meta', requireRole('ADMIN', 'PROVIDER', 'NURSE'), async (c) => {
   const id   = c.req.param('id')
   const body = await c.req.json()
 
@@ -159,7 +161,7 @@ examRoutes.put('/:id/meta', async (c) => {
 })
 
 // ── POST /api/exams/:id/sign ───────────────────────────────────────────────────
-examRoutes.post('/:id/sign', async (c) => {
+examRoutes.post('/:id/sign', requireRole('PROVIDER', 'ADMIN'), async (c) => {
   const id   = c.req.param('id')
   const body = await c.req.json<{ providerName?: string }>()
 
@@ -181,7 +183,7 @@ examRoutes.post('/:id/sign', async (c) => {
 })
 
 // ── POST /api/exams/:id/amend ──────────────────────────────────────────────────
-examRoutes.post('/:id/amend', async (c) => {
+examRoutes.post('/:id/amend', requireRole('PROVIDER', 'ADMIN'), async (c) => {
   const id   = c.req.param('id')
   const body = await c.req.json<{ note?: string }>()
 
@@ -199,7 +201,7 @@ examRoutes.post('/:id/amend', async (c) => {
 })
 
 // ── DELETE /api/exams/:id ──────────────────────────────────────────────────────
-examRoutes.delete('/:id', async (c) => {
+examRoutes.delete('/:id', requireRole('ADMIN', 'PROVIDER'), async (c) => {
   const id = c.req.param('id')
   try {
     const ok = await deleteExam(c.env.OCULOFLOW_KV, id)

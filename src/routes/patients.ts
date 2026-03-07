@@ -19,6 +19,7 @@ import {
   ensureSeedData,
 } from '../lib/patients'
 import { checkEligibility } from '../lib/eligibility'
+import { requireRole } from '../middleware/auth'
 import type { ApiResponse } from '../types/intake'
 import type { PatientCreateInput } from '../types/patient'
 
@@ -27,8 +28,9 @@ type Bindings = {
   DEMO_MODE: string
   ELIGIBILITY_API_KEY: string
 }
+type Variables = { auth: import('../types/auth').AuthContext }
 
-const patientRoutes = new Hono<{ Bindings: Bindings }>()
+const patientRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 // ── GET /api/patients ─────────────────────────────────────────────────────────
 patientRoutes.get('/', async (c) => {
@@ -66,7 +68,7 @@ patientRoutes.get('/:id', async (c) => {
 })
 
 // ── POST /api/patients ────────────────────────────────────────────────────────
-patientRoutes.post('/', async (c) => {
+patientRoutes.post('/', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRONT_DESK'), async (c) => {
   const body = await c.req.json<PatientCreateInput>()
 
   if (!body.firstName || !body.lastName || !body.dateOfBirth) {
@@ -86,7 +88,7 @@ patientRoutes.post('/', async (c) => {
 })
 
 // ── PUT /api/patients/:id ─────────────────────────────────────────────────────
-patientRoutes.put('/:id', async (c) => {
+patientRoutes.put('/:id', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRONT_DESK'), async (c) => {
   const id      = c.req.param('id')
   const updates = await c.req.json()
 
@@ -106,7 +108,7 @@ patientRoutes.put('/:id', async (c) => {
 })
 
 // ── POST /api/patients/:id/insurance ─────────────────────────────────────────
-patientRoutes.post('/:id/insurance', async (c) => {
+patientRoutes.post('/:id/insurance', requireRole('ADMIN', 'FRONT_DESK', 'BILLING'), async (c) => {
   const patientId = c.req.param('id')
   const plan      = await c.req.json()
 
@@ -124,7 +126,7 @@ patientRoutes.post('/:id/insurance', async (c) => {
 })
 
 // ── POST /api/patients/:id/verify-eligibility ──────────────────────────────
-patientRoutes.post('/:id/verify-eligibility', async (c) => {
+patientRoutes.post('/:id/verify-eligibility', requireRole('ADMIN', 'FRONT_DESK', 'BILLING'), async (c) => {
   const patientId = c.req.param('id')
   const body      = await c.req.json<{ insurancePlanId: string; providerNpi?: string }>()
 

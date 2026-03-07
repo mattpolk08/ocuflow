@@ -1,6 +1,7 @@
 // ─── Phase 8B – Prior Authorization Routes ───────────────────────────────────
 import { Hono } from 'hono';
 import type { PAResp, PAStatus, PADecisionReason, PAUrgency, PAServiceType, DocumentType } from '../types/priorauth';
+import { requireRole } from '../middleware/auth';
 import {
   listPARequests, getPARequest, createPARequest, updatePAStatus,
   addPADocument, addPANote, submitAppeal, schedulePeerToPeer,
@@ -9,7 +10,8 @@ import {
 } from '../lib/priorauth';
 
 type Bindings = { OCULOFLOW_KV: KVNamespace };
-export const paRoutes = new Hono<{ Bindings: Bindings }>();
+type Variables = { auth: import('../types/auth').AuthContext };
+export const paRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // ── Ping ──────────────────────────────────────────────────────────────────────
 paRoutes.get('/ping', (c) =>
@@ -39,7 +41,7 @@ paRoutes.get('/requests/:id', async (c) => {
 });
 
 // ── Create PA Request ─────────────────────────────────────────────────────────
-paRoutes.post('/requests', async (c) => {
+paRoutes.post('/requests', requireRole('ADMIN', 'PROVIDER', 'BILLING', 'NURSE'), async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { patientId, patientName, serviceCode, serviceDescription, payerId, payerName, providerId, providerName } = body;
   if (!patientId || !patientName || !serviceCode || !serviceDescription || !payerId || !payerName || !providerId || !providerName) {
@@ -56,7 +58,7 @@ paRoutes.post('/requests', async (c) => {
 });
 
 // ── Update PA Status ──────────────────────────────────────────────────────────
-paRoutes.patch('/requests/:id/status', async (c) => {
+paRoutes.patch('/requests/:id/status', requireRole('ADMIN', 'PROVIDER', 'BILLING'), async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { status, changedBy, reason, notes, authNumber } = body;
   if (!status || !changedBy) {
@@ -107,7 +109,7 @@ paRoutes.post('/requests/:id/notes', async (c) => {
 });
 
 // ── Submit Appeal ─────────────────────────────────────────────────────────────
-paRoutes.post('/requests/:id/appeal', async (c) => {
+paRoutes.post('/requests/:id/appeal', requireRole('ADMIN', 'PROVIDER', 'BILLING'), async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { appealType, reason, deadline } = body;
   if (!appealType || !reason || !deadline) {
@@ -147,7 +149,7 @@ paRoutes.post('/requests/:id/peer-to-peer', async (c) => {
 });
 
 // ── Delete PA Request ─────────────────────────────────────────────────────────
-paRoutes.delete('/requests/:id', async (c) => {
+paRoutes.delete('/requests/:id', requireRole('ADMIN', 'BILLING'), async (c) => {
   const deleted = await deletePARequest(c.env.OCULOFLOW_KV, c.req.param('id'));
   if (!deleted) return c.json<PAResp>({ success: false, error: 'PA request not found' }, 404);
   return c.json<PAResp>({ success: true, data: { deleted: true } });

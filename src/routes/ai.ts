@@ -4,6 +4,7 @@
 
 import { Hono } from 'hono'
 import type { RiskCategory, InsightType, InsightPriority } from '../types/ai'
+import { requireRole } from '../middleware/auth'
 import {
   seedAiData, getAiDashboard,
   suggestIcdCodes, generateClinicalNote, saveNote,
@@ -14,9 +15,10 @@ import {
 } from '../lib/ai'
 
 type Bindings = { OCULOFLOW_KV: KVNamespace }
+type Variables = { auth: import('../types/auth').AuthContext }
 type Resp = { success: boolean; data?: unknown; message?: string; error?: string }
 
-const aiRoutes = new Hono<{ Bindings: Bindings }>()
+const aiRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 // ── Ping / Seed ───────────────────────────────────────────────────────────────
 aiRoutes.get('/ping', async (c) => {
@@ -67,7 +69,7 @@ aiRoutes.get('/icd10/:code', (c) => {
 })
 
 // ── ICD-10 Suggestion Engine ──────────────────────────────────────────────────
-aiRoutes.post('/icd10/suggest', async (c) => {
+aiRoutes.post('/icd10/suggest', requireRole('ADMIN', 'PROVIDER', 'NURSE'), async (c) => {
   try {
     const body = await c.req.json()
     if (!body.symptoms && !body.freeText) {
@@ -104,7 +106,7 @@ aiRoutes.post('/icd10/suggest', async (c) => {
 })
 
 // ── Note Generation ────────────────────────────────────────────────────────────
-aiRoutes.post('/notes/generate', async (c) => {
+aiRoutes.post('/notes/generate', requireRole('ADMIN', 'PROVIDER', 'NURSE'), async (c) => {
   try {
     const body = await c.req.json()
     if (!body.chiefComplaint) {
@@ -153,7 +155,7 @@ aiRoutes.get('/interactions', (c) => {
   return c.json<Resp>({ success: true, data: results })
 })
 
-aiRoutes.post('/interactions/check', async (c) => {
+aiRoutes.post('/interactions/check', requireRole('ADMIN', 'PROVIDER', 'NURSE'), async (c) => {
   try {
     const body = await c.req.json()
     const { drugIds } = body
@@ -230,7 +232,7 @@ aiRoutes.get('/risk', async (c) => {
   }
 })
 
-aiRoutes.post('/risk/compute', async (c) => {
+aiRoutes.post('/risk/compute', requireRole('ADMIN', 'PROVIDER'), async (c) => {
   try {
     const body = await c.req.json()
     const { patientId, patientName, category } = body
@@ -280,7 +282,7 @@ aiRoutes.get('/insights', async (c) => {
   }
 })
 
-aiRoutes.patch('/insights/:id/dismiss', async (c) => {
+aiRoutes.patch('/insights/:id/dismiss', requireRole('ADMIN', 'PROVIDER'), async (c) => {
   try {
     const insight = await dismissInsight(c.env.OCULOFLOW_KV, c.req.param('id'))
     if (!insight) return c.json<Resp>({ success: false, error: 'Insight not found' }, 404)

@@ -9,11 +9,13 @@ import {
   listGoals, createGoal, updateGoal, deleteGoal,
 } from '../lib/scorecards'
 import type { DateRange, GoalStatus } from '../types/scorecards'
+import { requireRole } from '../middleware/auth'
 
 type Bindings = { OCULOFLOW_KV: KVNamespace }
+type Variables = { auth: import('../types/auth').AuthContext }
 type Resp     = { success: boolean; data?: unknown; message?: string; error?: string }
 
-const scorecardsRoutes = new Hono<{ Bindings: Bindings }>()
+const scorecardsRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 // ── Ping / seed ────────────────────────────────────────────────────────────────
 scorecardsRoutes.get('/ping', async (c) => {
@@ -125,7 +127,7 @@ scorecardsRoutes.get('/goals/:id', async (c) => {
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
-scorecardsRoutes.post('/goals', async (c) => {
+scorecardsRoutes.post('/goals', requireRole('ADMIN', 'PROVIDER', 'BILLING'), async (c) => {
   try {
     const body = await c.req.json()
     const missing = ['providerId', 'metric', 'description', 'targetValue', 'currentValue', 'unit', 'period', 'dueDate'].filter(k => body[k] === undefined || body[k] === '')
@@ -138,7 +140,7 @@ scorecardsRoutes.post('/goals', async (c) => {
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
-scorecardsRoutes.patch('/goals/:id', async (c) => {
+scorecardsRoutes.patch('/goals/:id', requireRole('ADMIN', 'PROVIDER', 'BILLING'), async (c) => {
   try {
     const body = await c.req.json()
     const goal = await updateGoal(c.env.OCULOFLOW_KV, c.req.param('id'), body)
@@ -147,7 +149,7 @@ scorecardsRoutes.patch('/goals/:id', async (c) => {
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
-scorecardsRoutes.delete('/goals/:id', async (c) => {
+scorecardsRoutes.delete('/goals/:id', requireRole('ADMIN', 'BILLING'), async (c) => {
   try {
     const ok = await deleteGoal(c.env.OCULOFLOW_KV, c.req.param('id'))
     if (!ok) return c.json<Resp>({ success: false, error: 'Goal not found' }, 404)

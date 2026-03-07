@@ -176,13 +176,13 @@ app.route('/api/intake',    intakeRoutes)
 app.use('/api/dashboard/*', requireAuth, auditMiddleware)
 app.route('/api/dashboard', dashboardRoutes)
 
-app.use('/api/patients/*',  requireAuth, auditMiddleware)
+app.use('/api/patients/*',  requireAuth, requireRole('ADMIN','PROVIDER','NURSE','FRONT_DESK','BILLING'), auditMiddleware)
 app.route('/api/patients',  patientRoutes)
 
-app.use('/api/schedule/*',  requireAuth, auditMiddleware)
+app.use('/api/schedule/*',  requireAuth, requireRole('ADMIN','PROVIDER','NURSE','FRONT_DESK'), auditMiddleware)
 app.route('/api/schedule',  scheduleRoutes)
 
-app.use('/api/exams/*',     requireAuth, auditMiddleware)
+app.use('/api/exams/*',     requireAuth, requireRole('ADMIN','PROVIDER','NURSE'), auditMiddleware)
 app.route('/api/exams',     examRoutes)
 
 app.use('/api/billing/*',   requireAuth, requireRole('BILLING', 'ADMIN', 'PROVIDER'), auditMiddleware)
@@ -205,31 +205,32 @@ app.use('/api/portal/*', async (c, next) => {
 })
 app.route('/api/portal', portalRoutes)
 
-app.use('/api/messaging/*', requireAuth, auditMiddleware)
+app.use('/api/messaging/*', requireAuth, requireRole('ADMIN','PROVIDER','NURSE','FRONT_DESK'), auditMiddleware)
 app.route('/api/messaging',  messagingRoutes)
 
-app.use('/api/reminders/*', requireAuth, auditMiddleware)
+app.use('/api/reminders/*', requireAuth, requireRole('ADMIN','PROVIDER','NURSE','FRONT_DESK'), auditMiddleware)
 app.route('/api/reminders',  remindersRoutes)
 
-app.use('/api/scorecards/*', requireAuth, auditMiddleware)
+app.use('/api/scorecards/*', requireAuth, requireRole('ADMIN','PROVIDER','BILLING'), auditMiddleware)
 app.route('/api/scorecards', scorecardsRoutes)
 
-app.use('/api/telehealth/*', requireAuth, auditMiddleware)
+app.use('/api/telehealth/*', requireAuth, requireRole('ADMIN','PROVIDER','NURSE'), auditMiddleware)
 app.route('/api/telehealth', telehealthRoutes)
 
 app.use('/api/erx/*',        requireAuth, requireRole('PROVIDER', 'ADMIN', 'NURSE'), auditMiddleware)
 app.route('/api/erx',        erxRoutes)
 
-app.use('/api/ai/*',         requireAuth, auditMiddleware)
+app.use('/api/ai/*',         requireAuth, requireRole('ADMIN','PROVIDER','NURSE'), auditMiddleware)
 app.route('/api/ai',         aiRoutes)
 
-app.use('/api/pa/*',         requireAuth, auditMiddleware)
+app.use('/api/pa/*',         requireAuth, requireRole('ADMIN','PROVIDER','BILLING','NURSE'), auditMiddleware)
 app.route('/api/pa',         paRoutes)
 
 app.use('/api/rcm/*',        requireAuth, requireRole('BILLING', 'ADMIN', 'PROVIDER'), auditMiddleware)
 app.route('/api/rcm',        rcmRoutes)
 
 // ── MFA ──────────────────────────────────────────────────────────────────────
+app.use('/api/mfa/*', requireAuth, auditMiddleware)
 app.route('/api/mfa',        mfaRoutes)
 
 // ── Patient Engagement & Loyalty ─────────────────────────────────────────────────────────────────
@@ -249,11 +250,11 @@ app.use('/api/analytics/*',  requireAuth, requireRole('BILLING', 'ADMIN'), audit
 app.route('/api/analytics',  analyticsRoutes)
 
 // ── Phase B1 — Notifications (Twilio SMS + SendGrid Email + Eligibility) ─────
-app.use('/api/notifications/*', requireAuth, auditMiddleware)
+app.use('/api/notifications/*', requireAuth, requireRole('ADMIN','PROVIDER','NURSE','FRONT_DESK','BILLING'), auditMiddleware)
 app.route('/api/notifications', notificationsRoutes)
 
 // ── Phase B2 — Documents & PDF Generation ────────────────────────────────────
-app.use('/api/documents/*',  requireAuth, auditMiddleware)
+app.use('/api/documents/*',  requireAuth, requireRole('ADMIN','PROVIDER','NURSE','FRONT_DESK','BILLING'), auditMiddleware)
 app.route('/api/documents',  docRoutes)
 
 // ── Health Check ──────────────────────────────────────────────────────────────
@@ -263,7 +264,7 @@ app.get('/api/health', (c) => {
     service: 'OculoFlow',
     phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx', '8a-ai-cds', '8b-prior-auth', '9a-rcm', '9b-engagement', 'a1-auth', 'a2-audit-hipaa', 'a3-live-deploy', 'a4-mfa', '10a-analytics', 'b1-notifications', 'b2-documents', 'b3-portal-auth'],
     timestamp: new Date().toISOString(),
-    version: '2.9.0',
+    version: '3.0.0',
   })
 })
 

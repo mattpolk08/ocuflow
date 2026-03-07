@@ -12,6 +12,7 @@ import {
   getCommsDashboard, fillTemplate,
 } from '../lib/reminders'
 import type { CommChannel, MessageType, CampaignStatus, NoShowStatus } from '../types/reminders'
+import { requireRole } from '../middleware/auth'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
@@ -24,8 +25,9 @@ type Bindings = {
   DEMO_MODE?: string
 }
 type Resp     = { success: boolean; data?: unknown; message?: string; error?: string }
+type Variables = { auth: import('../types/auth').AuthContext }
 
-const remindersRoutes = new Hono<{ Bindings: Bindings }>()
+const remindersRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 // ── Notification config helpers ───────────────────────────────────────────────
 function getSmsConfig(env: Bindings) {
@@ -62,7 +64,7 @@ remindersRoutes.get('/ping', async (c) => {
 })
 
 // ── Test SMS (ADMIN) ──────────────────────────────────────────────────────────
-remindersRoutes.post('/test-sms', async (c) => {
+remindersRoutes.post('/test-sms', requireRole('ADMIN'), async (c) => {
   try {
     const body = await c.req.json().catch(() => ({})) as { to?: string }
     if (!body.to) return c.json<Resp>({ success: false, error: 'to (phone number) required' }, 400)
@@ -76,7 +78,7 @@ remindersRoutes.post('/test-sms', async (c) => {
 })
 
 // ── Test Email (ADMIN) ────────────────────────────────────────────────────────
-remindersRoutes.post('/test-email', async (c) => {
+remindersRoutes.post('/test-email', requireRole('ADMIN'), async (c) => {
   try {
     const body = await c.req.json().catch(() => ({})) as { to?: string; name?: string }
     if (!body.to) return c.json<Resp>({ success: false, error: 'to (email address) required' }, 400)
@@ -118,7 +120,7 @@ remindersRoutes.get('/templates/:id', async (c) => {
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
-remindersRoutes.post('/templates', async (c) => {
+remindersRoutes.post('/templates', requireRole('ADMIN', 'FRONT_DESK'), async (c) => {
   try {
     const body = await c.req.json()
     const missing = ['name', 'type', 'channel', 'body'].filter(k => !body[k])
@@ -128,7 +130,7 @@ remindersRoutes.post('/templates', async (c) => {
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
-remindersRoutes.patch('/templates/:id', async (c) => {
+remindersRoutes.patch('/templates/:id', requireRole('ADMIN', 'FRONT_DESK'), async (c) => {
   try {
     const body = await c.req.json()
     const tpl = await updateTemplate(c.env.OCULOFLOW_KV, c.req.param('id'), body)
@@ -172,7 +174,7 @@ remindersRoutes.get('/messages/:id', async (c) => {
 })
 
 // Send a custom message
-remindersRoutes.post('/messages/send', async (c) => {
+remindersRoutes.post('/messages/send', requireRole('ADMIN', 'FRONT_DESK', 'NURSE'), async (c) => {
   try {
     const body = await c.req.json()
     const missing = ['patientId', 'patientName', 'channel', 'messageType', 'body'].filter(k => !body[k])
@@ -187,7 +189,7 @@ remindersRoutes.post('/messages/send', async (c) => {
 })
 
 // Send appointment reminder
-remindersRoutes.post('/messages/reminder', async (c) => {
+remindersRoutes.post('/messages/reminder', requireRole('ADMIN', 'FRONT_DESK', 'NURSE'), async (c) => {
   try {
     const body = await c.req.json()
     const missing = ['patientId', 'patientName', 'channel', 'messageType', 'templateId', 'date', 'time', 'provider'].filter(k => !body[k])
@@ -216,7 +218,7 @@ remindersRoutes.get('/rules', async (c) => {
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
-remindersRoutes.patch('/rules/:id', async (c) => {
+remindersRoutes.patch('/rules/:id', requireRole('ADMIN'), async (c) => {
   try {
     const body = await c.req.json()
     const rule = await updateRule(c.env.OCULOFLOW_KV, c.req.param('id'), body)
@@ -285,7 +287,7 @@ remindersRoutes.get('/campaigns/:id', async (c) => {
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
-remindersRoutes.post('/campaigns', async (c) => {
+remindersRoutes.post('/campaigns', requireRole('ADMIN', 'FRONT_DESK'), async (c) => {
   try {
     const body = await c.req.json()
     const missing = ['name', 'channel', 'messageType', 'templateId', 'createdById', 'createdByName'].filter(k => !body[k])
@@ -299,7 +301,7 @@ remindersRoutes.post('/campaigns', async (c) => {
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
-remindersRoutes.patch('/campaigns/:id/status', async (c) => {
+remindersRoutes.patch('/campaigns/:id/status', requireRole('ADMIN', 'FRONT_DESK'), async (c) => {
   try {
     const body = await c.req.json()
     if (!body.status) return c.json<Resp>({ success: false, error: 'status required' }, 400)
@@ -310,7 +312,7 @@ remindersRoutes.patch('/campaigns/:id/status', async (c) => {
 })
 
 // Simulate sending a campaign (DRAFT → RUNNING → COMPLETED)
-remindersRoutes.post('/campaigns/:id/launch', async (c) => {
+remindersRoutes.post('/campaigns/:id/launch', requireRole('ADMIN'), async (c) => {
   try {
     const campaign = await getCampaign(c.env.OCULOFLOW_KV, c.req.param('id'))
     if (!campaign) return c.json<Resp>({ success: false, error: 'Campaign not found' }, 404)

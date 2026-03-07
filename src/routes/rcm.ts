@@ -2,6 +2,7 @@
 
 import { Hono } from 'hono';
 import type { RCMResp, ClaimStatus, DenialReason, PaymentMethod, PayerType } from '../types/rcm';
+import { requireRole } from '../middleware/auth';
 import {
   listClaims, getClaim, createClaim, updateClaimStatus, postPayment,
   addDenial, addClaimNote, deleteClaim,
@@ -13,7 +14,8 @@ import {
 } from '../lib/rcm';
 
 type Bindings = { OCULOFLOW_KV: KVNamespace };
-const rcmRoutes = new Hono<{ Bindings: Bindings }>();
+type Variables = { auth: import('../types/auth').AuthContext };
+const rcmRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // ─── Ping ─────────────────────────────────────────────────────────────────────
 rcmRoutes.get('/ping', (c) => c.json<RCMResp>({ success: true, data: { pong: true, module: 'rcm' } }));
@@ -35,7 +37,7 @@ rcmRoutes.get('/claims', async (c) => {
   return c.json<RCMResp>({ success: true, data: claims, total: claims.length });
 });
 
-rcmRoutes.post('/claims', async (c) => {
+rcmRoutes.post('/claims', requireRole('ADMIN', 'BILLING', 'PROVIDER'), async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { patientId, patientName, payerId, payerName, serviceDate } = body;
   if (!patientId || !patientName || !payerId || !payerName || !serviceDate) {
@@ -51,14 +53,14 @@ rcmRoutes.get('/claims/:id', async (c) => {
   return c.json<RCMResp>({ success: true, data: claim });
 });
 
-rcmRoutes.delete('/claims/:id', async (c) => {
+rcmRoutes.delete('/claims/:id', requireRole('ADMIN', 'BILLING'), async (c) => {
   const deleted = await deleteClaim(c.env.OCULOFLOW_KV, c.req.param('id'));
   if (!deleted) return c.json<RCMResp>({ success: false, error: 'Claim not found' }, 404);
   return c.json<RCMResp>({ success: true, data: { deleted: true } });
 });
 
 // ─── Claim Status ─────────────────────────────────────────────────────────────
-rcmRoutes.patch('/claims/:id/status', async (c) => {
+rcmRoutes.patch('/claims/:id/status', requireRole('ADMIN', 'BILLING'), async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { status, userId } = body as { status: ClaimStatus; userId: string };
   if (!status) return c.json<RCMResp>({ success: false, error: 'status is required' }, 400);
@@ -72,7 +74,7 @@ rcmRoutes.patch('/claims/:id/status', async (c) => {
 });
 
 // ─── Payments ─────────────────────────────────────────────────────────────────
-rcmRoutes.post('/claims/:id/payments', async (c) => {
+rcmRoutes.post('/claims/:id/payments', requireRole('ADMIN', 'BILLING'), async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { amount, method, postedBy, paymentDate } = body;
   if (!amount || !method || !postedBy) {
@@ -138,7 +140,7 @@ rcmRoutes.get('/eras', async (c) => {
   return c.json<RCMResp>({ success: true, data: eras, total: eras.length });
 });
 
-rcmRoutes.post('/eras', async (c) => {
+rcmRoutes.post('/eras', requireRole('ADMIN', 'BILLING'), async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { payerId, payerName, totalPayment, claimIds } = body;
   if (!payerId || !payerName || totalPayment === undefined) {
@@ -161,7 +163,7 @@ rcmRoutes.get('/statements', async (c) => {
   return c.json<RCMResp>({ success: true, data: stmts, total: stmts.length });
 });
 
-rcmRoutes.post('/statements', async (c) => {
+rcmRoutes.post('/statements', requireRole('ADMIN', 'BILLING'), async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { patientId, patientName, totalDue, dueDate } = body;
   if (!patientId || !patientName || totalDue === undefined || !dueDate) {
@@ -184,7 +186,7 @@ rcmRoutes.get('/payment-plans', async (c) => {
   return c.json<RCMResp>({ success: true, data: plans, total: plans.length });
 });
 
-rcmRoutes.post('/payment-plans', async (c) => {
+rcmRoutes.post('/payment-plans', requireRole('ADMIN', 'BILLING', 'FRONT_DESK'), async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { patientId, patientName, totalBalance, monthlyPayment } = body;
   if (!patientId || !patientName || totalBalance === undefined || !monthlyPayment) {
