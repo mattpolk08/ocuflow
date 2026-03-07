@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MFA Setup — OculoFlow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { animation: spin 1s linear infinite; }
+    .step-inactive { opacity: 0.4; pointer-events: none; }
+    .recovery-code { font-family: monospace; letter-spacing: 0.1em; }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-950 text-white p-4 md:p-8">
+
+<div class="max-w-2xl mx-auto">
+  <!-- Header -->
+  <div class="flex items-center gap-4 mb-8">
+    <a href="/dashboard" class="text-slate-400 hover:text-white transition-colors">
+      <i class="fas fa-arrow-left text-lg"></i>
+    </a>
+    <div>
+      <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+        <i class="fas fa-shield-halved text-teal-400"></i>
+        Set Up Two-Factor Authentication
+      </h1>
+      <p class="text-slate-400 text-sm mt-1">Protect your account with an authenticator app</p>
+    </div>
+  </div>
+
+  <!-- Progress steps -->
+  <div class="flex items-center gap-2 mb-8" id="progress-steps">
+    <div class="step-pill active" id="step-pill-1">
+      <span class="step-num">1</span><span class="step-lbl">Scan QR Code</span>
+    </div>
+    <div class="flex-1 h-px bg-slate-700 mx-2"></div>
+    <div class="step-pill" id="step-pill-2">
+      <span class="step-num">2</span><span class="step-lbl">Verify Code</span>
+    </div>
+    <div class="flex-1 h-px bg-slate-700 mx-2"></div>
+    <div class="step-pill" id="step-pill-3">
+      <span class="step-num">3</span><span class="step-lbl">Save Recovery Codes</span>
+    </div>
+  </div>
+  <style>
+    .step-pill { display:flex; align-items:center; gap:8px; }
+    .step-num { width:28px; height:28px; border-radius:50%; background:#1e293b; border:2px solid #334155; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#94a3b8; flex-shrink:0; }
+    .step-lbl { font-size:13px; color:#94a3b8; white-space:nowrap; }
+    .step-pill.active .step-num { background:#0d9488; border-color:#0d9488; color:#fff; }
+    .step-pill.active .step-lbl { color:#fff; font-weight:600; }
+    .step-pill.done .step-num { background:#059669; border-color:#059669; color:#fff; }
+  </style>
+
+  <!-- ─── Step 1: QR Code ─────────────────────────────────────────────── -->
+  <div id="step-1" class="bg-slate-900 border border-slate-700 rounded-2xl p-6 mb-4">
+    <h2 class="text-lg font-semibold mb-1">Step 1 — Scan with your authenticator app</h2>
+    <p class="text-slate-400 text-sm mb-6">Use <strong class="text-white">Google Authenticator</strong>, <strong class="text-white">Authy</strong>, or any TOTP app to scan the QR code below.</p>
+
+    <div class="flex flex-col md:flex-row gap-6 items-start">
+      <!-- QR code box -->
+      <div class="flex-shrink-0">
+        <div id="qr-loading" class="w-44 h-44 bg-slate-800 rounded-xl flex items-center justify-center border border-slate-700">
+          <i class="fas fa-circle-notch spin text-teal-400 text-2xl"></i>
+        </div>
+        <div id="qr-code" class="hidden w-44 h-44 bg-white rounded-xl p-2 flex items-center justify-center"></div>
+      </div>
+
+      <!-- Manual entry -->
+      <div class="flex-1 min-w-0">
+        <p class="text-sm text-slate-400 mb-2">Can't scan? Enter this key manually:</p>
+        <div class="bg-slate-800 rounded-xl p-3 border border-slate-700 mb-4">
+          <code id="manual-secret" class="text-teal-300 font-mono text-sm break-all tracking-wider">Loading…</code>
+          <button id="copy-secret" class="mt-2 w-full text-xs text-slate-400 hover:text-teal-400 transition-colors flex items-center gap-1 justify-center">
+            <i class="fas fa-copy"></i> Copy to clipboard
+          </button>
+        </div>
+        <div class="space-y-2 text-xs text-slate-500">
+          <div class="flex items-center gap-2"><i class="fas fa-check text-teal-400"></i> Type: Time-based (TOTP)</div>
+          <div class="flex items-center gap-2"><i class="fas fa-check text-teal-400"></i> Algorithm: SHA-1</div>
+          <div class="flex items-center gap-2"><i class="fas fa-check text-teal-400"></i> Period: 30 seconds</div>
+          <div class="flex items-center gap-2"><i class="fas fa-check text-teal-400"></i> Digits: 6</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-6 pt-6 border-t border-slate-700 flex justify-end">
+      <button id="step1-next" class="bg-teal-600 hover:bg-teal-500 text-white font-semibold py-2.5 px-6 rounded-xl transition-all flex items-center gap-2 disabled:opacity-50" disabled>
+        I've scanned it <i class="fas fa-arrow-right"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- ─── Step 2: Verify TOTP ─────────────────────────────────────────────── -->
+  <div id="step-2" class="bg-slate-900 border border-slate-700 rounded-2xl p-6 mb-4 step-inactive">
+    <h2 class="text-lg font-semibold mb-1">Step 2 — Verify your authenticator</h2>
+    <p class="text-slate-400 text-sm mb-6">Enter the 6-digit code shown in your authenticator app to confirm setup.</p>
+
+    <div class="max-w-xs mx-auto">
+      <input
+        id="confirm-code"
+        type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6"
+        placeholder="000000"
+        class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-4 text-white text-center text-2xl font-mono tracking-widest focus:outline-none focus:border-teal-500 transition-all placeholder-slate-600"
+      >
+      <div id="verify-error" class="hidden mt-3 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-2 text-red-400 text-sm text-center"></div>
+      <button id="confirm-btn" class="mt-4 w-full bg-teal-600 hover:bg-teal-500 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2">
+        <i class="fas fa-check-circle"></i> Confirm &amp; Activate
+      </button>
+    </div>
+  </div>
+
+  <!-- ─── Step 3: Recovery Codes ─────────────────────────────────────────── -->
+  <div id="step-3" class="bg-slate-900 border border-slate-700 rounded-2xl p-6 mb-4 step-inactive">
+    <h2 class="text-lg font-semibold mb-1 text-amber-400"><i class="fas fa-triangle-exclamation mr-2"></i>Step 3 — Save your recovery codes</h2>
+    <p class="text-slate-400 text-sm mb-4">Store these codes somewhere safe. Each code can only be used once to access your account if you lose your authenticator.</p>
+
+    <div id="recovery-grid" class="grid grid-cols-2 gap-2 mb-4 font-mono text-sm bg-slate-800 rounded-xl p-4 border border-slate-700">
+      <!-- codes injected here -->
+    </div>
+
+    <div class="flex gap-3 mb-6 flex-wrap">
+      <button id="copy-codes" class="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium py-2 px-4 rounded-lg transition-all">
+        <i class="fas fa-copy"></i> Copy all codes
+      </button>
+      <button id="download-codes" class="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium py-2 px-4 rounded-lg transition-all">
+        <i class="fas fa-download"></i> Download as .txt
+      </button>
+    </div>
+
+    <div class="flex items-start gap-3 bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 mb-6">
+      <i class="fas fa-triangle-exclamation text-amber-400 mt-0.5 flex-shrink-0"></i>
+      <div class="text-sm text-amber-200">
+        <strong>These codes will not be shown again.</strong> If you lose access to your authenticator app and don't have these codes, you will be locked out of your account.
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3 mb-6">
+      <input type="checkbox" id="saved-confirm" class="w-4 h-4 rounded border-slate-600 bg-slate-700 text-teal-500">
+      <label for="saved-confirm" class="text-sm text-slate-300 cursor-pointer">
+        I have saved my recovery codes in a secure location
+      </label>
+    </div>
+
+    <button id="finish-btn" disabled
+      class="w-full bg-teal-600 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2">
+      <i class="fas fa-shield-check"></i> Complete MFA Setup
+    </button>
+  </div>
+</div>
+
+<script>
+(function() {
+  const token = localStorage.getItem('of_access_token')
+  if (!token) { window.location.href = '/login'; return }
+
+  let secret = '', recoveryCodes = []
+
+  // ── Step tracking ─────────────────────────────────────────────────────────
+  function activateStep(n) {
+    for (let i = 1; i <= 3; i++) {
+      const el = document.getElementById(`step-${i}`)
+      const pill = document.getElementById(`step-pill-${i}`)
+      if (i < n) {
+        el.classList.add('step-inactive')
+        pill.classList.remove('active'); pill.classList.add('done')
+        pill.querySelector('.step-num').innerHTML = '<i class="fas fa-check text-xs"></i>'
+      } else if (i === n) {
+        el.classList.remove('step-inactive')
+        pill.classList.add('active')
+      } else {
+        el.classList.add('step-inactive')
+        pill.classList.remove('active', 'done')
+        pill.querySelector('.step-num').textContent = i
+      }
+    }
+  }
+
+  // ── Load enrollment data ──────────────────────────────────────────────────
+  async function beginEnrollment() {
+    try {
+      const res = await fetch('/api/mfa/enroll/begin', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (!data.success) {
+        alert('Failed to begin MFA enrollment: ' + (data.error || 'Unknown error'))
+        return
+      }
+      secret = data.data.secret
+      recoveryCodes = data.data.recoveryCodes
+
+      // Show manual secret
+      const formattedSecret = secret.match(/.{1,4}/g)?.join(' ') || secret
+      document.getElementById('manual-secret').textContent = formattedSecret
+
+      // Generate QR code
+      document.getElementById('qr-loading').classList.add('hidden')
+      document.getElementById('qr-code').classList.remove('hidden')
+      new QRCode(document.getElementById('qr-code'), {
+        text: data.data.otpauthUri,
+        width: 168, height: 168,
+        colorDark: '#000000', colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M,
+      })
+
+      // Enable next button after short delay
+      setTimeout(() => {
+        document.getElementById('step1-next').disabled = false
+      }, 1500)
+
+    } catch (err) {
+      console.error('Enrollment error:', err)
+      alert('Network error. Please refresh and try again.')
+    }
+  }
+
+  beginEnrollment()
+
+  // ── Copy secret ───────────────────────────────────────────────────────────
+  document.getElementById('copy-secret').addEventListener('click', () => {
+    navigator.clipboard.writeText(secret.replace(/\s/g, ''))
+    document.getElementById('copy-secret').innerHTML = '<i class="fas fa-check text-teal-400"></i> Copied!'
+    setTimeout(() => {
+      document.getElementById('copy-secret').innerHTML = '<i class="fas fa-copy"></i> Copy to clipboard'
+    }, 2000)
+  })
+
+  // ── Step 1 → Step 2 ───────────────────────────────────────────────────────
+  document.getElementById('step1-next').addEventListener('click', () => {
+    activateStep(2)
+    document.getElementById('confirm-code').focus()
+  })
+
+  // ── Step 2: Confirm TOTP ──────────────────────────────────────────────────
+  document.getElementById('confirm-code').addEventListener('input', function() {
+    this.value = this.value.replace(/\D/g, '')
+    if (this.value.length === 6) confirmTotp()
+  })
+
+  async function confirmTotp() {
+    const code = document.getElementById('confirm-code').value.trim()
+    if (code.length !== 6) return
+    const btn = document.getElementById('confirm-btn')
+    btn.disabled = true
+    btn.innerHTML = '<i class="fas fa-circle-notch spin"></i> Verifying…'
+    document.getElementById('verify-error').classList.add('hidden')
+
+    try {
+      const res = await fetch('/api/mfa/enroll/confirm', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      })
+      const data = await res.json()
+      if (!data.success) {
+        document.getElementById('verify-error').textContent = data.error || 'Invalid code'
+        document.getElementById('verify-error').classList.remove('hidden')
+        document.getElementById('confirm-code').value = ''
+        document.getElementById('confirm-code').focus()
+        btn.disabled = false
+        btn.innerHTML = '<i class="fas fa-check-circle"></i> Confirm & Activate'
+        return
+      }
+      // Success — show recovery codes
+      activateStep(3)
+      renderRecoveryCodes()
+    } catch {
+      document.getElementById('verify-error').textContent = 'Network error. Try again.'
+      document.getElementById('verify-error').classList.remove('hidden')
+      btn.disabled = false
+      btn.innerHTML = '<i class="fas fa-check-circle"></i> Confirm & Activate'
+    }
+  }
+
+  document.getElementById('confirm-btn').addEventListener('click', confirmTotp)
+
+  // ── Step 3: Recovery codes ────────────────────────────────────────────────
+  function renderRecoveryCodes() {
+    const grid = document.getElementById('recovery-grid')
+    grid.innerHTML = recoveryCodes.map(code =>
+      `<div class="recovery-code bg-slate-900 rounded-lg px-3 py-2 text-teal-300 text-center border border-slate-700">${code}</div>`
+    ).join('')
+  }
+
+  document.getElementById('copy-codes').addEventListener('click', () => {
+    navigator.clipboard.writeText(recoveryCodes.join('\n'))
+    document.getElementById('copy-codes').innerHTML = '<i class="fas fa-check"></i> Copied!'
+    setTimeout(() => {
+      document.getElementById('copy-codes').innerHTML = '<i class="fas fa-copy"></i> Copy all codes'
+    }, 2000)
+  })
+
+  document.getElementById('download-codes').addEventListener('click', () => {
+    const text = `OculoFlow MFA Recovery Codes\nGenerated: ${new Date().toISOString()}\n\n${recoveryCodes.join('\n')}\n\nEach code can only be used once. Keep these safe.`
+    const blob = new Blob([text], { type: 'text/plain' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = 'oculoflow-recovery-codes.txt'
+    a.click()
+  })
+
+  document.getElementById('saved-confirm').addEventListener('change', function() {
+    document.getElementById('finish-btn').disabled = !this.checked
+  })
+
+  document.getElementById('finish-btn').addEventListener('click', () => {
+    window.location.href = '/dashboard?mfa=enrolled'
+  })
+})()
+</script>
+</body>
+</html>

@@ -17,6 +17,8 @@
 // Phase 8A: AI Clinical Decision Support
 // Phase 8B: Automated Prior Authorization
 // Phase 9A: Revenue Cycle Management
+// Phase 9B: Patient Engagement & Loyalty
+// Phase 10A: Analytics & Business Intelligence
 // Phase A1: Authentication & Authorization
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -44,6 +46,9 @@ import erxRoutes         from './routes/erx'
 import aiRoutes          from './routes/ai'
 import { paRoutes }      from './routes/priorauth'
 import rcmRoutes         from './routes/rcm'
+import mfaRoutes         from './routes/mfa'
+import engagementRoutes  from './routes/engagement'
+import analyticsRoutes   from './routes/analytics'
 // Import HTML as raw string (Vite ?raw import)
 import intakeHtml    from '../public/intake.html?raw'
 import dashboardHtml from '../public/dashboard.html?raw'
@@ -63,6 +68,10 @@ import aiHtml          from '../public/ai.html?raw'
 import priorauthHtml   from '../public/priorauth.html?raw'
 import rcmHtml         from '../public/rcm.html?raw'
 import loginHtml       from '../public/login.html?raw'
+import mfaVerifyHtml   from '../public/mfa-verify.html?raw'
+import mfaSetupHtml    from '../public/mfa-setup.html?raw'
+import engagementHtml  from '../public/engagement.html?raw'
+import analyticsHtml   from '../public/analytics.html?raw'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
@@ -71,6 +80,8 @@ type Bindings = {
   TWILIO_ACCOUNT_SID: string
   TWILIO_AUTH_TOKEN: string
   TWILIO_FROM_NUMBER: string
+  SENDGRID_API_KEY?: string
+  SENDGRID_FROM_EMAIL?: string
   ELIGIBILITY_API_KEY: string
   PRACTICE_NAME: string
   DEMO_MODE: string
@@ -145,7 +156,11 @@ app.get('/priorauth', (c) => c.html(priorauthHtml))
 app.get('/rcm', (c) => c.html(rcmHtml))
 
 // ── Staff Login ───────────────────────────────────────────────────────────────
-app.get('/login', (c) => c.html(loginHtml))
+app.get('/login',      (c) => c.html(loginHtml))
+app.get('/mfa-verify', (c) => c.html(mfaVerifyHtml))
+app.get('/mfa-setup',  (c) => c.html(mfaSetupHtml))
+app.get('/engagement', (c) => c.html(engagementHtml))
+app.get('/analytics',  (c) => c.html(analyticsHtml))
 
 // ── API Routes ────────────────────────────────────────────────────────────────
 // Auth routes — public (login/logout/refresh) + self-protected (/me, /users)
@@ -203,14 +218,25 @@ app.route('/api/pa',         paRoutes)
 app.use('/api/rcm/*',        requireAuth, requireRole('BILLING', 'ADMIN', 'PROVIDER'), auditMiddleware)
 app.route('/api/rcm',        rcmRoutes)
 
+// ── MFA ──────────────────────────────────────────────────────────────────────
+app.route('/api/mfa',        mfaRoutes)
+
+// ── Patient Engagement & Loyalty ─────────────────────────────────────────────────────────────────
+app.use('/api/engagement/*', requireAuth, auditMiddleware)
+app.route('/api/engagement', engagementRoutes)
+
+// ── Analytics & BI ───────────────────────────────────────────────────────────
+app.use('/api/analytics/*',  requireAuth, requireRole('BILLING', 'ADMIN'), auditMiddleware)
+app.route('/api/analytics',  analyticsRoutes)
+
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (c) => {
   return c.json({
     status: 'ok',
     service: 'OculoFlow',
-    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx', '8a-ai-cds', '8b-prior-auth', '9a-rcm', 'a1-auth', 'a2-audit-hipaa', 'a3-live-deploy'],
+    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx', '8a-ai-cds', '8b-prior-auth', '9a-rcm', '9b-engagement', 'a1-auth', 'a2-audit-hipaa', 'a3-live-deploy', 'a4-mfa', '10a-analytics'],
     timestamp: new Date().toISOString(),
-    version: '2.7.0',
+    version: '2.8.0',
 
   })
 })
@@ -528,6 +554,40 @@ app.get('/', (c) => {
         <div class="flex items-center gap-1.5 mt-3 text-xs text-sky-400 font-medium">
           <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
           Open RCM →
+        </div>
+      </a>
+
+      <a href="/engagement" class="group bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-pink-500 rounded-2xl p-5 transition-all duration-200 cursor-pointer">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-pink-500/20 flex items-center justify-center group-hover:bg-pink-500/30 transition-colors">
+            <i class="fas fa-heart text-pink-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-pink-400 uppercase tracking-wider">Phase 9B — Live</span>
+            <p class="text-sm font-semibold text-white">Patient Engagement & Loyalty</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">Care gap detection, automated recall campaigns, satisfaction surveys, loyalty points, and population health outreach.</p>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-pink-400 font-medium">
+          <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+          Open Engagement →
+        </div>
+      </a>
+
+      <a href="/analytics" class="group bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-amber-500 rounded-2xl p-5 transition-all duration-200 cursor-pointer">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center group-hover:bg-amber-500/30 transition-colors">
+            <i class="fas fa-chart-line text-amber-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-amber-400 uppercase tracking-wider">Phase 10A — Live</span>
+            <p class="text-sm font-semibold text-white">Analytics & Business Intelligence</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">Executive KPI dashboard, payer contract analysis, provider productivity, population health trends, recall compliance, and 6-month revenue forecast.</p>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-amber-400 font-medium">
+          <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+          Open Analytics →
         </div>
       </a>
     </div>

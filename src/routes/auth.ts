@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// OculoFlow — Staff Auth Routes  (Phase A2 — with audit logging & rate limiting)
+// OculoFlow — Staff Auth Routes  (Phase A4 — with MFA challenge in login flow)
 // POST /api/auth/login
 // POST /api/auth/logout
 // POST /api/auth/refresh
@@ -18,6 +18,7 @@ import {
   invalidateSession, getJwtSecret, toPublic, seedStaffUsers,
   DEMO_CREDENTIALS, verifyJWT,
 } from '../lib/auth'
+import { isMfaEnabled, createMfaChallenge, verifyTrustedDevice } from '../lib/mfa'
 import {
   checkLoginAllowed, recordLoginFailure, clearLoginFailures,
 } from '../lib/ratelimit'
@@ -90,16 +91,49 @@ authRoutes.post('/login', async (c) => {
     return c.json({ success: false, error: 'Invalid email or password' }, 401)
   }
 
-  // Successful login — clear any failed attempts
+  // Successful password check — clear failed attempts
   await clearLoginFailures(c.env.OCULOFLOW_KV, email)
+
+  // ── MFA check ────────────────────────────────────────────────────────────
+  const mfaEnabled = await isMfaEnabled(c.env.OCULOFLOW_KV, result.user.id)
+  if (mfaEnabled) {
+    // Check for trusted device cookie bypass
+    const deviceId = c.req.header('X-Trusted-Device') ?? ''
+    const trusted  = deviceId
+      ? await verifyTrustedDevice(c.env.OCULOFLOW_KV, deviceId, result.user.id)
+      : false
+
+    if (!trusted) {
+      // Issue a short-lived MFA challenge token instead of full tokens
+      const mfaToken = await createMfaChallenge(c.env.OCULOFLOW_KV, result.user.id)
+      await writeAudit(c.env.OCULOFLOW_KV, {
+        event: 'AUTH_LOGIN',
+        userId: result.user.id, userEmail: result.user.email, userRole: result.user.role,
+        resource: 'auth', action: 'POST /api/auth/login',
+        outcome: 'SUCCESS', ip: clientIp, userAgent,
+        detail: 'MFA challenge issued',
+      })
+      return c.json({
+        success: true,
+        data: {
+          mfaRequired: true,
+          mfaToken,           // client POSTs this + TOTP code to /api/mfa/verify
+          expiresInSeconds: 300,
+        },
+      }, 200)
+    }
+    // Trusted device — fall through to issue full tokens
+  }
+
   await writeAudit(c.env.OCULOFLOW_KV, {
     event: 'AUTH_LOGIN',
     userId: result.user.id, userEmail: result.user.email, userRole: result.user.role,
     resource: 'auth', action: 'POST /api/auth/login',
     outcome: 'SUCCESS', ip: clientIp, userAgent,
+    detail: mfaEnabled ? 'Login via trusted device' : 'Login (MFA not enrolled)',
   })
 
-  return c.json({ success: true, data: result }, 200)
+  return c.json({ success: true, data: { ...result, mfaRequired: false } }, 200)
 })
 
 // ── POST /api/auth/logout ──────────────────────────────────────────────────────

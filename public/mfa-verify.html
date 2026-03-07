@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MFA Verification — OculoFlow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+  <style>
+    .digit-input { letter-spacing: 0.5em; font-variant-numeric: tabular-nums; }
+    @keyframes shake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-6px)} 40%,80%{transform:translateX(6px)} }
+    .shake { animation: shake 0.4s ease; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { animation: spin 1s linear infinite; }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+
+<div class="w-full max-w-md">
+  <!-- Logo -->
+  <div class="text-center mb-8">
+    <div class="inline-flex items-center justify-center w-16 h-16 bg-teal-500/10 rounded-2xl border border-teal-500/20 mb-4">
+      <i class="fas fa-shield-halved text-2xl text-teal-400"></i>
+    </div>
+    <h1 class="text-2xl font-bold text-white">Two-Factor Verification</h1>
+    <p class="text-slate-400 text-sm mt-1">Enter the code from your authenticator app</p>
+  </div>
+
+  <!-- MFA Form -->
+  <div id="mfa-card" class="bg-slate-900 border border-slate-700 rounded-2xl p-8 shadow-2xl">
+
+    <!-- TOTP step -->
+    <div id="totp-step">
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-slate-300 mb-3 text-center">
+          <i class="fas fa-mobile-alt mr-2 text-teal-400"></i>Authenticator Code
+        </label>
+        <input
+          id="totp-code"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          maxlength="6"
+          placeholder="000000"
+          class="digit-input w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-4 text-white text-center text-2xl font-mono tracking-widest focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-all placeholder-slate-600"
+        >
+      </div>
+
+      <div id="totp-error" class="hidden mb-4 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-red-400 text-sm text-center"></div>
+
+      <!-- Trust device -->
+      <div class="mb-6 flex items-center gap-3 bg-slate-800/50 rounded-xl px-4 py-3 border border-slate-700">
+        <input type="checkbox" id="trust-device" class="w-4 h-4 rounded border-slate-600 bg-slate-700 text-teal-500 focus:ring-teal-500">
+        <div>
+          <label for="trust-device" class="text-sm text-slate-300 font-medium cursor-pointer">Trust this device for 30 days</label>
+          <p class="text-xs text-slate-500 mt-0.5">Skip MFA on future logins from this browser</p>
+        </div>
+      </div>
+
+      <button id="verify-btn"
+        class="w-full bg-teal-600 hover:bg-teal-500 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 flex items-center justify-center gap-2">
+        <i class="fas fa-check-circle"></i> Verify & Sign In
+      </button>
+
+      <div class="mt-4 text-center">
+        <button id="use-recovery-btn" class="text-sm text-slate-400 hover:text-teal-400 transition-colors">
+          Use a recovery code instead
+        </button>
+      </div>
+    </div>
+
+    <!-- Recovery code step -->
+    <div id="recovery-step" class="hidden">
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-slate-300 mb-3 text-center">
+          <i class="fas fa-key mr-2 text-amber-400"></i>Recovery Code
+        </label>
+        <input
+          id="recovery-code"
+          type="text"
+          maxlength="11"
+          placeholder="XXXXX-XXXXX"
+          class="digit-input w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-4 text-white text-center text-xl font-mono tracking-widest focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all placeholder-slate-600"
+        >
+        <p class="text-xs text-slate-500 mt-2 text-center">Each recovery code can only be used once</p>
+      </div>
+
+      <div id="recovery-error" class="hidden mb-4 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-red-400 text-sm text-center"></div>
+
+      <button id="recovery-verify-btn"
+        class="w-full bg-amber-600 hover:bg-amber-500 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 flex items-center justify-center gap-2">
+        <i class="fas fa-unlock"></i> Use Recovery Code
+      </button>
+
+      <div class="mt-4 text-center">
+        <button id="use-totp-btn" class="text-sm text-slate-400 hover:text-teal-400 transition-colors">
+          Back to authenticator code
+        </button>
+      </div>
+    </div>
+
+    <!-- Divider -->
+    <div class="mt-6 pt-6 border-t border-slate-700 text-center">
+      <a href="/login" class="text-sm text-slate-500 hover:text-slate-300 transition-colors">
+        <i class="fas fa-arrow-left mr-1"></i> Back to login
+      </a>
+    </div>
+  </div>
+
+  <!-- Timer indicator -->
+  <div class="mt-4 text-center">
+    <div class="inline-flex items-center gap-2 text-xs text-slate-500">
+      <i class="fas fa-clock"></i>
+      <span id="timer-text">Code refreshes in <span id="timer-count" class="text-teal-400 font-mono font-bold">30</span>s</span>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const mfaToken = sessionStorage.getItem('mfa_token')
+  if (!mfaToken) { window.location.href = '/login'; return }
+
+  const nextUrl = new URLSearchParams(location.search).get('next') || '/dashboard'
+
+  // ── TOTP countdown timer ──────────────────────────────────────────────────
+  function updateTimer() {
+    const remaining = 30 - (Math.floor(Date.now() / 1000) % 30)
+    document.getElementById('timer-count').textContent = remaining
+    setTimeout(updateTimer, 1000)
+  }
+  updateTimer()
+
+  // ── Toggle between TOTP and recovery ─────────────────────────────────────
+  document.getElementById('use-recovery-btn').addEventListener('click', () => {
+    document.getElementById('totp-step').classList.add('hidden')
+    document.getElementById('recovery-step').classList.remove('hidden')
+  })
+  document.getElementById('use-totp-btn').addEventListener('click', () => {
+    document.getElementById('recovery-step').classList.add('hidden')
+    document.getElementById('totp-step').classList.remove('hidden')
+  })
+
+  // ── Auto-format recovery code ─────────────────────────────────────────────
+  document.getElementById('recovery-code').addEventListener('input', function() {
+    let v = this.value.toUpperCase().replace(/[^A-F0-9]/g, '')
+    if (v.length > 5) v = v.slice(0, 5) + '-' + v.slice(5, 10)
+    this.value = v
+  })
+
+  // ── Auto-submit on 6 digits ───────────────────────────────────────────────
+  document.getElementById('totp-code').addEventListener('input', function() {
+    this.value = this.value.replace(/\D/g, '')
+    if (this.value.length === 6) verifyTotp()
+  })
+
+  // ── Submit helpers ────────────────────────────────────────────────────────
+  function setLoading(btn, loading) {
+    btn.disabled = loading
+    if (loading) {
+      btn.innerHTML = '<i class="fas fa-circle-notch spin"></i> Verifying…'
+    }
+  }
+
+  function showError(id, msg) {
+    const el = document.getElementById(id)
+    el.textContent = msg
+    el.classList.remove('hidden')
+    el.closest('.rounded-2xl')?.classList.add('shake')
+    setTimeout(() => el.closest('.rounded-2xl')?.classList.remove('shake'), 400)
+  }
+  function hideError(id) { document.getElementById(id).classList.add('hidden') }
+
+  async function submit(code) {
+    const btn = document.getElementById('verify-btn')
+    const trustDevice = document.getElementById('trust-device').checked
+    const ua = navigator.userAgent.slice(0, 80)
+    setLoading(btn, true)
+    hideError('totp-error')
+
+    try {
+      const res = await fetch('/api/mfa/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mfaToken,
+          code,
+          trustDevice,
+          deviceLabel: ua,
+        }),
+      })
+      const data = await res.json()
+      if (!data.success) {
+        showError('totp-error', data.error || 'Verification failed')
+        document.getElementById('totp-code').value = ''
+        document.getElementById('totp-code').focus()
+        btn.innerHTML = '<i class="fas fa-check-circle"></i> Verify & Sign In'
+        btn.disabled = false
+        return
+      }
+      // Success
+      sessionStorage.removeItem('mfa_token')
+      localStorage.setItem('of_access_token', data.data.accessToken)
+      localStorage.setItem('of_refresh_token', data.data.refreshToken)
+      localStorage.setItem('of_user', JSON.stringify(data.data.user))
+      if (data.data.trustedDeviceId) {
+        localStorage.setItem('of_trusted_device', data.data.trustedDeviceId)
+      }
+      window.location.href = nextUrl
+    } catch {
+      showError('totp-error', 'Network error. Please try again.')
+      btn.innerHTML = '<i class="fas fa-check-circle"></i> Verify & Sign In'
+      btn.disabled = false
+    }
+  }
+
+  async function submitRecovery(code) {
+    const btn = document.getElementById('recovery-verify-btn')
+    setLoading(btn, true)
+    hideError('recovery-error')
+
+    try {
+      const res = await fetch('/api/mfa/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mfaToken, code }),
+      })
+      const data = await res.json()
+      if (!data.success) {
+        showError('recovery-error', data.error || 'Invalid recovery code')
+        btn.innerHTML = '<i class="fas fa-unlock"></i> Use Recovery Code'
+        btn.disabled = false
+        return
+      }
+      sessionStorage.removeItem('mfa_token')
+      localStorage.setItem('of_access_token', data.data.accessToken)
+      localStorage.setItem('of_refresh_token', data.data.refreshToken)
+      localStorage.setItem('of_user', JSON.stringify(data.data.user))
+      window.location.href = nextUrl
+    } catch {
+      showError('recovery-error', 'Network error. Please try again.')
+      btn.innerHTML = '<i class="fas fa-unlock"></i> Use Recovery Code'
+      btn.disabled = false
+    }
+  }
+
+  function verifyTotp() {
+    const code = document.getElementById('totp-code').value.trim()
+    if (code.length !== 6) { showError('totp-error', 'Enter the 6-digit code'); return }
+    submit(code)
+  }
+
+  document.getElementById('verify-btn').addEventListener('click', verifyTotp)
+  document.getElementById('recovery-verify-btn').addEventListener('click', () => {
+    const code = document.getElementById('recovery-code').value.trim()
+    if (!code) { showError('recovery-error', 'Enter your recovery code'); return }
+    submitRecovery(code)
+  })
+
+  document.getElementById('totp-code').addEventListener('keydown', e => {
+    if (e.key === 'Enter') verifyTotp()
+  })
+  document.getElementById('recovery-code').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const code = document.getElementById('recovery-code').value.trim()
+      if (code) submitRecovery(code)
+    }
+  })
+
+  document.getElementById('totp-code').focus()
+})()
+</script>
+</body>
+</html>

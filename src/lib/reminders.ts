@@ -323,17 +323,45 @@ export async function sendMessage(kv: KVNamespace, data: {
   patientId: string; patientName: string; patientPhone?: string; patientEmail?: string
   channel: CommChannel; messageType: MessageType; templateId?: string
   subject?: string; body: string; appointmentId?: string
+  // Optional live send config — when provided, actually dispatches via Twilio/SendGrid
+  smsConfig?: { accountSid: string; authToken: string; fromNumber: string; demoMode: boolean }
+  emailConfig?: { apiKey: string; fromEmail: string; fromName?: string; demoMode: boolean }
 }): Promise<OutboundMessage> {
   await ensureCommsSeed(kv)
   const id = uid('msg-c'); const n = now()
-  // Simulate send — 90% success rate
-  const success = Math.random() > 0.1
+
+  let success = true; let failureReason: string | undefined
+  let externalId: string | undefined
+
+  // ── Real send attempt ────────────────────────────────────────────────────
+  if (data.channel === 'SMS' && data.patientPhone && data.smsConfig) {
+    try {
+      const { sendSms, normalizePhone } = await import('./sms')
+      const result = await sendSms(data.body, data.smsConfig.demoMode ? 'demo' : data.patientPhone, data.smsConfig as any)
+      if (result.success) { externalId = result.messageId } else { success = false; failureReason = result.error }
+    } catch { success = false; failureReason = 'SMS dispatch error' }
+  } else if (data.channel === 'EMAIL' && data.patientEmail && data.emailConfig) {
+    try {
+      const { sendEmail } = await import('./sms')
+      const result = await sendEmail({
+        to: data.patientEmail, subject: data.subject ?? 'Message from your eye care provider',
+        html: `<p>${data.body}</p>`, text: data.body,
+      }, data.emailConfig)
+      if (result.success) { externalId = result.messageId } else { success = false; failureReason = result.error }
+    } catch { success = false; failureReason = 'Email dispatch error' }
+  } else {
+    // No config provided — simulate (90% success for demo)
+    success = Math.random() > 0.1
+    if (!success) failureReason = 'Simulated carrier error'
+  }
+
   const msg: OutboundMessage = {
     ...data, id,
     status: success ? 'DELIVERED' : 'FAILED',
     sentAt: n, deliveredAt: success ? n : undefined,
-    failureReason: success ? undefined : 'Simulated carrier error',
+    failureReason,
     createdAt: n,
+    ...(externalId ? { externalMessageId: externalId } as any : {}),
   }
   const rawIdx = await kv.get(K.msgIndex()); const ids: string[] = rawIdx ? JSON.parse(rawIdx) : []
   ids.unshift(id); await kv.put(K.msgIndex(), JSON.stringify(ids)); await kv.put(K.msg(id), JSON.stringify(msg))

@@ -87,9 +87,10 @@
     setLoading(true);
 
     try {
+      const trustedDeviceId = localStorage.getItem('of_trusted_device') || '';
       const res  = await fetch('/api/auth/login', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(trustedDeviceId ? { 'X-Trusted-Device': trustedDeviceId } : {}) },
         body:    JSON.stringify({ email, password }),
       });
 
@@ -101,7 +102,17 @@
         return;
       }
 
+      // ── MFA required: redirect to TOTP verify page ─────────────────────
+      if (json.data.mfaRequired) {
+        sessionStorage.setItem('mfa_token', json.data.mfaToken);
+        const next = encodeURIComponent(getRedirectTarget());
+        window.location.replace(`/mfa-verify?next=${next}`);
+        return;
+      }
+
       const { accessToken, refreshToken, user } = json.data;
+      // Send trusted device header on next login if stored
+      const trustedDevice = localStorage.getItem('of_trusted_device');
       saveTokens(accessToken, refreshToken, user);
       window.location.replace(getRedirectTarget());
 

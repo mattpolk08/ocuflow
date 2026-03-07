@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Patient Engagement — OculoFlow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+  <script src="/static/auth-nav.js"></script>
+  <style>
+    body { background: #0f172a; color: #e2e8f0; }
+    .tab-btn { transition: all 0.15s; }
+    .tab-btn.active { background: #0d9488; color: #fff; }
+    .tab-btn:not(.active):hover { background: #1e293b; }
+    .kpi-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; }
+    .status-chip { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .priority-HIGH   { background: #fee2e2; color: #991b1b; }
+    .priority-MEDIUM { background: #fef3c7; color: #92400e; }
+    .priority-LOW    { background: #dcfce7; color: #166534; }
+    .status-OPEN            { background: #fee2e2; color: #991b1b; }
+    .status-OUTREACH_SENT   { background: #fef9c3; color: #713f12; }
+    .status-SCHEDULED       { background: #dbeafe; color: #1e40af; }
+    .status-CLOSED          { background: #dcfce7; color: #166534; }
+    .status-PATIENT_DECLINED { background: #f1f5f9; color: #475569; }
+    .status-PENDING   { background: #fee2e2; color: #991b1b; }
+    .status-CONTACTED { background: #fef9c3; color: #713f12; }
+    .status-COMPLETED { background: #dcfce7; color: #166534; }
+    .status-LOST      { background: #f1f5f9; color: #475569; }
+    .status-DECLINED  { background: #f1f5f9; color: #475569; }
+    .sentiment-POSITIVE { color: #10b981; }
+    .sentiment-NEUTRAL  { color: #f59e0b; }
+    .sentiment-NEGATIVE { color: #ef4444; }
+    .tier-BRONZE   { color: #cd7f32; }
+    .tier-SILVER   { color: #c0c0c0; }
+    .tier-GOLD     { color: #ffd700; }
+    .tier-PLATINUM { color: #e5e4e2; }
+    tr:hover td { background: #1e293b40; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { animation: spin 1s linear infinite; }
+  </style>
+</head>
+<body class="min-h-screen">
+
+<!-- ─── Nav placeholder (auth-nav.js injects user chip + logout) ─── -->
+<nav class="bg-slate-900 border-b border-slate-700 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
+  <div class="flex items-center gap-3">
+    <a href="/dashboard" class="text-slate-400 hover:text-white mr-2"><i class="fas fa-arrow-left"></i></a>
+    <i class="fas fa-heart-pulse text-teal-400 text-lg"></i>
+    <span class="font-bold text-white text-lg">Patient Engagement</span>
+    <span class="text-xs bg-teal-500/20 text-teal-300 border border-teal-500/30 px-2 py-0.5 rounded-full ml-2">Phase 9B</span>
+  </div>
+  <div id="nav-user-area" class="flex items-center gap-3"></div>
+</nav>
+
+<div class="max-w-7xl mx-auto px-4 py-6">
+
+  <!-- ─── KPI strip ─────────────────────────────────────────────────────── -->
+  <div id="kpi-strip" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    <div class="kpi-card text-center"><div id="kpi-gaps" class="text-3xl font-bold text-red-400">—</div><div class="text-xs text-slate-400 mt-1">Open Care Gaps</div></div>
+    <div class="kpi-card text-center"><div id="kpi-recalls" class="text-3xl font-bold text-amber-400">—</div><div class="text-xs text-slate-400 mt-1">Recall Pending</div></div>
+    <div class="kpi-card text-center"><div id="kpi-nps" class="text-3xl font-bold text-teal-400">—</div><div class="text-xs text-slate-400 mt-1">Avg NPS Score</div></div>
+    <div class="kpi-card text-center"><div id="kpi-loyalty" class="text-3xl font-bold text-purple-400">—</div><div class="text-xs text-slate-400 mt-1">Loyalty Members</div></div>
+  </div>
+
+  <!-- ─── Tabs ──────────────────────────────────────────────────────────── -->
+  <div class="flex gap-1 bg-slate-800/50 rounded-xl p-1 mb-6 border border-slate-700 overflow-x-auto">
+    <button class="tab-btn active rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap" data-tab="care-gaps"><i class="fas fa-exclamation-triangle mr-1.5 text-red-400"></i>Care Gaps</button>
+    <button class="tab-btn rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap" data-tab="recall"><i class="fas fa-phone mr-1.5 text-amber-400"></i>Recall</button>
+    <button class="tab-btn rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap" data-tab="surveys"><i class="fas fa-star mr-1.5 text-yellow-400"></i>Surveys</button>
+    <button class="tab-btn rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap" data-tab="loyalty"><i class="fas fa-award mr-1.5 text-purple-400"></i>Loyalty</button>
+  </div>
+
+  <!-- ─── Care Gaps tab ─────────────────────────────────────────────────── -->
+  <div id="tab-care-gaps">
+    <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+      <div class="flex items-center gap-2 flex-wrap">
+        <select id="gap-status-filter" class="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white">
+          <option value="">All Statuses</option>
+          <option value="OPEN">Open</option>
+          <option value="OUTREACH_SENT">Outreach Sent</option>
+          <option value="SCHEDULED">Scheduled</option>
+          <option value="CLOSED">Closed</option>
+          <option value="PATIENT_DECLINED">Declined</option>
+        </select>
+        <select id="gap-priority-filter" class="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white">
+          <option value="">All Priorities</option>
+          <option value="HIGH">High</option>
+          <option value="MEDIUM">Medium</option>
+          <option value="LOW">Low</option>
+        </select>
+      </div>
+      <span id="gap-count" class="text-sm text-slate-400"></span>
+    </div>
+    <div class="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="border-b border-slate-700 text-slate-400 text-xs uppercase">
+          <tr>
+            <th class="px-4 py-3 text-left">Patient</th>
+            <th class="px-4 py-3 text-left">Gap Type</th>
+            <th class="px-4 py-3 text-left">Days Overdue</th>
+            <th class="px-4 py-3 text-left">Priority</th>
+            <th class="px-4 py-3 text-left">Status</th>
+            <th class="px-4 py-3 text-left">Outreach</th>
+            <th class="px-4 py-3 text-left">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="gaps-tbody" class="divide-y divide-slate-800">
+          <tr><td colspan="7" class="px-4 py-8 text-center text-slate-500"><i class="fas fa-circle-notch spin mr-2"></i>Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ─── Recall tab ────────────────────────────────────────────────────── -->
+  <div id="tab-recall" class="hidden">
+    <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+      <select id="recall-status-filter" class="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white">
+        <option value="">All Statuses</option>
+        <option value="PENDING">Pending</option>
+        <option value="CONTACTED">Contacted</option>
+        <option value="SCHEDULED">Scheduled</option>
+        <option value="COMPLETED">Completed</option>
+        <option value="DECLINED">Declined</option>
+      </select>
+      <span id="recall-count" class="text-sm text-slate-400"></span>
+    </div>
+    <div class="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="border-b border-slate-700 text-slate-400 text-xs uppercase">
+          <tr>
+            <th class="px-4 py-3 text-left">Patient</th>
+            <th class="px-4 py-3 text-left">Recall Type</th>
+            <th class="px-4 py-3 text-left">Due Date</th>
+            <th class="px-4 py-3 text-left">Status</th>
+            <th class="px-4 py-3 text-left">Attempts</th>
+            <th class="px-4 py-3 text-left">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="recalls-tbody" class="divide-y divide-slate-800">
+          <tr><td colspan="6" class="px-4 py-8 text-center text-slate-500"><i class="fas fa-circle-notch spin mr-2"></i>Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ─── Surveys tab ───────────────────────────────────────────────────── -->
+  <div id="tab-surveys" class="hidden">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6" id="surveys-grid">
+      <div class="kpi-card text-center text-slate-500"><i class="fas fa-circle-notch spin"></i></div>
+    </div>
+    <h3 class="text-base font-semibold text-white mb-3">Recent Responses</h3>
+    <div class="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="border-b border-slate-700 text-slate-400 text-xs uppercase">
+          <tr>
+            <th class="px-4 py-3 text-left">Patient</th>
+            <th class="px-4 py-3 text-left">Survey</th>
+            <th class="px-4 py-3 text-left">Score</th>
+            <th class="px-4 py-3 text-left">Sentiment</th>
+            <th class="px-4 py-3 text-left">Date</th>
+            <th class="px-4 py-3 text-left">Follow-up</th>
+          </tr>
+        </thead>
+        <tbody id="responses-tbody" class="divide-y divide-slate-800">
+          <tr><td colspan="6" class="px-4 py-8 text-center text-slate-500"><i class="fas fa-circle-notch spin mr-2"></i>Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ─── Loyalty tab ───────────────────────────────────────────────────── -->
+  <div id="tab-loyalty" class="hidden">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="loyalty-grid">
+      <div class="kpi-card text-center text-slate-500 col-span-4"><i class="fas fa-circle-notch spin"></i></div>
+    </div>
+    <h3 class="text-base font-semibold text-white mb-3">Top Loyalty Members</h3>
+    <div class="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="border-b border-slate-700 text-slate-400 text-xs uppercase">
+          <tr>
+            <th class="px-4 py-3 text-left">Patient</th>
+            <th class="px-4 py-3 text-left">Tier</th>
+            <th class="px-4 py-3 text-right">Points</th>
+            <th class="px-4 py-3 text-right">Lifetime</th>
+            <th class="px-4 py-3 text-left">Last Activity</th>
+          </tr>
+        </thead>
+        <tbody id="loyalty-tbody" class="divide-y divide-slate-800">
+          <tr><td colspan="5" class="px-4 py-8 text-center text-slate-500"><i class="fas fa-circle-notch spin mr-2"></i>Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- end max-w -->
+
+<script>
+const api = axios.create({
+  baseURL: '/api/engagement',
+  headers: { Authorization: `Bearer ${localStorage.getItem('of_access_token')}` }
+})
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+const tabBtns  = document.querySelectorAll('.tab-btn')
+const tabPanes = { 'care-gaps': document.getElementById('tab-care-gaps'), recall: document.getElementById('tab-recall'), surveys: document.getElementById('tab-surveys'), loyalty: document.getElementById('tab-loyalty') }
+tabBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    tabBtns.forEach(b => b.classList.remove('active'))
+    btn.classList.add('active')
+    Object.values(tabPanes).forEach(p => p.classList.add('hidden'))
+    tabPanes[btn.dataset.tab].classList.remove('hidden')
+    if (btn.dataset.tab === 'recall' && !recallLoaded) loadRecalls()
+    if (btn.dataset.tab === 'surveys' && !surveysLoaded) loadSurveys()
+    if (btn.dataset.tab === 'loyalty' && !loyaltyLoaded) loadLoyalty()
+  })
+})
+
+// ── Load dashboard KPIs ───────────────────────────────────────────────────────
+async function loadDashboard() {
+  try {
+    const { data } = await api.get('/dashboard')
+    const d = data.data
+    document.getElementById('kpi-gaps').textContent    = d.careGaps.open
+    document.getElementById('kpi-recalls').textContent = d.recall.pending
+    document.getElementById('kpi-nps').textContent     = d.surveys.avgNps?.toFixed(1) || '—'
+    document.getElementById('kpi-loyalty').textContent  = d.loyalty.totalEnrolled
+  } catch { console.error('Dashboard load failed') }
+}
+
+// ── Care Gaps ─────────────────────────────────────────────────────────────────
+const GAP_LABELS = {
+  ANNUAL_EXAM_DUE: 'Annual Exam Due', GLAUCOMA_FOLLOWUP: 'Glaucoma Follow-up',
+  DIABETIC_EYE_EXAM: 'Diabetic Eye Exam', CONTACT_LENS_RENEWAL: 'Contact Lens Renewal',
+  GLASSES_PRESCRIPTION_EXPIRED: 'Rx Expired', MACULAR_DEGENERATION_MONITORING: 'AMD Monitoring',
+  DRY_EYE_FOLLOWUP: 'Dry Eye Follow-up', POST_SURGICAL_CHECK: 'Post-Surgical Check',
+}
+
+async function loadCareGaps() {
+  const status   = document.getElementById('gap-status-filter').value
+  const priority = document.getElementById('gap-priority-filter').value
+  const params   = new URLSearchParams()
+  if (status)   params.set('status', status)
+  if (priority) params.set('priority', priority)
+
+  const tbody = document.getElementById('gaps-tbody')
+  tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-6 text-center text-slate-500"><i class="fas fa-circle-notch spin mr-2"></i>Loading...</td></tr>'
+
+  try {
+    const { data } = await api.get(`/care-gaps?${params}`)
+    const gaps = data.data
+    document.getElementById('gap-count').textContent = `${gaps.length} gap${gaps.length !== 1 ? 's' : ''}`
+
+    if (!gaps.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-8 text-center text-slate-500">No care gaps found</td></tr>'; return
+    }
+
+    tbody.innerHTML = gaps.map(g => `
+      <tr class="cursor-pointer" id="gap-row-${g.id}">
+        <td class="px-4 py-3">
+          <div class="font-medium text-white">${g.patientName}</div>
+          <div class="text-xs text-slate-400">${g.patientPhone ?? g.patientEmail ?? '—'}</div>
+        </td>
+        <td class="px-4 py-3 text-slate-300">${GAP_LABELS[g.gapType] ?? g.gapType}</td>
+        <td class="px-4 py-3">
+          <span class="${g.daysOverdue > 30 ? 'text-red-400 font-bold' : g.daysOverdue > 0 ? 'text-amber-400' : 'text-green-400'}">
+            ${g.daysOverdue > 0 ? `${g.daysOverdue}d overdue` : `Due in ${Math.abs(g.daysOverdue)}d`}
+          </span>
+        </td>
+        <td class="px-4 py-3"><span class="status-chip priority-${g.priority}">${g.priority}</span></td>
+        <td class="px-4 py-3"><span class="status-chip status-${g.status}">${g.status.replace(/_/g,' ')}</span></td>
+        <td class="px-4 py-3 text-slate-400">${g.outreachCount} sent${g.lastOutreachAt ? '<br><span class="text-xs">' + new Date(g.lastOutreachAt).toLocaleDateString() + '</span>' : ''}</td>
+        <td class="px-4 py-3">
+          ${g.status !== 'CLOSED' && g.status !== 'PATIENT_DECLINED' ? `
+            <button onclick="sendOutreach('${g.id}','${g.patientPhone ?? ''}','${g.patientName}')"
+              class="text-xs bg-teal-600 hover:bg-teal-500 text-white px-2 py-1 rounded transition-all mr-1">
+              <i class="fas fa-paper-plane mr-1"></i>Outreach
+            </button>
+            <button onclick="markGapStatus('${g.id}','SCHEDULED')"
+              class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded transition-all">
+              <i class="fas fa-calendar mr-1"></i>Scheduled
+            </button>
+          ` : ''}
+        </td>
+      </tr>
+    `).join('')
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-6 text-center text-red-400">Failed to load care gaps</td></tr>'
+  }
+}
+
+async function sendOutreach(id, phone, name) {
+  if (!confirm(`Send outreach to ${name}?`)) return
+  try {
+    const { data } = await api.post(`/care-gaps/${id}/outreach`, { channel: phone ? 'SMS' : null, phone })
+    showToast(data.message ?? 'Outreach recorded', 'success')
+    loadCareGaps()
+  } catch { showToast('Outreach failed', 'error') }
+}
+
+async function markGapStatus(id, status) {
+  try {
+    await api.patch(`/care-gaps/${id}`, { status })
+    loadCareGaps()
+  } catch { showToast('Update failed', 'error') }
+}
+
+document.getElementById('gap-status-filter').addEventListener('change', loadCareGaps)
+document.getElementById('gap-priority-filter').addEventListener('change', loadCareGaps)
+
+// ── Recall ────────────────────────────────────────────────────────────────────
+let recallLoaded = false
+async function loadRecalls() {
+  recallLoaded = true
+  const status = document.getElementById('recall-status-filter').value
+  const tbody  = document.getElementById('recalls-tbody')
+  tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-6 text-center text-slate-500"><i class="fas fa-circle-notch spin mr-2"></i>Loading...</td></tr>'
+  try {
+    const { data } = await api.get(`/recalls${status ? `?status=${status}` : ''}`)
+    const recalls = data.data
+    document.getElementById('recall-count').textContent = `${recalls.length} patient${recalls.length !== 1 ? 's' : ''}`
+    tbody.innerHTML = recalls.map(r => `
+      <tr>
+        <td class="px-4 py-3"><div class="font-medium text-white">${r.patientName}</div><div class="text-xs text-slate-400">${r.patientPhone ?? r.patientEmail ?? '—'}</div></td>
+        <td class="px-4 py-3 text-slate-300">${r.recallType}</td>
+        <td class="px-4 py-3 text-slate-300">${new Date(r.dueDate).toLocaleDateString()}</td>
+        <td class="px-4 py-3"><span class="status-chip status-${r.status}">${r.status}</span></td>
+        <td class="px-4 py-3 text-slate-400">${r.attemptCount}${r.lastAttemptChannel ? ` (${r.lastAttemptChannel})` : ''}</td>
+        <td class="px-4 py-3">
+          ${r.status !== 'COMPLETED' && r.status !== 'DECLINED' ? `
+            <button onclick="contactRecall('${r.id}','${r.patientName}')"
+              class="text-xs bg-teal-600 hover:bg-teal-500 text-white px-2 py-1 rounded transition-all mr-1">
+              <i class="fas fa-phone mr-1"></i>Contact
+            </button>
+            <button onclick="updateRecallStatus('${r.id}','SCHEDULED')"
+              class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded transition-all">
+              <i class="fas fa-calendar-check mr-1"></i>Scheduled
+            </button>
+          ` : '—'}
+        </td>
+      </tr>
+    `).join('') || '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">No recalls found</td></tr>'
+  } catch { tbody.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-red-400">Failed to load</td></tr>' }
+}
+
+async function contactRecall(id, name) {
+  try {
+    const { data } = await api.post(`/recalls/${id}/contact`, { channel: 'SMS' })
+    showToast(`Contact attempt recorded for ${name}`, 'success')
+    loadRecalls()
+  } catch { showToast('Failed', 'error') }
+}
+async function updateRecallStatus(id, status) {
+  try { await api.patch(`/recalls/${id}`, { status }); loadRecalls() }
+  catch { showToast('Update failed', 'error') }
+}
+document.getElementById('recall-status-filter').addEventListener('change', loadRecalls)
+
+// ── Surveys ───────────────────────────────────────────────────────────────────
+let surveysLoaded = false
+async function loadSurveys() {
+  surveysLoaded = true
+  try {
+    const [{ data: sv }, { data: resps }] = await Promise.all([
+      api.get('/surveys'),
+      api.get('/surveys/all/responses').catch(() => ({ data: { data: [] } }))
+    ])
+    const surveys = sv.data
+
+    document.getElementById('surveys-grid').innerHTML = surveys.map(s => `
+      <div class="kpi-card">
+        <div class="flex items-start justify-between mb-3">
+          <div class="text-sm font-semibold text-white">${s.name}</div>
+          <span class="status-chip ${s.isActive ? 'bg-green-500/20 text-green-400' : 'bg-slate-700 text-slate-400'}">${s.isActive ? 'Active' : 'Inactive'}</span>
+        </div>
+        <div class="grid grid-cols-3 gap-2 text-center">
+          <div><div class="text-lg font-bold text-white">${s.totalSent}</div><div class="text-xs text-slate-400">Sent</div></div>
+          <div><div class="text-lg font-bold text-teal-400">${s.totalResponses}</div><div class="text-xs text-slate-400">Responses</div></div>
+          <div><div class="text-lg font-bold text-yellow-400">${s.averageScore?.toFixed(1) ?? '—'}</div><div class="text-xs text-slate-400">Avg Score</div></div>
+        </div>
+        <div class="mt-2 text-xs text-slate-500">Response rate: ${s.totalSent ? Math.round(s.totalResponses / s.totalSent * 100) : 0}%</div>
+      </div>
+    `).join('')
+
+    // Load responses for all surveys
+    const allResps = []
+    for (const s of surveys) {
+      try {
+        const { data: r } = await api.get(`/surveys/${s.id}/responses`)
+        allResps.push(...r.data.map(resp => ({ ...resp, surveyName: s.name })))
+      } catch { /* */ }
+    }
+    allResps.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+
+    const tbody = document.getElementById('responses-tbody')
+    tbody.innerHTML = allResps.slice(0, 20).map(r => `
+      <tr>
+        <td class="px-4 py-3 font-medium text-white">${r.patientName}</td>
+        <td class="px-4 py-3 text-slate-400 text-xs">${r.surveyName ?? '—'}</td>
+        <td class="px-4 py-3">
+          ${r.npsScore !== undefined ? `<span class="font-bold ${r.npsScore >= 9 ? 'text-green-400' : r.npsScore >= 7 ? 'text-yellow-400' : 'text-red-400'}">${r.npsScore}/10</span>` :
+            r.overallScore !== undefined ? `<span class="font-bold text-white">${r.overallScore.toFixed(1)}/5</span>` : '—'}
+        </td>
+        <td class="px-4 py-3"><span class="sentiment-${r.sentiment}"><i class="fas fa-${r.sentiment === 'POSITIVE' ? 'smile' : r.sentiment === 'NEGATIVE' ? 'frown' : 'meh'} mr-1"></i>${r.sentiment}</span></td>
+        <td class="px-4 py-3 text-slate-400 text-xs">${new Date(r.submittedAt).toLocaleDateString()}</td>
+        <td class="px-4 py-3">${r.followUpRequired ? '<span class="status-chip bg-red-500/20 text-red-400">Required</span>' : '<span class="text-slate-500 text-xs">—</span>'}</td>
+      </tr>
+    `).join('') || '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">No responses yet</td></tr>'
+  } catch (err) { console.error(err) }
+}
+
+// ── Loyalty ───────────────────────────────────────────────────────────────────
+let loyaltyLoaded = false
+const TIER_ICONS = { BRONZE: '🥉', SILVER: '🥈', GOLD: '🥇', PLATINUM: '💎' }
+async function loadLoyalty() {
+  loyaltyLoaded = true
+  try {
+    const { data } = await api.get('/loyalty')
+    const accounts = data.data
+    const tiers = { BRONZE: 0, SILVER: 0, GOLD: 0, PLATINUM: 0 }
+    accounts.forEach(a => tiers[a.tier] = (tiers[a.tier] || 0) + 1)
+
+    document.getElementById('loyalty-grid').innerHTML = Object.entries(tiers).map(([tier, count]) => `
+      <div class="kpi-card text-center">
+        <div class="text-2xl mb-1">${TIER_ICONS[tier]}</div>
+        <div class="text-2xl font-bold tier-${tier}">${count}</div>
+        <div class="text-xs text-slate-400 mt-1">${tier}</div>
+      </div>
+    `).join('')
+
+    const tbody = document.getElementById('loyalty-tbody')
+    tbody.innerHTML = accounts.map(a => `
+      <tr>
+        <td class="px-4 py-3 font-medium text-white">${a.patientName}</td>
+        <td class="px-4 py-3"><span class="tier-${a.tier} font-semibold">${TIER_ICONS[a.tier]} ${a.tier}</span></td>
+        <td class="px-4 py-3 text-right font-bold text-white">${a.totalPoints.toLocaleString()}</td>
+        <td class="px-4 py-3 text-right text-slate-400">${a.lifetimePoints.toLocaleString()}</td>
+        <td class="px-4 py-3 text-slate-400 text-xs">${a.history?.[0] ? new Date(a.history[0].date).toLocaleDateString() + ' — ' + a.history[0].description : '—'}</td>
+      </tr>
+    `).join('') || '<tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">No loyalty members</td></tr>'
+  } catch (err) { console.error(err) }
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function showToast(msg, type = 'info') {
+  const t = document.createElement('div')
+  t.className = `fixed bottom-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium transition-all ${type === 'success' ? 'bg-teal-600 text-white' : type === 'error' ? 'bg-red-600 text-white' : 'bg-slate-700 text-white'}`
+  t.textContent = msg
+  document.body.appendChild(t)
+  setTimeout(() => t.remove(), 3000)
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadDashboard()
+loadCareGaps()
+</script>
+</body>
+</html>
