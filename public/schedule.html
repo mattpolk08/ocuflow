@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Schedule — OculoFlow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    * { box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+
+    /* ── Scrollbars ─────────────────────────────── */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+    /* ── Week strip header ──────────────────────── */
+    .day-col-header {
+      min-width: 120px; flex: 1;
+      border-right: 1px solid #1e293b;
+      padding: 10px 8px 8px;
+      cursor: pointer; transition: background .12s;
+      user-select: none;
+    }
+    .day-col-header:hover   { background: rgba(148,163,184,.05); }
+    .day-col-header.today   { background: rgba(59,130,246,.08); }
+    .day-col-header.selected { background: rgba(59,130,246,.15); border-bottom: 2px solid #3b82f6; }
+    .day-col-header.weekend { opacity: .45; }
+
+    /* ── Calendar grid ──────────────────────────── */
+    .time-gutter {
+      width: 56px; flex-shrink: 0;
+      border-right: 1px solid #1e293b;
+    }
+    .time-label {
+      height: 60px; display: flex; align-items: flex-start;
+      padding-top: 4px; padding-right: 8px;
+      font-size: 10px; color: #475569; font-weight: 500;
+      justify-content: flex-end;
+    }
+    .day-column {
+      min-width: 120px; flex: 1;
+      border-right: 1px solid #1e293b;
+      position: relative;
+    }
+    .hour-row {
+      height: 60px;
+      border-bottom: 1px solid rgba(30,41,59,.7);
+      position: relative;
+    }
+    .half-hour-line {
+      position: absolute; top: 30px; left: 0; right: 0;
+      border-bottom: 1px dashed rgba(30,41,59,.5);
+      pointer-events: none;
+    }
+
+    /* ── Appointment blocks ─────────────────────── */
+    .appt-block {
+      position: absolute; left: 3px; right: 3px;
+      border-radius: 6px; padding: 4px 6px;
+      cursor: pointer; overflow: hidden;
+      transition: filter .1s, transform .1s;
+      z-index: 2; border-left: 3px solid transparent;
+      font-size: 11px; line-height: 1.3;
+    }
+    .appt-block:hover { filter: brightness(1.15); transform: scaleX(1.01); z-index: 3; }
+
+    /* Color variants */
+    .appt-blue    { background: rgba(59,130,246,.18);  border-color: #3b82f6; color: #93c5fd; }
+    .appt-violet  { background: rgba(139,92,246,.18); border-color: #8b5cf6; color: #c4b5fd; }
+    .appt-emerald { background: rgba(16,185,129,.18); border-color: #10b981; color: #6ee7b7; }
+    .appt-amber   { background: rgba(245,158,11,.18); border-color: #f59e0b; color: #fcd34d; }
+    .appt-red     { background: rgba(239,68,68,.2);   border-color: #ef4444; color: #fca5a5; }
+    .appt-cyan    { background: rgba(6,182,212,.18);  border-color: #06b6d4; color: #67e8f9; }
+    .appt-pink    { background: rgba(236,72,153,.18); border-color: #ec4899; color: #f9a8d4; }
+    .appt-slate   { background: rgba(100,116,139,.18);border-color: #64748b; color: #94a3b8; }
+    .appt-orange  { background: rgba(249,115,22,.18); border-color: #f97316; color: #fdba74; }
+    .appt-sky     { background: rgba(14,165,233,.18); border-color: #0ea5e9; color: #7dd3fc; }
+    .appt-rose    { background: rgba(244,63,94,.18);  border-color: #f43f5e; color: #fda4af; }
+    .appt-teal    { background: rgba(20,184,166,.18); border-color: #14b8a6; color: #5eead4; }
+
+    /* ── Status chips ───────────────────────────── */
+    .status-chip {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 2px 7px; border-radius: 9999px;
+      font-size: 10px; font-weight: 600; white-space: nowrap;
+    }
+    .s-scheduled    { background:#1e293b; color:#94a3b8; border:1px solid #334155; }
+    .s-confirmed    { background:#1e3a5f; color:#60a5fa; border:1px solid #1d4ed8; }
+    .s-checked-in   { background:#1c1400; color:#fbbf24; border:1px solid #92400e; }
+    .s-pretesting   { background:#0f2a1e; color:#34d399; border:1px solid #065f46; }
+    .s-ready        { background:#1a1040; color:#a78bfa; border:1px solid #5b21b6; }
+    .s-with-doctor  { background:#0c2340; color:#38bdf8; border:1px solid #0369a1; }
+    .s-checkout     { background:#1a0a00; color:#fb923c; border:1px solid #9a3412; }
+    .s-completed    { background:#052e16; color:#4ade80; border:1px solid #166534; }
+    .s-no-show      { background:#1c0000; color:#f87171; border:1px solid #991b1b; }
+    .s-cancelled    { background:#1c1917; color:#78716c; border:1px solid #44403c; }
+
+    /* ── Now line ────────────────────────────────── */
+    #now-line {
+      position: absolute; left: 0; right: 0; height: 2px;
+      background: #ef4444; z-index: 10; pointer-events: none;
+    }
+    #now-line::before {
+      content: ''; position: absolute; left: -4px; top: -4px;
+      width: 10px; height: 10px; border-radius: 50%; background: #ef4444;
+    }
+
+    /* ── Modals ─────────────────────────────────── */
+    .modal-bg {
+      position: fixed; inset: 0; background: rgba(2,6,23,.8);
+      backdrop-filter: blur(4px); z-index: 50;
+      display: flex; align-items: flex-start; justify-content: center;
+      padding: 24px 16px; overflow-y: auto;
+      opacity: 0; pointer-events: none; transition: opacity .2s;
+    }
+    .modal-bg.open { opacity: 1; pointer-events: all; }
+    .modal-card { width: 100%; transform: translateY(16px); transition: transform .2s; }
+    .modal-bg.open .modal-card { transform: translateY(0); }
+
+    /* ── Form inputs ────────────────────────────── */
+    .form-input {
+      width: 100%; background: #0f172a; border: 1px solid #334155;
+      color: #e2e8f0; border-radius: 8px; padding: 9px 12px;
+      font-size: 14px; outline: none; transition: border-color .15s;
+    }
+    .form-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.2); }
+    .form-input::placeholder { color: #475569; }
+    select.form-input option { background: #1e293b; }
+    .form-label { display: block; font-size: 11px; font-weight: 600;
+                  color: #94a3b8; text-transform: uppercase;
+                  letter-spacing: .04em; margin-bottom: 4px; }
+
+    /* ── Slot picker ────────────────────────────── */
+    .slot-btn {
+      padding: 6px 10px; border-radius: 7px; font-size: 12px; font-weight: 600;
+      border: 1px solid #334155; background: #0f172a; color: #64748b;
+      cursor: not-allowed; transition: all .12s; text-align: center;
+    }
+    .slot-btn.available {
+      border-color: #1d4ed8; background: rgba(29,78,216,.1);
+      color: #60a5fa; cursor: pointer;
+    }
+    .slot-btn.available:hover { background: rgba(59,130,246,.2); border-color: #3b82f6; color: #93c5fd; }
+    .slot-btn.selected { background: #1d4ed8; border-color: #3b82f6; color: #fff; }
+
+    /* ── Spinner ────────────────────────────────── */
+    .spinner { width: 18px; height: 18px; border-radius: 50%;
+               border: 2px solid rgba(59,130,246,.3); border-top-color: #3b82f6;
+               animation: spin .7s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Toast ──────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 24px; right: 24px; z-index: 100;
+      background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+      padding: 12px 18px; font-size: 13px; color: #e2e8f0;
+      display: flex; align-items: center; gap: 10px; min-width: 260px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.5);
+      transform: translateY(80px) scale(.95); opacity: 0;
+      transition: transform .25s cubic-bezier(.34,1.56,.64,1), opacity .25s;
+      pointer-events: none;
+    }
+    #toast.show { transform: translateY(0) scale(1); opacity: 1; pointer-events: all; }
+
+    /* ── Priority badge ─────────────────────────── */
+    .priority-urgent   { background:#450a0a; color:#f87171; border:1px solid #991b1b; }
+    .priority-normal   { background:#1e293b; color:#94a3b8; border:1px solid #334155; }
+    .priority-flexible { background:#0f2226; color:#67e8f9; border:1px solid #164e63; }
+
+    /* ── Tabs ───────────────────────────────────── */
+    .view-tab {
+      padding: 6px 14px; border-radius: 7px; font-size: 12px;
+      font-weight: 600; cursor: pointer; transition: all .12s;
+      color: #64748b; white-space: nowrap;
+    }
+    .view-tab.active { background: rgba(59,130,246,.15); color: #60a5fa; }
+    .view-tab:hover:not(.active) { color: #94a3b8; background: rgba(148,163,184,.06); }
+
+    /* ── Nav item ───────────────────────────────── */
+    .nav-item { display: flex; align-items: center; gap: 10px;
+                padding: 8px 12px; border-radius: 8px; font-size: 13px;
+                font-weight: 500; color: #64748b; cursor: pointer;
+                transition: background .12s, color .12s; white-space: nowrap; }
+    .nav-item:hover  { background: rgba(148,163,184,.06); color: #94a3b8; }
+    .nav-item.active { background: rgba(59,130,246,.12); color: #60a5fa; }
+
+    /* ── Appt detail drawer ─────────────────────── */
+    #appt-drawer {
+      position: fixed; top: 56px; right: 0; bottom: 0; width: 340px;
+      background: #0f172a; border-left: 1px solid #1e293b;
+      z-index: 40; transform: translateX(100%);
+      transition: transform .25s cubic-bezier(.4,0,.2,1);
+      overflow-y: auto; display: flex; flex-direction: column;
+    }
+    #appt-drawer.open { transform: translateX(0); }
+
+    @media (max-width: 768px) {
+      #sidebar { display: none; }
+      #appt-drawer { width: 100%; top: 56px; }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- TOP NAV                                                                -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<header class="bg-slate-900 border-b border-slate-800 px-4 h-14 flex items-center gap-3 flex-shrink-0 sticky top-0 z-30">
+  <a href="/" class="flex items-center gap-2 mr-3 flex-shrink-0">
+    <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg">
+      <i class="fas fa-eye text-white text-sm"></i>
+    </div>
+    <span class="font-bold text-white tracking-tight hidden sm:block">OculoFlow</span>
+  </a>
+
+  <nav class="flex items-center gap-1 text-sm">
+    <a href="/dashboard" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors font-medium flex items-center gap-1.5">
+      <i class="fas fa-gauge-high text-xs"></i><span class="hidden sm:block">Dashboard</span>
+    </a>
+    <a href="/patients" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors font-medium flex items-center gap-1.5">
+      <i class="fas fa-users text-xs"></i><span class="hidden sm:block">Patients</span>
+    </a>
+    <a href="/schedule" class="px-3 py-1.5 rounded-lg bg-blue-500/15 text-blue-400 font-semibold flex items-center gap-1.5">
+      <i class="fas fa-calendar-days text-xs"></i><span class="hidden sm:block">Schedule</span>
+    </a>
+  </nav>
+
+  <!-- Date nav -->
+  <div class="flex items-center gap-2 ml-2">
+    <button id="btn-prev-week" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition-colors flex items-center justify-center text-xs">
+      <i class="fas fa-chevron-left"></i>
+    </button>
+    <button id="btn-today" class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold transition-colors">
+      Today
+    </button>
+    <button id="btn-next-week" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition-colors flex items-center justify-center text-xs">
+      <i class="fas fa-chevron-right"></i>
+    </button>
+    <span id="week-label" class="text-sm font-semibold text-slate-300 hidden sm:block ml-1">—</span>
+  </div>
+
+  <!-- View tabs -->
+  <div class="flex items-center gap-1 ml-auto bg-slate-800/60 rounded-lg p-1">
+    <div class="view-tab active" data-view="week" id="tab-week"><i class="fas fa-table-cells mr-1"></i>Week</div>
+    <div class="view-tab" data-view="day"  id="tab-day"><i class="fas fa-calendar-day mr-1"></i>Day</div>
+    <div class="view-tab" data-view="list" id="tab-list"><i class="fas fa-list mr-1"></i>List</div>
+  </div>
+
+  <!-- Book button -->
+  <button id="btn-new-appt" class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold transition-colors shadow-lg shadow-blue-900/30 flex-shrink-0 ml-2">
+    <i class="fas fa-plus text-xs"></i>
+    <span class="hidden sm:block">Book</span>
+  </button>
+</header>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- BODY                                                                   -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="flex flex-1 overflow-hidden">
+
+  <!-- Sidebar -->
+  <aside id="sidebar" class="w-52 bg-slate-900/60 border-r border-slate-800 flex-shrink-0 p-3 flex flex-col gap-1 overflow-y-auto">
+    <p class="text-xs font-semibold text-slate-600 uppercase tracking-wider px-2 mb-2 mt-1">Providers</p>
+    <div class="nav-item active" data-provider-filter="all" id="pf-all">
+      <i class="fas fa-users w-4 text-center text-slate-500"></i> All Providers
+    </div>
+    <div class="nav-item" data-provider-filter="dr-chen" id="pf-dr-chen">
+      <span class="w-2.5 h-2.5 rounded-full bg-blue-500 flex-shrink-0"></span>
+      Dr. Chen, OD
+    </div>
+    <div class="nav-item" data-provider-filter="dr-patel" id="pf-dr-patel">
+      <span class="w-2.5 h-2.5 rounded-full bg-violet-500 flex-shrink-0"></span>
+      Dr. Patel, MD
+    </div>
+
+    <div class="border-t border-slate-800 my-2"></div>
+    <p class="text-xs font-semibold text-slate-600 uppercase tracking-wider px-2 mb-1">Views</p>
+    <a href="/dashboard" class="nav-item"><i class="fas fa-gauge-high w-4 text-center"></i>Dashboard</a>
+    <a href="/patients"  class="nav-item"><i class="fas fa-users w-4 text-center"></i>Patients</a>
+    <a href="/intake?demo=true" class="nav-item"><i class="fas fa-mobile-screen w-4 text-center"></i>Intake</a>
+
+    <div class="border-t border-slate-800 my-2"></div>
+    <p class="text-xs font-semibold text-slate-600 uppercase tracking-wider px-2 mb-1">Waitlist</p>
+    <div class="nav-item" id="btn-show-waitlist">
+      <i class="fas fa-clock w-4 text-center text-yellow-500"></i>
+      Waitlist
+      <span class="ml-auto text-xs font-bold bg-yellow-900/60 text-yellow-400 px-1.5 py-0.5 rounded-full" id="wl-count">—</span>
+    </div>
+
+    <div class="flex-1"></div>
+    <!-- Day KPIs mini -->
+    <div class="p-2 rounded-lg bg-slate-800/50 border border-slate-700/50 space-y-1">
+      <p class="text-xs font-semibold text-slate-500 mb-1">Today's Summary</p>
+      <div class="flex justify-between text-xs"><span class="text-slate-500">Scheduled</span><span id="kpi-total" class="text-slate-300 font-semibold">—</span></div>
+      <div class="flex justify-between text-xs"><span class="text-slate-500">Completed</span><span id="kpi-done"  class="text-emerald-400 font-semibold">—</span></div>
+      <div class="flex justify-between text-xs"><span class="text-slate-500">In Office</span><span id="kpi-in"    class="text-blue-400 font-semibold">—</span></div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main id="main-area" class="flex-1 flex flex-col overflow-hidden">
+
+    <!-- ── WEEK VIEW ─────────────────────────────────────────────────── -->
+    <div id="view-week" class="flex-1 flex flex-col overflow-hidden">
+
+      <!-- Day headers strip -->
+      <div class="flex border-b border-slate-800 bg-slate-900/80 flex-shrink-0">
+        <div class="w-14 flex-shrink-0 border-r border-slate-800"></div>
+        <div id="week-headers" class="flex flex-1 overflow-x-auto"></div>
+      </div>
+
+      <!-- Calendar grid (scrollable) -->
+      <div class="flex flex-1 overflow-auto" id="week-grid-scroll">
+        <!-- Time gutter -->
+        <div class="time-gutter flex-shrink-0" id="time-gutter"></div>
+        <!-- Day columns -->
+        <div id="week-grid" class="flex flex-1 relative"></div>
+      </div>
+    </div>
+
+    <!-- ── DAY VIEW ──────────────────────────────────────────────────── -->
+    <div id="view-day" class="flex-1 flex-col overflow-hidden hidden">
+      <div class="px-4 py-3 border-b border-slate-800 bg-slate-900/60 flex items-center gap-3">
+        <h2 id="day-view-title" class="font-semibold text-white text-sm">—</h2>
+        <div id="day-view-kpis" class="flex items-center gap-3 ml-auto text-xs text-slate-500"></div>
+      </div>
+      <div class="flex flex-1 overflow-auto">
+        <div class="time-gutter flex-shrink-0" id="day-time-gutter"></div>
+        <div id="day-grid" class="flex-1 relative min-w-0"></div>
+      </div>
+    </div>
+
+    <!-- ── LIST VIEW ─────────────────────────────────────────────────── -->
+    <div id="view-list" class="flex-1 overflow-auto hidden p-4">
+      <div id="list-content" class="space-y-2 max-w-3xl mx-auto"></div>
+    </div>
+
+  </main>
+
+  <!-- ── Appointment Detail Drawer ──────────────────────────────────── -->
+  <div id="appt-drawer">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800 flex-shrink-0">
+      <p class="text-sm font-semibold text-white">Appointment</p>
+      <button id="btn-close-drawer" class="w-7 h-7 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-200 flex items-center justify-center transition-colors">
+        <i class="fas fa-times text-xs"></i>
+      </button>
+    </div>
+    <div id="drawer-content" class="flex-1 p-4 overflow-y-auto"></div>
+  </div>
+
+</div><!-- /flex body -->
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- BOOK APPOINTMENT MODAL                                                 -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="modal-book" class="modal-bg" role="dialog" aria-modal="true">
+  <div class="modal-card" style="max-width:620px;">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl">
+
+      <div class="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+            <i class="fas fa-calendar-plus text-blue-400 text-sm"></i>
+          </div>
+          <div>
+            <h2 class="font-semibold text-white">Book Appointment</h2>
+            <p class="text-xs text-slate-500" id="book-subtitle">Select date, provider and slot</p>
+          </div>
+        </div>
+        <button id="btn-close-book" class="w-8 h-8 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-200 transition-colors flex items-center justify-center">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <div class="p-5 space-y-4 overflow-y-auto" style="max-height: 70vh;">
+
+        <!-- Patient -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="form-label">Patient Name <span class="text-red-400">*</span></label>
+            <input id="book-patient-name" type="text" class="form-input" placeholder="Full name" />
+          </div>
+          <div>
+            <label class="form-label">Date of Birth</label>
+            <input id="book-patient-dob" type="date" class="form-input" />
+          </div>
+          <div>
+            <label class="form-label">Phone</label>
+            <input id="book-patient-phone" type="tel" class="form-input" placeholder="(305) 555-0100" />
+          </div>
+          <div>
+            <label class="form-label">Appointment Type <span class="text-red-400">*</span></label>
+            <select id="book-type" class="form-input">
+              <option value="">Select type…</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Provider + Date -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="form-label">Provider <span class="text-red-400">*</span></label>
+            <select id="book-provider" class="form-input">
+              <option value="">Select provider…</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Date <span class="text-red-400">*</span></label>
+            <input id="book-date" type="date" class="form-input" />
+          </div>
+        </div>
+
+        <!-- Slot picker -->
+        <div>
+          <label class="form-label flex items-center gap-2">
+            Available Slots
+            <span id="slot-loading" class="hidden"><span class="spinner w-3 h-3"></span></span>
+          </label>
+          <div id="slot-grid" class="grid grid-cols-5 sm:grid-cols-7 gap-1.5 mt-1">
+            <p class="text-xs text-slate-600 col-span-7">Select provider and date to see available slots</p>
+          </div>
+          <p class="text-xs text-slate-500 mt-1" id="selected-slot-label"></p>
+        </div>
+
+        <!-- Chief complaint + notes -->
+        <div>
+          <label class="form-label">Chief Complaint</label>
+          <input id="book-complaint" type="text" class="form-input" placeholder="Reason for visit…" />
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="form-label">Copay ($)</label>
+            <input id="book-copay" type="number" min="0" class="form-input" placeholder="0" />
+          </div>
+          <div class="flex items-end pb-1">
+            <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+              <input id="book-urgent" type="checkbox" class="w-4 h-4 rounded accent-red-500" />
+              <span><i class="fas fa-triangle-exclamation text-red-400 mr-1"></i>Urgent</span>
+            </label>
+          </div>
+        </div>
+
+        <p id="book-error" class="text-red-400 text-xs hidden"><i class="fas fa-circle-exclamation mr-1"></i><span></span></p>
+      </div>
+
+      <div class="px-5 py-4 border-t border-slate-800 flex items-center justify-between">
+        <button id="btn-add-waitlist" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium transition-colors flex items-center gap-2">
+          <i class="fas fa-clock text-yellow-500 text-xs"></i> Add to Waitlist
+        </button>
+        <button id="btn-confirm-book" class="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors flex items-center gap-2 shadow-lg shadow-blue-900/30">
+          <i class="fas fa-calendar-check text-xs"></i> Confirm Booking
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- WAITLIST MODAL                                                         -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="modal-waitlist" class="modal-bg" role="dialog" aria-modal="true">
+  <div class="modal-card" style="max-width:580px;">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl">
+
+      <div class="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-yellow-500/20 flex items-center justify-center">
+            <i class="fas fa-clock text-yellow-400 text-sm"></i>
+          </div>
+          <div>
+            <h2 class="font-semibold text-white">Patient Waitlist</h2>
+            <p class="text-xs text-slate-500" id="wl-subtitle">Patients waiting for next available slot</p>
+          </div>
+        </div>
+        <button id="btn-close-waitlist" class="w-8 h-8 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-200 transition-colors flex items-center justify-center">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <div id="wl-list" class="overflow-y-auto p-4 space-y-2" style="max-height:60vh;">
+        <p class="text-slate-600 text-sm text-center py-4">Loading…</p>
+      </div>
+
+      <div class="px-5 py-4 border-t border-slate-800">
+        <button id="btn-close-waitlist-2" class="w-full py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium transition-colors">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- TOAST                                                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="toast" role="alert">
+  <i id="toast-icon" class="fas fa-circle-check text-emerald-400"></i>
+  <span id="toast-msg">—</span>
+</div>
+
+<script src="/static/schedule.js"></script>
+</body>
+</html>

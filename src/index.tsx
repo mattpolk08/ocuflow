@@ -3,6 +3,7 @@
 // Phase 1 : Digital Front Door — Patient Intake
 // Phase 1A: Command Center Dashboard
 // Phase 1B: Patient Registration & Insurance Verification
+// Phase 1C: Scheduling Engine
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Hono } from 'hono'
@@ -14,10 +15,12 @@ import authRoutes      from './routes/auth'
 import intakeRoutes    from './routes/intake'
 import dashboardRoutes from './routes/dashboard'
 import patientRoutes   from './routes/patients'
+import scheduleRoutes  from './routes/scheduling'
 // Import HTML as raw string (Vite ?raw import)
 import intakeHtml    from '../public/intake.html?raw'
 import dashboardHtml from '../public/dashboard.html?raw'
 import patientsHtml  from '../public/patients.html?raw'
+import scheduleHtml  from '../public/schedule.html?raw'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
@@ -53,20 +56,24 @@ app.get('/dashboard', (c) => c.html(dashboardHtml))
 // ── Patient Registration & Insurance Verification ─────────────────────────────
 app.get('/patients', (c) => c.html(patientsHtml))
 
+// ── Scheduling Engine ─────────────────────────────────────────────────────────
+app.get('/schedule', (c) => c.html(scheduleHtml))
+
 // ── API Routes ────────────────────────────────────────────────────────────────
 app.route('/api/auth',      authRoutes)
 app.route('/api/intake',    intakeRoutes)
 app.route('/api/dashboard', dashboardRoutes)
 app.route('/api/patients',  patientRoutes)
+app.route('/api/schedule',  scheduleRoutes)
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (c) => {
   return c.json({
     status: 'ok',
     service: 'OculoFlow',
-    phases: ['1-intake', '1a-dashboard', '1b-patients'],
+    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling'],
     timestamp: new Date().toISOString(),
-    version: '1.1.0',
+    version: '1.2.0',
   })
 })
 
@@ -145,6 +152,23 @@ app.get('/', (c) => {
         <div class="flex items-center gap-1.5 mt-3 text-xs text-blue-400 font-medium">
           <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
           Open Patient Registry →
+        </div>
+      </a>
+
+      <a href="/schedule" class="group bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-blue-500 rounded-2xl p-5 transition-all duration-200 cursor-pointer">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center group-hover:bg-blue-500/30 transition-colors">
+            <i class="fas fa-calendar-days text-blue-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-blue-400 uppercase tracking-wider">Phase 1C — Live</span>
+            <p class="text-sm font-semibold text-white">Scheduling Engine</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">Day/week calendar, slot booking, appointment management, and patient waitlist.</p>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-blue-400 font-medium">
+          <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+          Open Scheduler →
         </div>
       </a>
 
