@@ -74,6 +74,7 @@ import mfaVerifyHtml   from '../public/mfa-verify.html?raw'
 import mfaSetupHtml    from '../public/mfa-setup.html?raw'
 import engagementHtml  from '../public/engagement.html?raw'
 import analyticsHtml   from '../public/analytics.html?raw'
+import auditHtml       from '../public/audit.html?raw'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
@@ -164,6 +165,7 @@ app.get('/mfa-verify', (c) => c.html(mfaVerifyHtml))
 app.get('/mfa-setup',  (c) => c.html(mfaSetupHtml))
 app.get('/engagement', (c) => c.html(engagementHtml))
 app.get('/analytics',  (c) => c.html(analyticsHtml))
+app.get('/audit',      (c) => c.html(auditHtml))
 
 // ── API Routes ────────────────────────────────────────────────────────────────
 // Auth routes — public (login/logout/refresh) + self-protected (/me, /users)
@@ -264,7 +266,7 @@ app.get('/api/health', (c) => {
     service: 'OculoFlow',
     phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx', '8a-ai-cds', '8b-prior-auth', '9a-rcm', '9b-engagement', 'a1-auth', 'a2-audit-hipaa', 'a3-live-deploy', 'a4-mfa', '10a-analytics', 'b1-notifications', 'b2-documents', 'b3-portal-auth'],
     timestamp: new Date().toISOString(),
-    version: '3.0.0',
+    version: '3.1.0',
   })
 })
 
@@ -615,6 +617,24 @@ app.get('/', (c) => {
         <div class="flex items-center gap-1.5 mt-3 text-xs text-amber-400 font-medium">
           <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
           Open Analytics →
+        </div>
+      </a>
+
+      <!-- Phase A2 — HIPAA Audit -->
+      <a href="/audit" class="group bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-green-500 rounded-2xl p-5 transition-all duration-200 cursor-pointer">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center group-hover:bg-green-500/30 transition-colors">
+            <i class="fas fa-shield-alt text-green-400"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold text-green-400 uppercase tracking-wider">Phase A2 — Live</span>
+            <p class="text-sm font-semibold text-white">HIPAA Audit & Compliance</p>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">Immutable PHI access log, 6-year retention, compliance dashboard with 10 HIPAA §164.312(b) checks, risk event alerting, and auth failure tracking.</p>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-green-400 font-medium">
+          <i class="fas fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+          Open Audit Dashboard →
         </div>
       </a>
 

@@ -33,6 +33,21 @@
 
   // ── DOM refs ─────────────────────────────────────────────────────────────────
   const form        = document.getElementById('loginForm');
+
+  // ── Show session-expired notice ──────────────────────────────────────────────
+  (function checkSessionExpiredNotice() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('reason') === 'session_expired') {
+      const notice = document.createElement('div');
+      notice.style.cssText = [
+        'background:#78350f','color:#fef3c7','font-size:13px','text-align:center',
+        'padding:10px 16px','border-radius:8px','margin-bottom:16px','font-weight:500',
+      ].join(';');
+      notice.innerHTML = '⚠ Your session expired. Please sign in again.';
+      const formEl = document.getElementById('loginForm');
+      if (formEl) formEl.parentNode.insertBefore(notice, formEl);
+    }
+  })();
   const emailInput  = document.getElementById('email');
   const pwdInput    = document.getElementById('password');
   const submitBtn   = document.getElementById('submitBtn');

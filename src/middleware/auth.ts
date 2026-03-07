@@ -178,38 +178,48 @@ export const rateLimitMiddleware = createMiddleware<{ Bindings: Bindings; Variab
 // ─── PHI Audit middleware ─────────────────────────────────────────────────────
 // Apply after requireAuth on protected API routes to record every PHI access.
 // Must come AFTER requireAuth so c.var.auth is populated.
+// Records: event type, risk level, duration, resource ID, outcome.
 export const auditMiddleware = createMiddleware<{ Bindings: Bindings; Variables: Variables }>(
   async (c, next) => {
-    const auth     = c.var.auth;
-    const path     = c.req.path;
-    const method   = c.req.method;
-    const resource = resourceFromPath(path);
+    const auth      = c.var.auth;
+    const path      = c.req.path;
+    const method    = c.req.method;
+    const resource  = resourceFromPath(path);
+    const startMs   = Date.now();
 
     // Determine event type
     const event = auditEventFromMethod(method, path);
 
     // Extract resource ID from path (e.g. /api/patients/pat-001 → pat-001)
-    const idMatch = path.match(/\/([a-zA-Z0-9_-]+)$/);
-    const resourceId = idMatch && !idMatch[1].startsWith('api') ? idMatch[1] : undefined;
+    const idMatch   = path.match(/\/([a-zA-Z0-9_-]{4,})$/);
+    const resourceId = idMatch && !['list','search','all','ping','seed','status','dashboard','export','download'].includes(idMatch[1])
+      ? idMatch[1] : undefined;
 
     await next();
 
-    // Write AFTER the handler completes so we can capture outcome from response status
-    const status = c.res.status;
+    const durationMs = Date.now() - startMs;
+    const status     = c.res.status;
     const outcome: import('../lib/audit').AuditOutcome =
       status < 400 ? 'SUCCESS' : status === 403 ? 'DENIED' : 'FAILURE';
+
+    // Estimate record count for bulk access events (from query params)
+    const limitParam = parseInt(c.req.query('limit') ?? '0', 10);
+    const recordCount = event === 'PHI_BULK_ACCESS' && limitParam > 0 ? limitParam : undefined;
 
     await writeAudit(c.env.OCULOFLOW_KV, {
       event,
       userId:    auth?.userId,
       userEmail: auth?.email,
       userRole:  auth?.role,
+      sessionId: auth?.tokenId,
       resource,
       resourceId,
-      action:   `${method} ${path}`,
+      action:    `${method} ${path}`,
       outcome,
-      ip:       clientIp(c),
+      ip:        clientIp(c),
       userAgent: c.req.header('User-Agent') ?? 'unknown',
+      durationMs,
+      recordCount,
     });
   }
 );

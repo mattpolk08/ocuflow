@@ -22,7 +22,7 @@ import { isMfaEnabled, createMfaChallenge, verifyTrustedDevice } from '../lib/mf
 import {
   checkLoginAllowed, recordLoginFailure, clearLoginFailures,
 } from '../lib/ratelimit'
-import { writeAudit, queryAuditLog } from '../lib/audit'
+import { writeAudit, queryAuditLog, getHipaaComplianceReport } from '../lib/audit'
 import type { AuditEvent } from '../lib/audit'
 import { requireAuth, requireRole } from '../middleware/auth'
 import type { StaffRole } from '../types/auth'
@@ -309,16 +309,26 @@ authRoutes.patch('/users/:id/active', requireAuth, requireRole('ADMIN'), async (
 // ── GET /api/auth/audit  (ADMIN only) ─────────────────────────────────────────
 authRoutes.get('/audit', requireAuth, requireRole('ADMIN'), async (c) => {
   const limit    = parseInt(c.req.query('limit')    ?? '100', 10)
+  const offset   = parseInt(c.req.query('offset')   ?? '0',   10)
   const userId   = c.req.query('userId')
   const event    = c.req.query('event') as AuditEvent | undefined
   const resource = c.req.query('resource')
+  const outcome  = c.req.query('outcome') as 'SUCCESS' | 'FAILURE' | 'DENIED' | undefined
+  const risk     = c.req.query('risk') as 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | undefined
+  const since    = c.req.query('since')
+  const highRisk = c.req.query('highRiskOnly') === 'true'
 
-  const records = await queryAuditLog(c.env.OCULOFLOW_KV, {
-    limit: Math.min(limit, 500),
-    userId, event, resource,
+  const { records, total } = await queryAuditLog(c.env.OCULOFLOW_KV, {
+    limit: Math.min(limit, 500), offset, userId, event, resource, outcome, risk, since, highRiskOnly: highRisk,
   })
 
-  return c.json({ success: true, data: records, count: records.length }, 200)
+  return c.json({ success: true, data: records, count: records.length, total }, 200)
+})
+
+// ── GET /api/auth/audit/hipaa-report  (ADMIN only) ────────────────────────────
+authRoutes.get('/audit/hipaa-report', requireAuth, requireRole('ADMIN'), async (c) => {
+  const report = await getHipaaComplianceReport(c.env.OCULOFLOW_KV)
+  return c.json({ success: true, data: report }, 200)
 })
 
 // ── GET /api/auth/demo-credentials  (demo mode only) ──────────────────────────

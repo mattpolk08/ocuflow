@@ -1,4 +1,4 @@
-// OculoFlow — Shared Auth Helper  (Phase A1)
+// OculoFlow — Shared Auth Helper  (Phase A1 + A2 Session Timeout)
 // Loaded on every staff page via <script src="/static/auth-nav.js">
 // Responsibilities:
 //   1. Check for access token; redirect to /login if missing
@@ -176,6 +176,112 @@
     document.addEventListener('DOMContentLoaded', injectUserNav);
   } else {
     injectUserNav();
+  }
+
+  // ── Session timeout monitoring (HIPAA A2) ──────────────────────────────────
+  // Warn 15 min before 8-hour JWT expiry; auto-logout at expiry.
+  function parseJwtPayload(token) {
+    try {
+      const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      return JSON.parse(atob(b64));
+    } catch { return null; }
+  }
+
+  function startSessionMonitor() {
+    const token = sessionStorage.getItem(TOKEN_KEY);
+    if (!token) return;
+    const payload = parseJwtPayload(token);
+    if (!payload || !payload.exp) return;
+
+    const expiresAt   = payload.exp * 1000;           // ms
+    const warnAt      = expiresAt - 15 * 60 * 1000;   // 15 min before
+    const now         = Date.now();
+
+    if (now >= expiresAt) { window.ofAuth.logout(); return; }
+
+    // Schedule warning banner
+    const warnIn = warnAt - now;
+    if (warnIn > 0) {
+      setTimeout(showSessionWarning, warnIn);
+    } else {
+      showSessionWarning(); // already within warning window
+    }
+
+    // Schedule hard logout
+    const logoutIn = expiresAt - now;
+    setTimeout(() => {
+      // Log session expiry before logout
+      const t = sessionStorage.getItem(TOKEN_KEY);
+      if (t) {
+        fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${t}`, 'Content-Type': 'application/json' },
+        }).catch(() => {});
+      }
+      window.ofAuth.clearTokens();
+      window.location.replace('/login?reason=session_expired&next=' + encodeURIComponent(window.location.pathname));
+    }, logoutIn);
+  }
+
+  let _warnBannerShown = false;
+  function showSessionWarning() {
+    if (_warnBannerShown) return;
+    _warnBannerShown = true;
+
+    const token = sessionStorage.getItem(TOKEN_KEY);
+    const payload = token ? parseJwtPayload(token) : null;
+    const expiresAt = payload?.exp ? payload.exp * 1000 : Date.now() + 15 * 60 * 1000;
+    const minsLeft = Math.max(1, Math.round((expiresAt - Date.now()) / 60000));
+
+    const banner = document.createElement('div');
+    banner.id = 'of-session-warning';
+    banner.style.cssText = [
+      'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:9999',
+      'background:linear-gradient(135deg,#92400e,#b45309)',
+      'color:#fef3c7', 'font-family:system-ui,sans-serif',
+      'font-size:13px', 'padding:10px 20px',
+      'display:flex', 'align-items:center', 'justify-content:space-between',
+      'box-shadow:0 2px 8px rgba(0,0,0,0.4)',
+    ].join(';');
+
+    const msg = document.createElement('span');
+    msg.innerHTML = `<strong>⚠ Session expiring in ${minsLeft} min</strong> — Save your work and refresh your session to continue.`;
+
+    const btns = document.createElement('div');
+    btns.style.cssText = 'display:flex;gap:8px;align-items:center;flex-shrink:0;margin-left:16px';
+
+    const refreshBtn = document.createElement('button');
+    refreshBtn.textContent = 'Extend Session';
+    refreshBtn.style.cssText = 'background:#92400e;border:1px solid #fef3c7;color:#fef3c7;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600';
+    refreshBtn.onclick = async () => {
+      const ok = await tryRefresh();
+      if (ok) {
+        banner.remove();
+        _warnBannerShown = false;
+        startSessionMonitor(); // restart timer with new token
+      } else {
+        window.ofAuth.logout();
+      }
+    };
+
+    const dismissBtn = document.createElement('button');
+    dismissBtn.textContent = '✕';
+    dismissBtn.style.cssText = 'background:transparent;border:none;color:#fef3c7;cursor:pointer;font-size:16px;padding:0 4px';
+    dismissBtn.onclick = () => banner.remove();
+
+    btns.appendChild(refreshBtn);
+    btns.appendChild(dismissBtn);
+    banner.appendChild(msg);
+    banner.appendChild(btns);
+
+    document.body.insertBefore(banner, document.body.firstChild);
+  }
+
+  // Start monitor after page loads
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startSessionMonitor);
+  } else {
+    startSessionMonitor();
   }
 
 })();
