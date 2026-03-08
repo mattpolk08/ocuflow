@@ -25,6 +25,7 @@
     .btn-primary   { @apply px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2; }
     .btn-secondary { @apply px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center gap-2; }
     .btn-ghost     { @apply px-3 py-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg text-xs transition-colors; }
+    .btn-danger    { @apply px-4 py-2 bg-red-700/60 hover:bg-red-700 text-red-200 rounded-lg text-sm font-medium transition-colors flex items-center gap-2; }
     .input-field   { @apply w-full bg-slate-900 border border-slate-600 text-white placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/40; }
     .select-field  { @apply w-full bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500; }
     .modal-overlay { @apply fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4; }
@@ -32,17 +33,20 @@
     .kpi-card      { @apply bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/60 rounded-xl p-4; }
     .msg-bubble-patient { @apply bg-blue-600/20 border border-blue-500/20 rounded-2xl rounded-br-sm px-4 py-3 ml-8; }
     .msg-bubble-staff   { @apply bg-slate-700/40 border border-slate-600/30 rounded-2xl rounded-bl-sm px-4 py-3 mr-8; }
+    .tab-login { @apply px-4 py-2 text-sm font-medium rounded-lg transition-all cursor-pointer; }
+    .tab-login.active { @apply bg-blue-600 text-white; }
+    .tab-login:not(.active) { @apply text-slate-400 hover:text-white; }
+    .toggle-track { @apply relative inline-flex w-11 h-6 rounded-full cursor-pointer transition-colors; }
+    .toggle-thumb { @apply absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform; }
   </style>
-  <script src="/static/auth-nav.js"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
 
 <!-- ══════════════════════════════════════════════════════════
-     LOGIN SCREEN
+     LOGIN SCREEN  (B3: DOB + Magic Link + Password tabs)
 ══════════════════════════════════════════════════════════════ -->
 <div id="login-screen" class="flex-1 flex items-center justify-center p-6 min-h-screen">
   <div class="w-full max-w-md">
-    <!-- Logo -->
     <div class="text-center mb-8">
       <div class="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center mb-4 shadow-2xl shadow-blue-900">
         <i class="fas fa-eye text-white text-2xl"></i>
@@ -51,30 +55,99 @@
       <p class="text-slate-400 mt-1">Patient Portal</p>
     </div>
 
-    <!-- Login Card -->
     <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl">
-      <h2 class="text-lg font-semibold text-white mb-5">Sign In to Your Account</h2>
+      <!-- Login method tabs -->
+      <div class="flex gap-1 bg-slate-800/50 rounded-xl p-1 mb-5">
+        <button class="tab-login active flex-1 text-center" onclick="switchLoginTab('dob',this)" id="ltab-dob">
+          <i class="fas fa-birthday-cake mr-1.5"></i>Date of Birth
+        </button>
+        <button class="tab-login flex-1 text-center" onclick="switchLoginTab('email',this)" id="ltab-email">
+          <i class="fas fa-envelope mr-1.5"></i>Email Link
+        </button>
+        <button class="tab-login flex-1 text-center" onclick="switchLoginTab('password',this)" id="ltab-password">
+          <i class="fas fa-lock mr-1.5"></i>Password
+        </button>
+      </div>
 
       <div id="login-error" class="hidden mb-4 p-3 bg-red-500/15 border border-red-500/30 rounded-lg text-sm text-red-400"></div>
+      <div id="login-success" class="hidden mb-4 p-3 bg-emerald-500/15 border border-emerald-500/30 rounded-lg text-sm text-emerald-400"></div>
 
-      <div class="space-y-4">
+      <!-- DOB Tab -->
+      <div id="login-panel-dob" class="space-y-4">
         <div>
           <label class="block text-xs text-slate-400 mb-1.5">Last Name <span class="text-red-400">*</span></label>
-          <input id="login-lastname" class="input-field" placeholder="e.g. Sullivan" autocomplete="family-name" />
+          <input id="login-lastname" class="input-field" placeholder="e.g. Sullivan" autocomplete="family-name" onkeydown="if(event.key==='Enter')doLogin()" />
         </div>
         <div>
           <label class="block text-xs text-slate-400 mb-1.5">Date of Birth <span class="text-red-400">*</span></label>
-          <input id="login-dob" type="date" class="input-field" />
+          <input id="login-dob" type="date" class="input-field" onkeydown="if(event.key==='Enter')doLogin()" />
         </div>
-        <div>
-          <label class="block text-xs text-slate-400 mb-1.5">MRN or Email <span class="text-slate-600">(optional)</span></label>
-          <input id="login-mrn" class="input-field" placeholder="MRN or email" />
+        <button onclick="doLogin()" class="btn-primary w-full justify-center py-2.5">
+          <i class="fas fa-sign-in-alt"></i>Sign In
+        </button>
+      </div>
+
+      <!-- Magic Link / OTP Tab -->
+      <div id="login-panel-email" class="hidden space-y-4">
+        <div id="ml-step-1">
+          <p class="text-xs text-slate-400 mb-3">Enter your email address and we'll send a one-time login link and 6-digit code.</p>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1.5">Email Address <span class="text-red-400">*</span></label>
+            <input id="ml-email" type="email" class="input-field" placeholder="your@email.com" onkeydown="if(event.key==='Enter')doMagicLink()" />
+          </div>
+          <button onclick="doMagicLink()" class="btn-primary w-full justify-center py-2.5 mt-3">
+            <i class="fas fa-paper-plane"></i>Send Login Link
+          </button>
+        </div>
+        <div id="ml-step-2" class="hidden space-y-3">
+          <div class="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-sm text-blue-300">
+            <i class="fas fa-check-circle mr-1.5"></i>Check your email for a 6-digit code.
+            <span id="ml-demo-hint" class="hidden text-amber-400 block mt-1 text-xs"></span>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1.5">6-Digit Code <span class="text-red-400">*</span></label>
+            <input id="ml-otp" type="text" maxlength="6" class="input-field text-center text-2xl tracking-widest font-mono" placeholder="000000" onkeydown="if(event.key==='Enter')doMagicVerify()" />
+          </div>
+          <button onclick="doMagicVerify()" class="btn-primary w-full justify-center py-2.5">
+            <i class="fas fa-key"></i>Verify Code
+          </button>
+          <button onclick="resetMagicLink()" class="text-xs text-slate-500 hover:text-slate-300 w-full text-center mt-1">← Use different email</button>
         </div>
       </div>
 
-      <button onclick="doLogin()" class="btn-primary w-full justify-center mt-5 py-2.5">
-        <i class="fas fa-sign-in-alt"></i>Sign In
-      </button>
+      <!-- Password Tab -->
+      <div id="login-panel-password" class="hidden space-y-4">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1.5">Email Address <span class="text-red-400">*</span></label>
+          <input id="pw-email" type="email" class="input-field" placeholder="your@email.com" onkeydown="if(event.key==='Enter')doPasswordLogin()" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1.5">Password <span class="text-red-400">*</span></label>
+          <input id="pw-password" type="password" class="input-field" placeholder="••••••••" onkeydown="if(event.key==='Enter')doPasswordLogin()" />
+        </div>
+        <div class="flex items-center justify-between">
+          <button onclick="doPasswordLogin()" class="btn-primary flex-1 justify-center py-2.5">
+            <i class="fas fa-sign-in-alt"></i>Sign In
+          </button>
+        </div>
+        <div class="text-center">
+          <button onclick="showForgotPassword()" class="text-xs text-blue-400 hover:text-blue-300">Forgot password?</button>
+          <span class="text-slate-700 mx-2">·</span>
+          <button onclick="switchLoginTab('email', document.getElementById('ltab-email'))" class="text-xs text-slate-400 hover:text-slate-300">Use email link instead</button>
+        </div>
+      </div>
+
+      <!-- Forgot password inline panel -->
+      <div id="forgot-pw-panel" class="hidden space-y-3 mt-2">
+        <div class="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-300">
+          <i class="fas fa-info-circle mr-1"></i>Enter your email to receive a password reset link.
+        </div>
+        <input id="forgot-email" type="email" class="input-field" placeholder="your@email.com" />
+        <button onclick="doPasswordReset()" class="btn-primary w-full justify-center">
+          <i class="fas fa-envelope"></i>Send Reset Link
+        </button>
+        <button onclick="hideForgotPassword()" class="text-xs text-slate-500 hover:text-slate-300 w-full text-center">← Back to sign in</button>
+      </div>
 
       <div class="relative my-4">
         <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-slate-700"></div></div>
@@ -114,12 +187,16 @@
 
       <!-- Tabs (desktop) -->
       <nav class="hidden md:flex items-center gap-1 flex-1 px-4">
-        <button class="nav-tab active" id="tab-btn-home"     onclick="showPortalTab('home',this)">    <i class="fas fa-house w-4 text-center"></i>Overview</button>
-        <button class="nav-tab" id="tab-btn-appointments"   onclick="showPortalTab('appointments',this)"><i class="fas fa-calendar-plus w-4 text-center"></i>Appointments</button>
-        <button class="nav-tab" id="tab-btn-records"        onclick="showPortalTab('records',this)">  <i class="fas fa-file-medical w-4 text-center"></i>Records</button>
-        <button class="nav-tab" id="tab-btn-optical"        onclick="showPortalTab('optical',this)">  <i class="fas fa-glasses w-4 text-center"></i>Optical</button>
-        <button class="nav-tab" id="tab-btn-billing"        onclick="showPortalTab('billing',this)">  <i class="fas fa-file-invoice-dollar w-4 text-center"></i>Billing</button>
-        <button class="nav-tab" id="tab-btn-messages"       onclick="showPortalTab('messages',this)"> <i class="fas fa-comments w-4 text-center"></i>Messages <span id="msg-badge" class="hidden ml-1 w-4 h-4 bg-red-500 rounded-full text-xs flex items-center justify-center text-white"></span></button>
+        <button class="nav-tab active" onclick="showPortalTab('home',this)"><i class="fas fa-house w-4 text-center"></i>Overview</button>
+        <button class="nav-tab" onclick="showPortalTab('appointments',this)"><i class="fas fa-calendar-plus w-4 text-center"></i>Appointments</button>
+        <button class="nav-tab" onclick="showPortalTab('records',this)"><i class="fas fa-file-medical w-4 text-center"></i>Records</button>
+        <button class="nav-tab" onclick="showPortalTab('optical',this)"><i class="fas fa-glasses w-4 text-center"></i>Optical</button>
+        <button class="nav-tab" onclick="showPortalTab('billing',this)"><i class="fas fa-file-invoice-dollar w-4 text-center"></i>Billing</button>
+        <button class="nav-tab" onclick="showPortalTab('messages',this)">
+          <i class="fas fa-comments w-4 text-center"></i>Messages
+          <span id="msg-badge" class="hidden ml-1 w-4 h-4 bg-red-500 rounded-full text-xs flex items-center justify-center text-white"></span>
+        </button>
+        <button class="nav-tab" onclick="showPortalTab('settings',this)"><i class="fas fa-gear w-4 text-center"></i>Settings</button>
       </nav>
 
       <!-- User info & logout -->
@@ -128,16 +205,9 @@
           <p class="text-sm font-medium text-white leading-tight" id="topbar-name">—</p>
           <p class="text-xs text-slate-500 leading-tight" id="topbar-dob">—</p>
         </div>
-        <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold" id="topbar-avatar">?</div>
+        <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold text-white" id="topbar-avatar">?</div>
         <button onclick="doLogout()" class="btn-ghost text-xs"><i class="fas fa-sign-out-alt mr-1"></i><span class="hidden sm:inline">Sign Out</span></button>
-        <a href="/messaging" class="btn-ghost text-xs hidden sm:flex items-center gap-1"><i class="fas fa-comment-medical"></i> Messaging</a>
-        <a href="/reminders" class="btn-ghost text-xs hidden sm:flex items-center gap-1"><i class="fas fa-bell"></i> Reminders</a>
-        <a href="/scorecards" class="btn-ghost text-xs hidden sm:flex items-center gap-1"><i class="fas fa-chart-bar"></i> Scorecards</a>
-        <a href="/telehealth" class="btn-ghost text-xs hidden sm:flex items-center gap-1"><i class="fas fa-video"></i> Telehealth</a>
-        <a href="/erx" class="btn-ghost text-xs hidden sm:flex items-center gap-1"><i class="fas fa-prescription-bottle"></i> eRx</a>
-        <a href="/ai" class="btn-ghost text-xs hidden sm:flex items-center gap-1"><i class="fas fa-brain"></i> AI CDS</a>
-        <a href="/priorauth" class="btn-ghost text-xs hidden sm:flex items-center gap-1"><i class="fas fa-clipboard-check"></i> Prior Auth</a><a href="/rcm" class="btn-ghost text-xs hidden sm:flex items-center gap-1"><i class="fas fa-dollar-sign"></i> Prior Auth</a>
-        <a href="/" class="btn-ghost text-xs hidden sm:flex items-center gap-1"><i class="fas fa-arrow-left"></i> Staff App</a>
+        <a href="/" class="btn-ghost text-xs hidden sm:flex items-center gap-1"><i class="fas fa-arrow-left"></i>Staff</a>
       </div>
     </div>
 
@@ -148,7 +218,8 @@
       <button class="nav-tab text-xs px-2.5 py-1.5 whitespace-nowrap" onclick="showPortalTab('records',this)"><i class="fas fa-file-medical mr-1"></i>Records</button>
       <button class="nav-tab text-xs px-2.5 py-1.5 whitespace-nowrap" onclick="showPortalTab('optical',this)"><i class="fas fa-glasses mr-1"></i>Optical</button>
       <button class="nav-tab text-xs px-2.5 py-1.5 whitespace-nowrap" onclick="showPortalTab('billing',this)"><i class="fas fa-dollar-sign mr-1"></i>Billing</button>
-      <button class="nav-tab text-xs px-2.5 py-1.5 whitespace-nowrap" onclick="showPortalTab('messages',this)"><i class="fas fa-comments mr-1"></i>Messages</button>
+      <button class="nav-tab text-xs px-2.5 py-1.5 whitespace-nowrap" onclick="showPortalTab('messages',this)"><i class="fas fa-comments mr-1"></i>Msgs</button>
+      <button class="nav-tab text-xs px-2.5 py-1.5 whitespace-nowrap" onclick="showPortalTab('settings',this)"><i class="fas fa-gear mr-1"></i>Settings</button>
     </div>
   </header>
 
@@ -157,7 +228,6 @@
 
     <!-- ── OVERVIEW TAB ──────────────────────────────────────────────────── -->
     <div id="portal-tab-home" class="portal-tab space-y-5">
-      <!-- Welcome + KPI row -->
       <div class="flex flex-wrap items-start gap-4">
         <div class="flex-1 min-w-0">
           <h2 class="text-xl font-bold text-white">Welcome back, <span id="overview-name">—</span></h2>
@@ -175,19 +245,16 @@
         <div class="kpi-card"><p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Messages</p><p class="font-bold text-sm" id="kpi-msgs">—</p></div>
       </div>
 
-      <!-- Upcoming Appointments -->
       <div class="card">
         <h3 class="font-semibold text-white mb-3 flex items-center gap-2"><i class="fas fa-calendar text-blue-400 w-5 text-center"></i>Upcoming Appointments</h3>
         <div id="upcoming-appts-list" class="space-y-2 text-sm text-slate-400">Loading…</div>
       </div>
 
-      <!-- Active Rx snapshot -->
       <div class="card" id="active-rx-card">
         <h3 class="font-semibold text-white mb-3 flex items-center gap-2"><i class="fas fa-prescription text-purple-400 w-5 text-center"></i>Current Prescription</h3>
         <div id="active-rx-content">Loading…</div>
       </div>
 
-      <!-- Recent exam -->
       <div class="card">
         <h3 class="font-semibold text-white mb-3 flex items-center gap-2"><i class="fas fa-file-medical text-emerald-400 w-5 text-center"></i>Most Recent Visit</h3>
         <div id="recent-exam-content" class="text-sm text-slate-400">Loading…</div>
@@ -200,7 +267,6 @@
         <h2 class="text-xl font-bold text-white">Appointment Requests</h2>
         <button onclick="openNewApptModal()" class="btn-primary"><i class="fas fa-plus"></i>New Request</button>
       </div>
-
       <div id="appt-requests-list" class="space-y-3">
         <div class="card text-center text-slate-500 py-8"><i class="fas fa-spinner fa-spin text-2xl"></i></div>
       </div>
@@ -210,17 +276,23 @@
     <div id="portal-tab-records" class="portal-tab hidden space-y-5">
       <h2 class="text-xl font-bold text-white">Health Records</h2>
 
-      <!-- Rx section -->
-      <div>
-        <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Prescriptions</h3>
+      <!-- Record sub-tabs -->
+      <div class="flex gap-2 flex-wrap">
+        <button class="btn-secondary text-xs px-3 py-1.5 active-subtab" onclick="switchRecordTab('prescriptions',this)" id="rtab-prescriptions">
+          <i class="fas fa-prescription mr-1"></i>Prescriptions
+        </button>
+        <button class="btn-secondary text-xs px-3 py-1.5" onclick="switchRecordTab('visits',this)" id="rtab-visits">
+          <i class="fas fa-stethoscope mr-1"></i>Visit History
+        </button>
+      </div>
+
+      <div id="record-panel-prescriptions">
         <div id="records-rx-list" class="space-y-3">
           <div class="card text-center text-slate-500 py-6"><i class="fas fa-spinner fa-spin"></i></div>
         </div>
       </div>
 
-      <!-- Exam summaries -->
-      <div>
-        <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Visit History</h3>
+      <div id="record-panel-visits" class="hidden">
         <div id="records-exams-list" class="space-y-3">
           <div class="card text-center text-slate-500 py-6"><i class="fas fa-spinner fa-spin"></i></div>
         </div>
@@ -229,7 +301,7 @@
 
     <!-- ── OPTICAL TAB ───────────────────────────────────────────────────── -->
     <div id="portal-tab-optical" class="portal-tab hidden space-y-5">
-      <h2 class="text-xl font-bold text-white">Glasses & Contact Lenses</h2>
+      <h2 class="text-xl font-bold text-white">Glasses &amp; Contact Lenses</h2>
       <div id="optical-orders-list" class="space-y-4">
         <div class="card text-center text-slate-500 py-8"><i class="fas fa-spinner fa-spin text-2xl"></i></div>
       </div>
@@ -237,7 +309,7 @@
 
     <!-- ── BILLING TAB ───────────────────────────────────────────────────── -->
     <div id="portal-tab-billing" class="portal-tab hidden space-y-5">
-      <h2 class="text-xl font-bold text-white">Billing & Payments</h2>
+      <h2 class="text-xl font-bold text-white">Billing &amp; Payments</h2>
       <div class="kpi-card flex items-center justify-between">
         <div>
           <p class="text-slate-400 text-sm">Total Balance Due</p>
@@ -256,22 +328,131 @@
         <h2 class="text-xl font-bold text-white">Secure Messages</h2>
         <button onclick="openNewMsgModal()" class="btn-primary"><i class="fas fa-pen"></i>New Message</button>
       </div>
-
       <div class="flex gap-4 h-[calc(100vh-260px)] min-h-80">
-        <!-- Thread list -->
         <div class="w-full md:w-72 flex flex-col gap-2 overflow-y-auto shrink-0" id="thread-list">
           <div class="card text-center text-slate-500 py-6"><i class="fas fa-spinner fa-spin"></i></div>
         </div>
-
-        <!-- Thread detail (desktop) -->
         <div class="hidden md:flex flex-col flex-1 card overflow-hidden" id="thread-detail">
           <div class="text-slate-500 text-sm text-center flex-1 flex items-center justify-center">
-            <div>
-              <i class="fas fa-comments text-3xl mb-2 opacity-30"></i>
-              <p>Select a message thread</p>
-            </div>
+            <div><i class="fas fa-comments text-3xl mb-2 opacity-30"></i><p>Select a message thread</p></div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- ── SETTINGS TAB ──────────────────────────────────────────────────── -->
+    <div id="portal-tab-settings" class="portal-tab hidden space-y-6">
+      <h2 class="text-xl font-bold text-white">Account Settings</h2>
+
+      <!-- Profile card -->
+      <div class="card space-y-4">
+        <h3 class="font-semibold text-white flex items-center gap-2"><i class="fas fa-user text-blue-400 w-5 text-center"></i>Profile</h3>
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <p class="text-slate-500 text-xs uppercase tracking-wider mb-1">Name</p>
+            <p class="text-white font-medium" id="settings-name">—</p>
+          </div>
+          <div>
+            <p class="text-slate-500 text-xs uppercase tracking-wider mb-1">Date of Birth</p>
+            <p class="text-white" id="settings-dob">—</p>
+          </div>
+          <div>
+            <p class="text-slate-500 text-xs uppercase tracking-wider mb-1">Email</p>
+            <p class="text-white" id="settings-email">—</p>
+          </div>
+          <div>
+            <p class="text-slate-500 text-xs uppercase tracking-wider mb-1">Login Method</p>
+            <p class="text-white" id="settings-login-method">—</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Change password -->
+      <div class="card space-y-4">
+        <h3 class="font-semibold text-white flex items-center gap-2"><i class="fas fa-lock text-amber-400 w-5 text-center"></i>Change Password</h3>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Current Password</label>
+            <input id="settings-current-pw" type="password" class="input-field" placeholder="••••••••" />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">New Password</label>
+            <input id="settings-new-pw" type="password" class="input-field" placeholder="8+ characters" />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Confirm New Password</label>
+            <input id="settings-confirm-pw" type="password" class="input-field" placeholder="Confirm new password" />
+          </div>
+          <button onclick="changePassword()" class="btn-primary">
+            <i class="fas fa-key"></i>Update Password
+          </button>
+        </div>
+      </div>
+
+      <!-- Notification preferences -->
+      <div class="card space-y-4">
+        <h3 class="font-semibold text-white flex items-center gap-2"><i class="fas fa-bell text-emerald-400 w-5 text-center"></i>Notification Preferences</h3>
+
+        <div class="space-y-3" id="notif-prefs-form">
+          <div class="flex items-center justify-between py-2 border-b border-slate-700/50">
+            <div>
+              <p class="text-sm text-white font-medium">Appointment Reminders</p>
+              <p class="text-xs text-slate-500">Get reminders before scheduled appointments</p>
+            </div>
+            <button class="toggle-track bg-blue-600" onclick="togglePref(this,'appointmentReminders')" data-key="appointmentReminders" data-on="true">
+              <span class="toggle-thumb translate-x-5"></span>
+            </button>
+          </div>
+          <div class="flex items-center justify-between py-2 border-b border-slate-700/50">
+            <div>
+              <p class="text-sm text-white font-medium">Recall Notices</p>
+              <p class="text-xs text-slate-500">Annual exam and preventive care reminders</p>
+            </div>
+            <button class="toggle-track bg-blue-600" onclick="togglePref(this,'recallNotices')" data-key="recallNotices" data-on="true">
+              <span class="toggle-thumb translate-x-5"></span>
+            </button>
+          </div>
+          <div class="flex items-center justify-between py-2 border-b border-slate-700/50">
+            <div>
+              <p class="text-sm text-white font-medium">Billing Alerts</p>
+              <p class="text-xs text-slate-500">New balance due and payment confirmations</p>
+            </div>
+            <button class="toggle-track bg-blue-600" onclick="togglePref(this,'billingAlerts')" data-key="billingAlerts" data-on="true">
+              <span class="toggle-thumb translate-x-5"></span>
+            </button>
+          </div>
+          <div class="flex items-center justify-between py-2">
+            <div>
+              <p class="text-sm text-white font-medium">Message Notifications</p>
+              <p class="text-xs text-slate-500">Alert when staff replies to your messages</p>
+            </div>
+            <button class="toggle-track bg-blue-600" onclick="togglePref(this,'messageNotifications')" data-key="messageNotifications" data-on="true">
+              <span class="toggle-thumb translate-x-5"></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <label class="text-sm text-slate-400">Preferred Channel:</label>
+          <select id="notif-channel" class="select-field max-w-[180px]" onchange="saveNotifPrefs()">
+            <option value="email">Email</option>
+            <option value="sms">SMS</option>
+            <option value="both">Email + SMS</option>
+          </select>
+        </div>
+
+        <button onclick="saveNotifPrefs()" class="btn-primary">
+          <i class="fas fa-save"></i>Save Preferences
+        </button>
+      </div>
+
+      <!-- Sign out -->
+      <div class="card">
+        <h3 class="font-semibold text-white flex items-center gap-2 mb-3"><i class="fas fa-sign-out-alt text-red-400 w-5 text-center"></i>Session</h3>
+        <p class="text-sm text-slate-400 mb-4">Your portal session expires after 1 hour of inactivity.</p>
+        <button onclick="doLogout()" class="btn-danger">
+          <i class="fas fa-sign-out-alt"></i>Sign Out
+        </button>
       </div>
     </div>
 
@@ -306,15 +487,15 @@
       <div>
         <label class="block text-xs text-slate-400 mb-1">Urgency</label>
         <div class="flex gap-2">
-          <label class="flex-1 flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors" id="urg-routine-lbl">
+          <label class="flex-1 flex items-center gap-2 p-3 rounded-lg border border-slate-700 cursor-pointer transition-colors" id="urg-routine-lbl">
             <input type="radio" name="urgency" value="routine" checked onchange="setUrgency('routine')" class="text-blue-500" />
             <span class="text-sm text-slate-300">Routine</span>
           </label>
-          <label class="flex-1 flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors" id="urg-soon-lbl">
+          <label class="flex-1 flex items-center gap-2 p-3 rounded-lg border border-slate-700 cursor-pointer transition-colors" id="urg-soon-lbl">
             <input type="radio" name="urgency" value="soon" onchange="setUrgency('soon')" class="text-amber-500" />
             <span class="text-sm text-slate-300">Soon (1-2 wks)</span>
           </label>
-          <label class="flex-1 flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors" id="urg-urgent-lbl">
+          <label class="flex-1 flex items-center gap-2 p-3 rounded-lg border border-slate-700 cursor-pointer transition-colors" id="urg-urgent-lbl">
             <input type="radio" name="urgency" value="urgent" onchange="setUrgency('urgent')" class="text-red-500" />
             <span class="text-sm text-slate-300">Urgent</span>
           </label>
@@ -389,7 +570,7 @@
         <label class="block text-xs text-slate-400 mb-1">Message <span class="text-red-400">*</span></label>
         <textarea id="msg-body" class="input-field h-32 resize-none" placeholder="Write your message here…"></textarea>
       </div>
-      <p class="text-xs text-slate-500"><i class="fas fa-lock mr-1"></i>This message is encrypted and HIPAA compliant. Do not share passwords or sensitive financial information here.</p>
+      <p class="text-xs text-slate-500"><i class="fas fa-lock mr-1"></i>This message is encrypted and HIPAA compliant.</p>
     </div>
     <div class="p-5 border-t border-slate-800 flex gap-3 justify-end">
       <button class="btn-secondary" onclick="closeModal('modal-new-msg')">Cancel</button>
@@ -398,7 +579,18 @@
   </div>
 </div>
 
-<!-- Payment Modal (demo only) -->
+<!-- Exam Detail Modal -->
+<div id="modal-exam-detail" class="modal-overlay hidden">
+  <div class="modal-box max-w-2xl">
+    <div class="flex items-center justify-between p-5 border-b border-slate-800">
+      <h3 class="font-semibold text-white text-lg" id="exam-detail-title">Visit Summary</h3>
+      <button onclick="closeModal('modal-exam-detail')" class="text-slate-400 hover:text-white"><i class="fas fa-xmark text-xl"></i></button>
+    </div>
+    <div class="p-5" id="exam-detail-body">Loading…</div>
+  </div>
+</div>
+
+<!-- Payment Modal -->
 <div id="modal-payment" class="modal-overlay hidden">
   <div class="modal-box">
     <div class="flex items-center justify-between p-5 border-b border-slate-800">
@@ -425,7 +617,7 @@
       </div>
       <div class="card bg-amber-500/10 border-amber-500/20 text-xs text-amber-400 flex items-start gap-2">
         <i class="fas fa-triangle-exclamation mt-0.5"></i>
-        <span>This is a demo portal. No actual payment will be processed. In production, this would integrate with Stripe or similar.</span>
+        <span>Demo portal — no actual payment will be processed.</span>
       </div>
     </div>
     <div class="p-5 border-t border-slate-800 flex gap-3 justify-end">

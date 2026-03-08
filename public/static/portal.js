@@ -1,767 +1,840 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// OculoFlow — Phase 4A: Patient Portal Controller
-// ─────────────────────────────────────────────────────────────────────────────
+// OculoFlow — Patient Portal Frontend  (Phase 4A + B3)
+// Supports: DOB login, magic-link/OTP, password login, password reset,
+//           appointments, records/exams, optical, billing, messages, settings
+'use strict';
 
-/* ── State ─────────────────────────────────────────────────────────────────── */
+// ── State ──────────────────────────────────────────────────────────────────────
 const portal = {
-  session: null,          // PortalSession
-  dashboard: null,        // PortalDashboard
-  currentTab: 'home',
-  selectedThread: null,
-  selectedUrgency: 'routine',
-  threads: [],
+  sessionId: null,
+  patient: null,
+  dashboard: null,
   apptRequests: [],
   rxList: [],
+  exams: [],
   opticalOrders: [],
-  billingItems: [],
-}
+  billing: { totalBalance: 0, items: [] },
+  threads: [],
+  notifPrefs: {},
+  account: {},
+  mlEmail: null,   // magic-link email being verified
+};
 
-/* ── Utilities ─────────────────────────────────────────────────────────────── */
-const $ = id => document.getElementById(id)
-
-function fmt$(n) { return n == null ? '—' : `$${Number(n).toFixed(2)}` }
+// ── Helpers ────────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const fmt$ = n => n == null ? '—' : `$${Number(n).toFixed(2)}`;
 function fmtDate(d) {
-  if (!d) return '—'
-  // Handle YYYY-MM-DD without timezone offset
-  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
-    const [y, m, day] = d.split('-').map(Number)
-    return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  }
-  const dt = new Date(d)
-  return isNaN(dt) ? d : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  if (!d) return '—';
+  try { return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+  catch { return d; }
 }
 function fmtDateTime(d) {
-  if (!d) return '—'
-  const dt = new Date(d)
-  return isNaN(dt) ? d : dt.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-}
-function fmtAge(dob) {
-  if (!dob) return ''
-  const [y, m, day] = dob.split('-').map(Number)
-  const age = Math.floor((Date.now() - new Date(y, m - 1, day).getTime()) / (365.25 * 86400000))
-  return `Age ${age}`
+  if (!d) return '—';
+  try { return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
+  catch { return d; }
 }
 function initials(name) {
-  if (!name) return '?'
-  return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+  if (!name) return '?';
+  return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+}
+function badge(text, cls) {
+  return `<span class="badge badge-${cls}">${text.replace(/_/g,' ').replace(/\b\w/g, c=>c.toUpperCase())}</span>`;
+}
+function rxFmt(v) {
+  if (v == null) return '—';
+  const s = Number(v).toFixed(2);
+  return v > 0 ? `+${s}` : s;
 }
 
 function showToast(msg, ok = true) {
-  const toast = $('toast')
-  $('toast-msg').textContent = msg
-  $('toast-icon').className = `fas ${ok ? 'fa-check-circle text-emerald-400' : 'fa-circle-exclamation text-red-400'} text-lg`
-  toast.classList.remove('hidden')
-  setTimeout(() => toast.classList.add('hidden'), 4000)
+  $('toast-icon').className = ok ? 'fas fa-check-circle text-emerald-400 text-lg' : 'fas fa-exclamation-circle text-red-400 text-lg';
+  $('toast-msg').textContent = msg;
+  $('toast').classList.remove('hidden');
+  setTimeout(() => $('toast').classList.add('hidden'), 4000);
 }
-
-async function api(method, path, body, sessionId) {
-  const sid = sessionId ?? portal.session?.sessionId ?? ''
-  const opts = { method, headers: { 'Content-Type': 'application/json', 'X-Portal-Session': sid } }
-  if (body) opts.body = JSON.stringify(body)
-  const res = await fetch(`/api/portal${path}`, opts)
-  return res.json()
-}
-
-function closeModal(id) { $(id).classList.add('hidden') }
-
-/* ── Status helpers ─────────────────────────────────────────────────────────── */
-const REQ_STATUS = { PENDING: 'badge-yellow', CONFIRMED: 'badge-green', DECLINED: 'badge-red', CANCELLED: 'badge-slate' }
-const ORD_STATUS = {
-  DRAFT:'badge-slate', APPROVED:'badge-blue', SENT_TO_LAB:'badge-blue',
-  IN_PRODUCTION:'badge-purple', QUALITY_CHECK:'badge-purple', RECEIVED:'badge-blue',
-  READY_FOR_PICKUP:'badge-green', DISPENSED:'badge-green', CANCELLED:'badge-red',
-}
-const MSG_CAT_ICONS = {
-  GENERAL:'fa-comment', PRESCRIPTION_REQUEST:'fa-prescription', APPOINTMENT_QUESTION:'fa-calendar',
-  BILLING_QUESTION:'fa-dollar-sign', OPTICAL_ORDER_STATUS:'fa-glasses',
-  TEST_RESULTS:'fa-flask', MEDICATION_REFILL:'fa-pills', OTHER:'fa-ellipsis',
-}
-
-function badge(text, cls) {
-  return `<span class="badge ${cls}">${text.replace(/_/g,' ').replace(/\b\w/g, c=>c.toUpperCase())}</span>`
-}
-
-/* ── Auth ───────────────────────────────────────────────────────────────────── */
-async function doLogin() {
-  const lastName = $('login-lastname').value.trim()
-  const dob      = $('login-dob').value
-  const mrn      = $('login-mrn').value.trim()
-
-  if (!lastName || !dob) {
-    showLoginError('Please enter your last name and date of birth.')
-    return
-  }
-
-  try {
-    const payload = { lastName, dob }
-    if (mrn.includes('@')) payload.email = mrn
-    else if (mrn) payload.mrn = mrn
-
-    const res = await fetch('/api/portal/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    const data = await res.json()
-    if (data.success) {
-      portal.session = data.data
-      localStorage.setItem('portal_session', data.data.sessionId)
-      enterPortal()
-    } else {
-      showLoginError(data.error ?? 'Login failed. Please check your information.')
-    }
-  } catch (e) {
-    showLoginError('Connection error. Please try again.')
-  }
-}
-
-async function doDemo() {
-  try {
-    const res = await fetch('/api/portal/auth/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-    const data = await res.json()
-    if (data.success) {
-      portal.session = data.data
-      localStorage.setItem('portal_session', data.data.sessionId)
-      enterPortal()
-    } else {
-      showLoginError(data.error ?? 'Demo login failed')
-    }
-  } catch (e) {
-    showLoginError('Connection error.')
-  }
-}
-
-async function doLogout() {
-  if (portal.session) {
-    await fetch('/api/portal/auth/logout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: portal.session.sessionId }),
-    }).catch(() => {})
-    portal.session = null
-  }
-  localStorage.removeItem('portal_session')
-  $('portal-app').classList.add('hidden')
-  $('portal-app').classList.remove('flex')
-  $('login-screen').classList.remove('hidden')
-}
-
+function closeModal(id) { $(id).classList.add('hidden'); }
 function showLoginError(msg) {
-  const el = $('login-error')
-  el.textContent = msg
-  el.classList.remove('hidden')
-  setTimeout(() => el.classList.add('hidden'), 5000)
+  const el = $('login-error');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  $('login-success').classList.add('hidden');
+  setTimeout(() => el.classList.add('hidden'), 6000);
+}
+function showLoginSuccess(msg) {
+  const el = $('login-success');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  $('login-error').classList.add('hidden');
 }
 
-async function tryAutoLogin() {
-  const saved = localStorage.getItem('portal_session')
-  if (!saved) return false
+// ── API ────────────────────────────────────────────────────────────────────────
+async function api(method, path, body, sessionId) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (sessionId || portal.sessionId) headers['X-Portal-Session'] = sessionId ?? portal.sessionId;
   try {
-    const res = await fetch(`/api/portal/auth/session?session=${saved}`, {
-      headers: { 'X-Portal-Session': saved },
-    })
-    const data = await res.json()
-    if (data.success) {
-      portal.session = data.data
-      return true
-    }
-  } catch (e) {}
-  localStorage.removeItem('portal_session')
-  return false
-}
-
-/* ── Enter / Exit Portal ────────────────────────────────────────────────────── */
-function enterPortal() {
-  $('login-screen').classList.add('hidden')
-  $('portal-app').classList.remove('hidden')
-  $('portal-app').classList.add('flex')
-
-  // Set topbar
-  const s = portal.session
-  $('topbar-name').textContent = s.patientName
-  $('topbar-dob').textContent  = fmtDate(s.patientDob)
-  $('topbar-avatar').textContent = initials(s.patientName)
-
-  // Load dashboard data
-  loadPortalDashboard()
-}
-
-/* ── Tab Navigation ─────────────────────────────────────────────────────────── */
-function showPortalTab(tab, btnEl) {
-  document.querySelectorAll('.portal-tab').forEach(p => p.classList.add('hidden'))
-  document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'))
-  const panel = $(`portal-tab-${tab}`)
-  if (panel) panel.classList.remove('hidden')
-
-  // Activate both desktop and mobile buttons
-  document.querySelectorAll('.nav-tab').forEach(b => {
-    if (b.getAttribute('onclick')?.includes(`'${tab}'`)) b.classList.add('active')
-  })
-  if (btnEl) btnEl.classList.add('active')
-  portal.currentTab = tab
-
-  // Lazy-load tab data
-  if (tab === 'appointments' && !portal.apptRequests.length) loadApptRequests()
-  if (tab === 'records')      loadRecords()
-  if (tab === 'optical')      loadOpticalOrders()
-  if (tab === 'billing')      loadBilling()
-  if (tab === 'messages')     loadMessages()
-}
-
-/* ── Dashboard / Overview ───────────────────────────────────────────────────── */
-async function loadPortalDashboard() {
-  try {
-    const res = await api('GET', '/dashboard')
-    if (!res.success) { showToast(res.error ?? 'Could not load dashboard', false); return }
-    portal.dashboard = res.data
-    renderOverview(res.data)
+    const res = await fetch(`/api/portal${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    return res.json();
   } catch (e) {
-    showToast('Dashboard load error', false)
+    return { success: false, error: e.message };
   }
+}
+
+// ── Login Tab Switching ────────────────────────────────────────────────────────
+function switchLoginTab(tab, btn) {
+  ['dob','email','password'].forEach(t => {
+    $(`login-panel-${t}`).classList.add('hidden');
+    const b = $(`ltab-${t}`);
+    if (b) { b.classList.remove('active'); }
+  });
+  $(`login-panel-${tab}`).classList.remove('hidden');
+  if (btn) btn.classList.add('active');
+  $('login-error').classList.add('hidden');
+  $('login-success').classList.add('hidden');
+  $('forgot-pw-panel').classList.add('hidden');
+}
+
+// ── DOB Login ─────────────────────────────────────────────────────────────────
+async function doLogin() {
+  const lastName = $('login-lastname').value.trim();
+  const dob = $('login-dob').value;
+  if (!lastName || !dob) { showLoginError('Last name and date of birth are required.'); return; }
+  const d = await api('POST', '/auth/login', { lastName, dob });
+  if (!d.success) { showLoginError(d.error ?? 'Login failed. Check your last name and date of birth.'); return; }
+  saveSession(d.data);
+  enterPortal();
+}
+
+// ── Demo Session ──────────────────────────────────────────────────────────────
+async function doDemo() {
+  const d = await api('POST', '/auth/demo', {});
+  if (!d.success) { showLoginError(d.error ?? 'Demo failed'); return; }
+  saveSession(d.data);
+  enterPortal();
+}
+
+// ── Magic Link ────────────────────────────────────────────────────────────────
+async function doMagicLink() {
+  const email = $('ml-email').value.trim();
+  if (!email) { showLoginError('Email address required.'); return; }
+  const d = await api('POST', '/auth/magic-link', { email });
+  if (!d.success) { showLoginError(d.error ?? 'Failed to send link'); return; }
+
+  portal.mlEmail = email;
+  $('ml-step-1').classList.add('hidden');
+  $('ml-step-2').classList.remove('hidden');
+
+  // Demo mode: show OTP hint
+  if (d.data?.demo && d.data?.otp) {
+    const hint = $('ml-demo-hint');
+    hint.textContent = `Demo code: ${d.data.otp}`;
+    hint.classList.remove('hidden');
+  }
+}
+function resetMagicLink() {
+  portal.mlEmail = null;
+  $('ml-step-1').classList.remove('hidden');
+  $('ml-step-2').classList.add('hidden');
+  $('ml-demo-hint').classList.add('hidden');
+  $('ml-otp').value = '';
+}
+async function doMagicVerify() {
+  const otp = $('ml-otp').value.trim();
+  if (!otp || otp.length < 6) { showLoginError('Enter the 6-digit code from your email.'); return; }
+  const d = await api('POST', '/auth/magic-verify', { email: portal.mlEmail, otp });
+  if (!d.success) { showLoginError(d.error ?? 'Invalid or expired code.'); return; }
+  saveSession(d.data);
+  enterPortal();
+}
+
+// ── Password Login ────────────────────────────────────────────────────────────
+async function doPasswordLogin() {
+  const email = $('pw-email').value.trim();
+  const password = $('pw-password').value;
+  if (!email || !password) { showLoginError('Email and password required.'); return; }
+  const d = await api('POST', '/auth/password-login', { email, password });
+  if (!d.success) { showLoginError(d.error ?? 'Invalid email or password.'); return; }
+  saveSession(d.data);
+  enterPortal();
+}
+
+// ── Forgot / Reset Password ───────────────────────────────────────────────────
+function showForgotPassword() {
+  $('login-panel-password').classList.add('hidden');
+  $('forgot-pw-panel').classList.remove('hidden');
+}
+function hideForgotPassword() {
+  $('forgot-pw-panel').classList.add('hidden');
+  $('login-panel-password').classList.remove('hidden');
+}
+async function doPasswordReset() {
+  const email = $('forgot-email').value.trim();
+  if (!email) { showLoginError('Email required.'); return; }
+  const d = await api('POST', '/auth/password-reset', { email });
+  if (!d.success) { showLoginError(d.error ?? 'Failed'); return; }
+  showLoginSuccess(d.data?.demo
+    ? `Demo reset token: ${d.data.token}. Use magic-link tab to verify, then you can set a new password.`
+    : 'Check your email for reset instructions.');
+  hideForgotPassword();
+}
+
+// ── Logout ────────────────────────────────────────────────────────────────────
+async function doLogout() {
+  if (portal.sessionId) await api('POST', '/auth/logout', { sessionId: portal.sessionId });
+  clearSession();
+  $('portal-app').classList.add('hidden');
+  $('login-screen').classList.remove('hidden');
+  $('portal-app').classList.remove('flex');
+}
+
+// ── Session Storage ───────────────────────────────────────────────────────────
+function saveSession(session) {
+  portal.sessionId = session.sessionId;
+  portal.patient = session;
+  try { sessionStorage.setItem('of_portal_session', JSON.stringify(session)); } catch {}
+}
+function clearSession() {
+  portal.sessionId = null;
+  portal.patient = null;
+  try { sessionStorage.removeItem('of_portal_session'); } catch {}
+}
+async function tryAutoLogin() {
+  try {
+    const raw = sessionStorage.getItem('of_portal_session');
+    if (!raw) return false;
+    const saved = JSON.parse(raw);
+    if (!saved?.sessionId) return false;
+    if (new Date(saved.expiresAt) < new Date()) { clearSession(); return false; }
+    const d = await api('GET', '/auth/session', null, saved.sessionId);
+    if (!d.success) { clearSession(); return false; }
+    saveSession(d.data);
+    return true;
+  } catch { return false; }
+}
+
+// ── Portal Entry ──────────────────────────────────────────────────────────────
+function enterPortal() {
+  $('login-screen').classList.add('hidden');
+  $('portal-app').classList.remove('hidden');
+  $('portal-app').classList.add('flex');
+
+  const p = portal.patient;
+  $('topbar-name').textContent = p.patientName ?? '—';
+  $('topbar-dob').textContent = p.patientDob ? fmtDate(p.patientDob) : '';
+  $('topbar-avatar').textContent = initials(p.patientName ?? '');
+
+  loadPortalDashboard();
+}
+
+// ── Tab Switching ─────────────────────────────────────────────────────────────
+function showPortalTab(tab, btnEl) {
+  document.querySelectorAll('.portal-tab').forEach(p => p.classList.add('hidden'));
+  document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+  const el = $(`portal-tab-${tab}`);
+  if (el) el.classList.remove('hidden');
+
+  // Find correct button if not passed
+  if (btnEl) {
+    btnEl.classList.add('active');
+  } else {
+    document.querySelectorAll('.nav-tab').forEach(b => {
+      if (b.getAttribute('onclick')?.includes(`'${tab}'`)) b.classList.add('active');
+    });
+  }
+
+  if (tab === 'appointments') loadApptRequests();
+  else if (tab === 'records')  loadRecords();
+  else if (tab === 'optical')  loadOpticalOrders();
+  else if (tab === 'billing')  loadBilling();
+  else if (tab === 'messages') loadMessages();
+  else if (tab === 'settings') loadSettings();
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+async function loadPortalDashboard() {
+  const d = await api('GET', '/dashboard');
+  if (!d.success) return;
+  portal.dashboard = d.data;
+  renderOverview(d.data);
 }
 
 function renderOverview(d) {
-  $('overview-name').textContent   = d.patient?.name?.split(' ')[0] ?? '—'
-  $('overview-subtitle').textContent = `${d.patient?.insuranceName ? d.patient.insuranceName + ' · ' : ''}${fmtAge(d.patient?.dob)}`
+  const p = d.patient ?? {};
+  $('overview-name').textContent = p.name ?? portal.patient?.patientName ?? '—';
+  $('overview-subtitle').textContent = p.dob ? `Date of Birth: ${fmtDate(p.dob)}` : 'Your health summary';
 
   // KPIs
-  const nextAppt = d.upcomingAppointments?.[0]
-  $('kpi-next-appt').textContent = nextAppt
-    ? `${fmtDate(nextAppt.date)} ${nextAppt.time}`
-    : 'None scheduled'
+  const nextAppt = d.upcomingAppointments?.[0];
+  $('kpi-next-appt').textContent = nextAppt ? fmtDate(nextAppt.date) : 'None scheduled';
+  $('kpi-rx').innerHTML = d.activeRx?.length
+    ? `<span class="text-emerald-400">${d.activeRx.length} active</span>` : '<span class="text-slate-400">None</span>';
 
-  $('kpi-rx').textContent = d.activeRx
-    ? `${d.activeRx.lensType} · Exp ${fmtDate(d.activeRx.expiresDate)}`
-    : 'None on file'
+  const bal = d.balance?.totalBalance ?? 0;
+  $('kpi-balance').innerHTML = bal > 0
+    ? `<span class="text-red-400">${fmt$(bal)}</span>`
+    : `<span class="text-emerald-400">${fmt$(bal)}</span>`;
 
-  const bal = d.balanceSummary?.totalBalance ?? 0
-  const balEl = $('kpi-balance')
-  balEl.textContent = fmt$(bal)
-  balEl.className = `font-bold text-sm ${bal > 0 ? 'text-amber-400' : 'text-emerald-400'}`
+  const unread = d.unreadMessages ?? 0;
+  $('kpi-msgs').innerHTML = unread > 0
+    ? `<span class="text-amber-400">${unread} unread</span>` : '<span class="text-emerald-400">All read</span>';
 
-  const unread = d.unreadMessages ?? 0
-  $('kpi-msgs').textContent = unread > 0 ? `${unread} unread` : 'No new messages'
-  $('kpi-msgs').className = `font-bold text-sm ${unread > 0 ? 'text-blue-400' : 'text-slate-400'}`
-
-  // Unread badge in nav
   if (unread > 0) {
-    $('msg-badge').textContent = unread
-    $('msg-badge').classList.remove('hidden')
+    $('msg-badge').textContent = unread;
+    $('msg-badge').classList.remove('hidden');
   }
 
   // Upcoming appointments
-  const apptEl = $('upcoming-appts-list')
-  if (!d.upcomingAppointments?.length) {
-    apptEl.innerHTML = '<p class="text-slate-500 text-sm">No upcoming appointments.</p><button onclick="showPortalTab(\'appointments\')" class="btn-ghost mt-2 text-blue-400 hover:text-blue-300"><i class="fas fa-plus mr-1"></i>Request one</button>'
-  } else {
+  const apptEl = $('upcoming-appts-list');
+  if (d.upcomingAppointments?.length) {
     apptEl.innerHTML = d.upcomingAppointments.map(a => `
-      <div class="flex items-center gap-3 p-3 bg-slate-900/60 rounded-lg">
-        <div class="w-10 h-10 rounded-xl bg-blue-500/20 flex flex-col items-center justify-center shrink-0">
-          <span class="text-xs font-bold text-blue-400">${fmtDate(a.date).split(' ')[0].toUpperCase()}</span>
-          <span class="text-base font-bold text-white leading-tight">${fmtDate(a.date).split(' ')[1]?.replace(',','')}</span>
+      <div class="flex items-start gap-3 py-2 border-b border-slate-700/30 last:border-0">
+        <div class="w-10 h-10 rounded-xl bg-blue-600/20 flex items-center justify-center shrink-0 text-center">
+          <i class="fas fa-calendar text-blue-400 text-sm"></i>
         </div>
         <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium text-white">${a.type}</p>
-          <p class="text-xs text-slate-500">${a.time} · ${a.provider}</p>
+          <p class="text-sm font-medium text-white truncate">${a.appointmentType?.replace(/_/g,' ') ?? 'Appointment'}</p>
+          <p class="text-xs text-slate-400">${fmtDate(a.date)}${a.time ? ' at '+a.time : ''} · ${a.providerName ?? 'Care Team'}</p>
         </div>
-        ${badge(a.status, a.status === 'CONFIRMED' ? 'badge-green' : 'badge-blue')}
-      </div>`).join('')
-  }
-
-  // Active Rx
-  const rxEl = $('active-rx-content')
-  if (d.activeRx) {
-    const rx = d.activeRx
-    rxEl.innerHTML = `
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <p class="text-xs text-slate-500 mb-2 uppercase tracking-wider">Prescription Details</p>
-          <div class="text-xs space-y-1">
-            <div class="flex justify-between"><span class="text-slate-500">Provider</span><span class="text-white">${rx.providerName}</span></div>
-            <div class="flex justify-between"><span class="text-slate-500">Date</span><span class="text-white">${fmtDate(rx.rxDate)}</span></div>
-            <div class="flex justify-between"><span class="text-slate-500">Expires</span><span class="${new Date(rx.expiresDate) > new Date() ? 'text-emerald-400' : 'text-red-400'}">${fmtDate(rx.expiresDate)}</span></div>
-            <div class="flex justify-between"><span class="text-slate-500">Type</span><span class="text-white">${rx.lensType}</span></div>
-          </div>
-        </div>
-        <div>
-          <p class="text-xs text-slate-500 mb-2 uppercase tracking-wider">Rx Values</p>
-          <table class="w-full text-xs">
-            <thead><tr><th class="text-left text-slate-500 pb-1">Eye</th><th class="text-right text-slate-500 pb-1">SPH</th><th class="text-right text-slate-500 pb-1">CYL</th><th class="text-right text-slate-500 pb-1">AXIS</th><th class="text-right text-slate-500 pb-1">ADD</th></tr></thead>
-            <tbody>
-              ${['od','os'].map(e => `<tr class="border-t border-slate-700/40">
-                <td class="py-1.5 font-bold ${e==='od'?'text-blue-400':'text-purple-400'}">${e.toUpperCase()}</td>
-                <td class="text-right font-mono text-white">${rxFmt(rx[e]?.sphere)}</td>
-                <td class="text-right font-mono text-white">${rxFmt(rx[e]?.cylinder)}</td>
-                <td class="text-right font-mono text-white">${rx[e]?.axis ?? '—'}</td>
-                <td class="text-right font-mono text-white">${rx[e]?.add != null ? '+' + Number(rx[e].add).toFixed(2) : '—'}</td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
-          <p class="text-xs text-slate-500 mt-2">Binocular PD: <span class="text-white font-mono">${rx.binocularPd ?? '—'}</span></p>
-        </div>
-      </div>`
+        ${badge(a.status??'scheduled','blue')}
+      </div>`).join('');
   } else {
-    rxEl.innerHTML = '<p class="text-slate-500 text-sm">No prescription on file.</p>'
+    apptEl.innerHTML = '<p class="text-sm text-slate-500 text-center py-4">No upcoming appointments</p>';
   }
 
-  // Most recent exam
-  const examEl = $('recent-exam-content')
-  const exam = d.recentExams?.[0]
+  // Active Rx snapshot
+  const rxEl = $('active-rx-content');
+  const rx = d.activeRx?.[0];
+  if (rx) {
+    rxEl.innerHTML = `
+      <div class="grid grid-cols-3 text-xs gap-2 mb-2">
+        ${['od','os'].map(eye => `
+        <div class="col-span-3 md:col-span-1">
+          <p class="font-semibold text-slate-300 uppercase mb-1">${eye.toUpperCase()}</p>
+          <table class="text-slate-400 w-full"><tbody>
+            <tr><td class="pr-2">Sphere</td><td class="text-white">${rxFmt(rx[eye]?.sphere)}</td></tr>
+            <tr><td class="pr-2">Cylinder</td><td class="text-white">${rxFmt(rx[eye]?.cylinder)}</td></tr>
+            <tr><td class="pr-2">Axis</td><td class="text-white">${rx[eye]?.axis ?? '—'}°</td></tr>
+            ${rx[eye]?.add != null ? `<tr><td class="pr-2">Add</td><td class="text-white">${rxFmt(rx[eye].add)}</td></tr>` : ''}
+          </tbody></table>
+        </div>`).join('')}
+      </div>
+      <p class="text-xs text-slate-500">Prescription from ${fmtDate(rx.examDate)}</p>`;
+  } else {
+    rxEl.innerHTML = '<p class="text-sm text-slate-500">No prescription on file</p>';
+  }
+
+  // Recent exam
+  const examEl = $('recent-exam-content');
+  const exam = d.recentExams?.[0];
   if (exam) {
     examEl.innerHTML = `
-      <div class="flex items-start justify-between gap-3 mb-3">
-        <div>
-          <p class="text-white font-medium">${exam.examType || 'Eye Exam'}</p>
-          <p class="text-xs text-slate-500">${fmtDate(exam.examDate)} · ${exam.providerName}</p>
+      <div class="space-y-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-white font-medium">${fmtDate(exam.examDate)}</span>
+          ${badge(exam.examType??'exam','purple')}
+          ${exam.isSigned ? badge('signed','green') : badge('draft','slate')}
         </div>
-        ${badge(exam.signed ? 'SIGNED' : 'DRAFT', exam.signed ? 'badge-green' : 'badge-yellow')}
-      </div>
-      ${exam.diagnoses?.length ? `
-        <div class="mb-2">
-          <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Diagnoses</p>
-          ${exam.diagnoses.map(d => `<p class="text-xs text-slate-300"><span class="font-mono text-blue-400">${d.code}</span> — ${d.description}</p>`).join('')}
-        </div>` : ''}
-      ${exam.visionOD || exam.visionOS ? `<p class="text-xs text-slate-400">Vision: OD <span class="text-white">${exam.visionOD ?? '—'}</span> · OS <span class="text-white">${exam.visionOS ?? '—'}</span></p>` : ''}
-      ${exam.recommendations ? `<p class="text-xs text-slate-400 mt-2">Plan: <span class="text-slate-300">${exam.recommendations}</span></p>` : ''}`
+        <p class="text-slate-400">${exam.providerName ?? 'Your Care Team'}</p>
+        ${exam.diagnoses?.length ? `<p class="text-xs text-slate-500 mt-1">${exam.diagnoses.map(d => `${d.code} — ${d.description}`).join(' · ')}</p>` : ''}
+      </div>`;
   } else {
-    examEl.innerHTML = '<p class="text-slate-500 text-sm">No recent visits on file.</p>'
+    examEl.innerHTML = '<p class="text-sm text-slate-500">No visit history found</p>';
   }
 }
 
-function rxFmt(v) {
-  if (v == null) return '—'
-  return (v >= 0 ? '+' : '') + Number(v).toFixed(2)
-}
-
-/* ── Appointments Tab ───────────────────────────────────────────────────────── */
+// ── Appointments ──────────────────────────────────────────────────────────────
 async function loadApptRequests() {
-  const res = await api('GET', '/appointments')
-  portal.apptRequests = res.data ?? []
-  renderApptRequests()
+  const d = await api('GET', '/appointments');
+  if (!d.success) { $('appt-requests-list').innerHTML = '<div class="card text-red-400 text-sm">Failed to load requests</div>'; return; }
+  portal.apptRequests = d.data ?? [];
+  renderApptRequests();
 }
 
 function renderApptRequests() {
-  const el = $('appt-requests-list')
+  const el = $('appt-requests-list');
   if (!portal.apptRequests.length) {
-    el.innerHTML = `<div class="card text-center py-10">
-      <i class="fas fa-calendar-plus text-4xl text-slate-600 mb-3"></i>
-      <p class="text-slate-400 mb-4">No appointment requests yet.</p>
-      <button onclick="openNewApptModal()" class="btn-primary mx-auto"><i class="fas fa-plus"></i>Request an Appointment</button>
-    </div>`
-    return
+    el.innerHTML = `<div class="card text-center py-10 text-slate-500">
+      <i class="fas fa-calendar-plus text-3xl mb-2 opacity-30"></i>
+      <p>No appointment requests yet</p>
+      <button onclick="openNewApptModal()" class="btn-primary mx-auto mt-3"><i class="fas fa-plus"></i>New Request</button>
+    </div>`;
+    return;
   }
-  const urgIcons = { routine: 'fa-clock text-slate-400', soon: 'fa-circle-exclamation text-amber-400', urgent: 'fa-triangle-exclamation text-red-400' }
-  el.innerHTML = portal.apptRequests.map(r => `
-    <div class="card hover:border-slate-600 transition-colors">
-      <div class="flex items-start justify-between gap-3 mb-3">
+  el.innerHTML = portal.apptRequests.map(r => {
+    const urgCls = r.urgency === 'urgent' ? 'red' : r.urgency === 'soon' ? 'yellow' : 'blue';
+    const statusCls = r.status === 'PENDING' ? 'yellow' : r.status === 'CONFIRMED' ? 'green' : r.status === 'CANCELLED' ? 'slate' : 'blue';
+    return `<div class="card space-y-2">
+      <div class="flex items-start justify-between gap-2 flex-wrap">
         <div>
-          <p class="font-medium text-white">${(r.requestType ?? '').replace(/_/g,' ')}</p>
-          <p class="text-xs text-slate-500">Submitted ${fmtDate(r.createdAt)}</p>
+          <p class="font-medium text-white">${(r.requestType??'Appointment').replace(/_/g,' ')}</p>
+          <p class="text-xs text-slate-400 mt-0.5">${r.reason}</p>
         </div>
-        <div class="flex items-center gap-2 shrink-0">
-          <i class="fas ${urgIcons[r.urgency] ?? 'fa-clock text-slate-400'}" title="${r.urgency}"></i>
-          ${badge(r.status, REQ_STATUS[r.status] ?? 'badge-slate')}
+        <div class="flex items-center gap-2 flex-wrap">
+          ${badge(r.urgency??'routine', urgCls)}
+          ${badge(r.status??'pending', statusCls)}
         </div>
       </div>
-      <p class="text-sm text-slate-300 mb-3">${r.reason}</p>
-      ${r.preferredDates?.length ? `<p class="text-xs text-slate-500">Preferred: ${r.preferredDates.map(d => fmtDate(d)).join(', ')}</p>` : ''}
-      ${r.status === 'CONFIRMED' ? `
-        <div class="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-sm">
-          <p class="text-emerald-400 font-medium"><i class="fas fa-check-circle mr-1"></i>Confirmed: ${fmtDate(r.confirmedDate)} at ${r.confirmedTime}</p>
-          <p class="text-slate-400 text-xs mt-1">Provider: ${r.confirmedProvider ?? '—'}</p>
-        </div>` : ''}
-      ${r.status === 'DECLINED' ? `
-        <div class="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-sm">
-          <p class="text-red-400"><i class="fas fa-xmark-circle mr-1"></i>Request declined. ${r.staffNotes ? `Notes: ${r.staffNotes}` : 'Please call us to reschedule.'}</p>
-        </div>` : ''}
-    </div>`).join('')
+      ${r.preferredDates?.length ? `<p class="text-xs text-slate-500"><i class="fas fa-calendar-alt mr-1"></i>Preferred: ${r.preferredDates.map(d => fmtDate(d)).join(', ')}</p>` : ''}
+      <div class="flex items-center justify-between">
+        <p class="text-xs text-slate-600">Submitted ${fmtDateTime(r.createdAt)}</p>
+        ${r.status === 'PENDING' ? `<button onclick="cancelApptRequest('${r.id}')" class="btn-ghost text-red-400 hover:text-red-300 text-xs"><i class="fas fa-times mr-1"></i>Cancel</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function openNewApptModal() {
-  // Set min date to tomorrow
-  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
-  const minDate  = tomorrow.toISOString().slice(0,10)
-  ;['appt-date1','appt-date2','appt-date3'].forEach(id => { $(id).min = minDate; $(id).value = '' })
-  $('appt-reason').value = ''
-  $('appt-notes').value  = ''
-  $('modal-new-appt').classList.remove('hidden')
+  $('modal-new-appt').classList.remove('hidden');
+  const minDate = new Date().toISOString().slice(0,10);
+  ['appt-date1','appt-date2','appt-date3'].forEach(id => { $(id).min = minDate; $(id).value = ''; });
 }
-
 function setUrgency(val) {
-  portal.selectedUrgency = val
-  const colors = { routine: 'border-slate-600', soon: 'border-amber-500', urgent: 'border-red-500' }
-  ;['routine','soon','urgent'].forEach(u => {
-    const lbl = $(`urg-${u}-lbl`)
-    lbl.className = lbl.className.replace(/border-\S+/, '').trim() + ' ' + (u === val ? colors[val] + ' bg-slate-800' : 'border-slate-700')
-  })
+  ['routine','soon','urgent'].forEach(u => {
+    const lbl = $(`urg-${u}-lbl`);
+    if (lbl) {
+      lbl.classList.toggle('border-blue-500', u === val && val === 'routine');
+      lbl.classList.toggle('border-amber-500', u === val && val === 'soon');
+      lbl.classList.toggle('border-red-500', u === val && val === 'urgent');
+      lbl.classList.toggle('border-slate-700', u !== val);
+    }
+  });
 }
-
 async function submitApptRequest() {
-  const requestType = $('appt-type').value
-  const reason      = $('appt-reason').value.trim()
-  if (!reason) { showToast('Please describe the reason for your visit', false); return }
-
-  const preferredDates = ['appt-date1','appt-date2','appt-date3']
-    .map(id => $(id).value).filter(Boolean)
-  const preferredTimes = [...document.querySelectorAll('.appt-time-cb:checked')].map(cb => cb.value)
-  if (!preferredTimes.length) preferredTimes.push('any')
-
-  const res = await api('POST', '/appointments', {
-    requestType, reason,
-    preferredDates, preferredTimes,
+  const reason = $('appt-reason').value.trim();
+  if (!reason) { showToast('Please provide a reason for the visit', false); return; }
+  const preferredDates = ['appt-date1','appt-date2','appt-date3'].map(id => $(id).value).filter(Boolean);
+  const preferredTimes = [...document.querySelectorAll('.appt-time-cb:checked')].map(cb => cb.value);
+  const urgency = document.querySelector('input[name="urgency"]:checked')?.value ?? 'routine';
+  const d = await api('POST', '/appointments', {
+    requestType: $('appt-type').value,
+    reason, urgency, preferredDates, preferredTimes,
     preferredProvider: $('appt-provider').value,
-    urgency: portal.selectedUrgency,
-    patientNotes: $('appt-notes').value.trim() || undefined,
-  })
-
-  if (res.success) {
-    showToast('Appointment request submitted! We\'ll contact you shortly.')
-    closeModal('modal-new-appt')
-    portal.apptRequests.unshift(res.data)
-    renderApptRequests()
-  } else {
-    showToast(res.error ?? 'Submission failed', false)
-  }
+    patientNotes: $('appt-notes').value,
+  });
+  if (!d.success) { showToast(d.error ?? 'Failed to submit', false); return; }
+  showToast('Appointment request submitted!');
+  closeModal('modal-new-appt');
+  $('appt-reason').value = '';
+  loadApptRequests();
+}
+async function cancelApptRequest(id) {
+  if (!confirm('Cancel this appointment request?')) return;
+  const d = await api('POST', `/appointments/${id}/cancel`, {});
+  if (!d.success) { showToast(d.error ?? 'Failed to cancel', false); return; }
+  showToast('Request cancelled');
+  loadApptRequests();
 }
 
-/* ── Records Tab ────────────────────────────────────────────────────────────── */
+// ── Records ───────────────────────────────────────────────────────────────────
+function switchRecordTab(tab, btn) {
+  ['prescriptions','visits'].forEach(t => {
+    $(`record-panel-${t}`)?.classList.add('hidden');
+    $(`rtab-${t}`)?.classList.remove('bg-blue-600','text-white');
+    $(`rtab-${t}`)?.classList.add('bg-slate-700','text-slate-200');
+  });
+  $(`record-panel-${tab}`)?.classList.remove('hidden');
+  if (btn) { btn.classList.add('bg-blue-600','text-white'); btn.classList.remove('bg-slate-700','text-slate-200'); }
+}
+
 async function loadRecords() {
-  const [rxRes] = await Promise.all([api('GET', '/rx')])
-  portal.rxList = rxRes.data ?? []
-  renderRecordsRx()
-  renderRecordsExams()
+  // Load both in parallel
+  const [rxRes, examRes] = await Promise.all([
+    api('GET', '/rx'),
+    api('GET', '/exams'),
+  ]);
+  portal.rxList = rxRes.data ?? [];
+  portal.exams = examRes.data ?? [];
+  renderRecordsRx();
+  renderRecordsExams();
 }
 
 function renderRecordsRx() {
-  const el = $('records-rx-list')
+  const el = $('records-rx-list');
   if (!portal.rxList.length) {
-    el.innerHTML = '<div class="card text-slate-500 text-sm py-4 text-center">No prescriptions on file.</div>'
-    return
+    el.innerHTML = '<div class="card text-center text-slate-500 py-6">No prescriptions on file</div>';
+    return;
   }
   el.innerHTML = portal.rxList.map(rx => `
-    <div class="card">
-      <div class="flex items-start justify-between mb-3 gap-3">
-        <div>
-          <p class="font-medium text-white">${rx.lensType?.replace(/_/g,' ') || 'Prescription'}</p>
-          <p class="text-xs text-slate-500">${rx.providerName} · ${fmtDate(rx.rxDate)}</p>
-        </div>
-        <div class="text-right shrink-0">
-          ${badge(rx.signed ? 'SIGNED' : 'Unsigned', rx.signed ? 'badge-green' : 'badge-yellow')}
-          <p class="text-xs text-slate-500 mt-1">Exp: <span class="${new Date(rx.expiresDate) > new Date() ? 'text-emerald-400' : 'text-red-400'}">${fmtDate(rx.expiresDate)}</span></p>
-        </div>
+    <div class="card space-y-3">
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <p class="font-medium text-white">${rx.prescriptionType?.replace(/_/g,' ') ?? 'Prescription'}</p>
+        <div class="flex gap-2">${badge(rx.status??'active','green')}</div>
       </div>
-      <table class="w-full text-xs">
-        <thead><tr>
-          <th class="text-left text-slate-500 pb-1 font-medium">Eye</th>
-          <th class="text-right text-slate-500 pb-1 font-medium">SPH</th>
-          <th class="text-right text-slate-500 pb-1 font-medium">CYL</th>
-          <th class="text-right text-slate-500 pb-1 font-medium">AXIS</th>
-          <th class="text-right text-slate-500 pb-1 font-medium">ADD</th>
-          <th class="text-right text-slate-500 pb-1 font-medium">PD</th>
-          <th class="text-right text-slate-500 pb-1 font-medium">VA</th>
-        </tr></thead>
-        <tbody>
-          ${['od','os'].map(e => `<tr class="border-t border-slate-700/40">
-            <td class="py-1.5 font-bold ${e==='od'?'text-blue-400':'text-purple-400'}">${e.toUpperCase()}</td>
-            <td class="text-right font-mono text-white">${rxFmt(rx[e]?.sphere)}</td>
-            <td class="text-right font-mono text-white">${rxFmt(rx[e]?.cylinder)}</td>
-            <td class="text-right font-mono text-white">${rx[e]?.axis ?? '—'}</td>
-            <td class="text-right font-mono text-white">${rx[e]?.add != null ? '+' + Number(rx[e].add).toFixed(2) : '—'}</td>
-            <td class="text-right font-mono text-white">${rx[e]?.pd ?? '—'}</td>
-            <td class="text-right text-white">${rx[e]?.va ?? '—'}</td>
-          </tr>`).join('')}
-        </tbody>
-      </table>
-      ${rx.binocularPd ? `<p class="text-xs text-slate-500 mt-2">Binocular PD: <span class="font-mono text-white">${rx.binocularPd}</span></p>` : ''}
-    </div>`).join('')
+      <p class="text-xs text-slate-400">${fmtDate(rx.examDate)} · ${rx.providerName ?? 'Your Care Team'}</p>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead><tr class="text-slate-500 border-b border-slate-700">
+            <th class="text-left pb-1 pr-3">Eye</th>
+            <th class="text-right pb-1 pr-3">Sphere</th>
+            <th class="text-right pb-1 pr-3">Cylinder</th>
+            <th class="text-right pb-1 pr-3">Axis</th>
+            <th class="text-right pb-1 pr-3">Add</th>
+            <th class="text-right pb-1">VA</th>
+          </tr></thead>
+          <tbody>
+            ${['od','os'].map(eye => `<tr class="border-t border-slate-700/40">
+              <td class="py-1 pr-3 font-medium text-slate-300">${eye.toUpperCase()}</td>
+              <td class="text-right py-1 pr-3 text-white font-mono">${rxFmt(rx[eye]?.sphere)}</td>
+              <td class="text-right py-1 pr-3 text-white font-mono">${rxFmt(rx[eye]?.cylinder)}</td>
+              <td class="text-right py-1 pr-3 text-white font-mono">${rx[eye]?.axis ?? '—'}°</td>
+              <td class="text-right py-1 pr-3 text-white font-mono">${rxFmt(rx[eye]?.add)}</td>
+              <td class="text-right py-1 text-white font-mono">${rx[eye]?.va ?? '—'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`).join('');
 }
 
 function renderRecordsExams() {
-  const el = $('records-exams-list')
-  const exams = portal.dashboard?.recentExams ?? []
-  if (!exams.length) { el.innerHTML = '<div class="card text-slate-500 text-sm py-4 text-center">No visit records found.</div>'; return }
-  el.innerHTML = exams.map(e => `
-    <div class="card">
-      <div class="flex items-start justify-between mb-2 gap-3">
+  const el = $('records-exams-list');
+  if (!portal.exams.length) {
+    el.innerHTML = '<div class="card text-center text-slate-500 py-6">No visit history</div>';
+    return;
+  }
+  el.innerHTML = portal.exams.map(e => `
+    <div class="card space-y-2 cursor-pointer hover:border-blue-500/50 transition-colors" onclick="openExamDetail('${e.id}')">
+      <div class="flex items-start justify-between gap-2 flex-wrap">
         <div>
-          <p class="font-medium text-white">${e.examType || 'Eye Exam'}</p>
-          <p class="text-xs text-slate-500">${fmtDate(e.examDate)} · ${e.providerName}</p>
+          <p class="font-medium text-white">${fmtDate(e.examDate)}</p>
+          <p class="text-xs text-slate-400">${e.providerName ?? 'Your Care Team'}</p>
         </div>
-        ${badge(e.signed ? 'Signed' : 'Draft', e.signed ? 'badge-green' : 'badge-yellow')}
+        <div class="flex gap-1 flex-wrap">
+          ${badge(e.examType??'exam','purple')}
+          ${e.isSigned ? badge('signed','green') : badge('unsigned','slate')}
+        </div>
       </div>
-      ${e.diagnoses?.length ? `<div class="mb-2">${e.diagnoses.map(d => `<p class="text-xs text-slate-400"><span class="font-mono text-blue-400">${d.code}</span> — ${d.description}</p>`).join('')}</div>` : ''}
-      ${e.visionOD || e.visionOS ? `<p class="text-xs text-slate-500">Vision: OD <span class="text-white">${e.visionOD ?? '—'}</span> · OS <span class="text-white">${e.visionOS ?? '—'}</span>${e.iopOD || e.iopOS ? ` · IOP OD <span class="text-white">${e.iopOD ?? '—'}</span>/<span class="text-white">${e.iopOS ?? '—'}</span>` : ''}</p>` : ''}
-      ${e.recommendations ? `<p class="text-xs text-slate-500 mt-2">Plan: <span class="text-slate-300">${e.recommendations}</span></p>` : ''}
-      ${e.followUpIn ? `<p class="text-xs text-slate-500 mt-1">Follow-up in: <span class="text-white">${e.followUpIn}</span></p>` : ''}
-    </div>`).join('')
+      ${e.chiefComplaint ? `<p class="text-xs text-slate-400">Chief complaint: ${e.chiefComplaint}</p>` : ''}
+      ${e.diagnoses?.length ? `<div class="flex flex-wrap gap-1">${e.diagnoses.slice(0,3).map(d => `<span class="text-xs font-mono text-blue-400">${d.code}</span>`).join(' ')}</div>` : ''}
+      <p class="text-xs text-blue-400"><i class="fas fa-chevron-right mr-1 text-xs"></i>View summary</p>
+    </div>`).join('');
 }
 
-/* ── Optical Tab ────────────────────────────────────────────────────────────── */
+async function openExamDetail(examId) {
+  $('exam-detail-body').innerHTML = '<div class="text-center text-slate-500 py-6"><i class="fas fa-spinner fa-spin text-xl"></i></div>';
+  $('modal-exam-detail').classList.remove('hidden');
+
+  const d = await api('GET', `/exams/${examId}`);
+  if (!d.success) { $('exam-detail-body').innerHTML = `<p class="text-red-400">${d.error}</p>`; return; }
+  const e = d.data;
+  $('exam-detail-title').textContent = `Visit Summary — ${fmtDate(e.examDate)}`;
+
+  let html = `
+    <div class="space-y-4">
+      <div class="flex flex-wrap gap-2">
+        ${badge(e.examType??'exam','purple')}
+        ${e.isSigned ? badge('signed','green') : badge('unsigned','slate')}
+        ${e.hasRx ? badge('rx available','blue') : ''}
+      </div>
+      <div class="grid grid-cols-2 gap-3 text-sm">
+        <div><p class="text-slate-500 text-xs uppercase mb-1">Provider</p><p class="text-white">${e.providerName ?? '—'}</p></div>
+        <div><p class="text-slate-500 text-xs uppercase mb-1">Date</p><p class="text-white">${fmtDate(e.examDate)}</p></div>
+        ${e.chiefComplaint ? `<div class="col-span-2"><p class="text-slate-500 text-xs uppercase mb-1">Chief Complaint</p><p class="text-white">${e.chiefComplaint}</p></div>` : ''}
+      </div>
+      ${e.diagnoses?.length ? `
+        <div>
+          <p class="text-slate-500 text-xs uppercase mb-2">Diagnoses</p>
+          <div class="space-y-1">
+            ${e.diagnoses.map(d => `<p class="text-sm"><span class="font-mono text-blue-400 mr-2">${d.code}</span><span class="text-slate-300">${d.description}</span></p>`).join('')}
+          </div>
+        </div>` : ''}`;
+
+  if (e.planInstructions) {
+    html += `<div><p class="text-slate-500 text-xs uppercase mb-1">Instructions</p><p class="text-sm text-white">${e.planInstructions}</p></div>`;
+  }
+  if (e.followUpWeeks) {
+    html += `<div><p class="text-slate-500 text-xs uppercase mb-1">Follow-Up</p><p class="text-sm text-white">In ${e.followUpWeeks} weeks</p></div>`;
+  }
+
+  if (e.refraction) {
+    html += `<div>
+      <p class="text-slate-500 text-xs uppercase mb-2">Refraction</p>
+      <table class="w-full text-xs"><thead><tr class="text-slate-500 border-b border-slate-700">
+        <th class="text-left pb-1 pr-2">Eye</th><th class="text-right pb-1 pr-2">Sphere</th>
+        <th class="text-right pb-1 pr-2">Cyl</th><th class="text-right pb-1 pr-2">Axis</th>
+        <th class="text-right pb-1">Add</th>
+      </tr></thead><tbody>
+        ${['od','os'].map(eye => `<tr class="border-t border-slate-700/40">
+          <td class="py-1 pr-2 text-slate-300 font-medium">${eye.toUpperCase()}</td>
+          <td class="text-right py-1 pr-2 text-white font-mono">${rxFmt(e.refraction[eye]?.sphere)}</td>
+          <td class="text-right py-1 pr-2 text-white font-mono">${rxFmt(e.refraction[eye]?.cylinder)}</td>
+          <td class="text-right py-1 pr-2 text-white font-mono">${e.refraction[eye]?.axis ?? '—'}°</td>
+          <td class="text-right py-1 text-white font-mono">${rxFmt(e.refraction[eye]?.add)}</td>
+        </tr>`).join('')}
+      </tbody></table>
+    </div>`;
+  }
+
+  html += '</div>';
+  $('exam-detail-body').innerHTML = html;
+}
+
+// ── Optical ───────────────────────────────────────────────────────────────────
 async function loadOpticalOrders() {
-  const res = await api('GET', '/optical-orders')
-  portal.opticalOrders = res.data ?? []
-  renderOpticalOrders()
+  const d = await api('GET', '/optical-orders');
+  if (!d.success) return;
+  portal.opticalOrders = d.data ?? [];
+  renderOpticalOrders();
 }
-
-const ORD_STATUS_LABELS = {
-  DRAFT:'Draft', APPROVED:'Approved', SENT_TO_LAB:'Sent to Lab', IN_PRODUCTION:'In Production',
-  QUALITY_CHECK:'Quality Check', RECEIVED:'Received', READY_FOR_PICKUP:'Ready for Pickup!',
-  DISPENSED:'Dispensed', CANCELLED:'Cancelled',
-}
-const ORD_STEPS = ['APPROVED','SENT_TO_LAB','IN_PRODUCTION','QUALITY_CHECK','RECEIVED','READY_FOR_PICKUP','DISPENSED']
 
 function renderOpticalOrders() {
-  const el = $('optical-orders-list')
+  const el = $('optical-orders-list');
   if (!portal.opticalOrders.length) {
-    el.innerHTML = '<div class="card text-center text-slate-500 py-10"><i class="fas fa-glasses text-4xl mb-3 opacity-30"></i><p>No optical orders on file.</p></div>'
-    return
+    el.innerHTML = '<div class="card text-center text-slate-500 py-8"><i class="fas fa-glasses text-3xl mb-2 opacity-30"></i><p>No optical orders on file</p></div>';
+    return;
   }
   el.innerHTML = portal.opticalOrders.map(o => {
-    const stepIdx  = ORD_STEPS.indexOf(o.status)
-    const pct = o.status === 'DISPENSED' ? 100 : o.status === 'READY_FOR_PICKUP' ? 90 : Math.max(5, (stepIdx / (ORD_STEPS.length - 1)) * 85)
-    const isReady  = o.status === 'READY_FOR_PICKUP'
-    return `
-    <div class="card ${isReady ? 'border-emerald-500/30 bg-emerald-500/5' : ''}">
-      <div class="flex items-start justify-between gap-3 mb-4">
+    const statusCls = o.status === 'DISPENSED' ? 'green' : o.status === 'ORDERED' ? 'blue' : o.status === 'READY' ? 'yellow' : 'slate';
+    return `<div class="card space-y-3">
+      <div class="flex items-start justify-between gap-2 flex-wrap">
         <div>
-          <div class="flex items-center gap-2 mb-1">
-            <p class="font-semibold text-white">${o.orderNumber}</p>
-            ${badge(ORD_STATUS_LABELS[o.status] ?? o.status, ORD_STATUS[o.status] ?? 'badge-slate')}
-          </div>
-          <p class="text-sm text-slate-400">${o.lineItemsSummary || o.orderType}</p>
+          <p class="font-semibold text-white">${o.productName ?? o.orderType?.replace(/_/g,' ') ?? 'Optical Order'}</p>
+          <p class="text-xs text-slate-400">Ordered ${fmtDate(o.orderDate)}</p>
         </div>
-        ${isReady ? `<div class="text-emerald-400 text-2xl animate-bounce shrink-0"><i class="fas fa-bell"></i></div>` : ''}
+        ${badge(o.status??'ordered', statusCls)}
       </div>
-
-      ${isReady ? `<div class="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-sm text-emerald-400"><i class="fas fa-store mr-1.5"></i>Your glasses are ready for pickup at our office!</div>` : ''}
-
-      <!-- Progress bar -->
-      <div class="mb-4">
-        <div class="flex justify-between text-xs text-slate-500 mb-1.5">
-          <span>Order Progress</span><span>${Math.round(pct)}%</span>
-        </div>
-        <div class="w-full bg-slate-700/60 rounded-full h-2">
-          <div class="h-2 rounded-full transition-all duration-500 ${o.status === 'DISPENSED' ? 'bg-emerald-500' : isReady ? 'bg-emerald-400' : 'bg-blue-500'}" style="width:${pct}%"></div>
-        </div>
-        <div class="flex justify-between text-xs text-slate-600 mt-1">
-          <span>Order Placed</span><span>Pickup Ready</span>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-        <div><p class="text-slate-500">Lab</p><p class="text-white">${o.lab ?? '—'}</p></div>
-        <div><p class="text-slate-500">Est. Ready</p><p class="text-white">${fmtDate(o.estimatedReady)}</p></div>
-        <div><p class="text-slate-500">Total</p><p class="text-white font-medium">${fmt$(o.totalCharge)}</p></div>
-        <div><p class="text-slate-500">Balance</p><p class="${o.balanceDue > 0 ? 'text-amber-400 font-medium' : 'text-emerald-400'}">${fmt$(o.balanceDue)}</p></div>
-      </div>
-    </div>`
-  }).join('')
+      ${o.brand ? `<p class="text-xs text-slate-400"><i class="fas fa-tag mr-1"></i>${o.brand}${o.style ? ' — '+o.style : ''}${o.color ? ' · '+o.color : ''}</p>` : ''}
+      ${o.estimatedReady ? `<p class="text-xs text-slate-400"><i class="fas fa-clock mr-1"></i>Est. ready ${fmtDate(o.estimatedReady)}</p>` : ''}
+      ${o.totalAmount != null ? `<p class="text-xs text-emerald-400 font-medium"><i class="fas fa-dollar-sign mr-1"></i>${fmt$(o.totalAmount)}</p>` : ''}
+    </div>`;
+  }).join('');
 }
 
-/* ── Billing Tab ────────────────────────────────────────────────────────────── */
+// ── Billing ───────────────────────────────────────────────────────────────────
 async function loadBilling() {
-  const res = await api('GET', '/balance')
-  portal.billingItems = res.data?.items ?? []
-  const total = res.data?.totalBalance ?? 0
+  const d = await api('GET', '/balance');
+  if (!d.success) return;
+  portal.billing = d.data ?? { totalBalance: 0, items: [] };
+  renderBilling();
+}
 
-  const balEl = $('billing-total-balance')
-  balEl.textContent = fmt$(total)
-  balEl.className = `text-3xl font-bold mt-1 ${total > 0 ? 'text-amber-400' : 'text-emerald-400'}`
-  $('payment-balance').textContent = fmt$(total)
+function renderBilling() {
+  const bal = portal.billing.totalBalance ?? 0;
+  const balEl = $('billing-total-balance');
+  balEl.textContent = fmt$(bal);
+  balEl.className = `text-3xl font-bold mt-1 ${bal > 0 ? 'text-red-400' : 'text-emerald-400'}`;
 
-  const el = $('billing-items-list')
-  if (!portal.billingItems.length) {
-    el.innerHTML = '<div class="card text-center text-slate-500 py-10"><i class="fas fa-file-invoice text-4xl mb-3 opacity-30"></i><p class="text-emerald-400 font-medium">Your account is paid in full.</p></div>'
-    return
+  const el = $('billing-items-list');
+  if (!portal.billing.items?.length) {
+    el.innerHTML = '<div class="card text-center text-slate-500 py-8"><i class="fas fa-file-invoice text-3xl mb-2 opacity-30"></i><p>No outstanding balance</p></div>';
+    return;
   }
-  el.innerHTML = portal.billingItems.map(item => `
-    <div class="card">
-      <div class="flex items-start justify-between gap-3 mb-2">
-        <div>
-          <p class="font-medium text-white text-sm">${item.description}</p>
-          <p class="text-xs text-slate-500">Service date: ${fmtDate(item.serviceDate)}</p>
-        </div>
-        ${badge(item.status, 'badge-yellow')}
+  el.innerHTML = portal.billing.items.map(item => `
+    <div class="card space-y-2">
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <p class="font-medium text-white">${item.description ?? 'Visit'}</p>
+        ${badge(item.status,'yellow')}
       </div>
-      <div class="grid grid-cols-3 gap-2 text-xs mt-3">
-        <div><p class="text-slate-500">Charged</p><p class="text-white font-medium">${fmt$(item.totalCharge)}</p></div>
-        <div><p class="text-slate-500">Insurance Paid</p><p class="text-emerald-400">${fmt$(item.insurancePaid)}</p></div>
-        <div><p class="text-slate-500">Your Balance</p><p class="text-amber-400 font-bold">${fmt$(item.patientBalance)}</p></div>
+      <div class="grid grid-cols-3 gap-2 text-xs">
+        <div><p class="text-slate-500 mb-0.5">Service Date</p><p class="text-white">${fmtDate(item.serviceDate)}</p></div>
+        <div><p class="text-slate-500 mb-0.5">Charged</p><p class="text-white">${fmt$(item.totalCharge)}</p></div>
+        <div><p class="text-slate-500 mb-0.5">Your Balance</p><p class="text-red-400 font-semibold">${fmt$(item.patientBalance)}</p></div>
       </div>
-    </div>`).join('')
+    </div>`).join('');
 }
 
-function openPaymentModal() { $('modal-payment').classList.remove('hidden') }
-
+function openPaymentModal() {
+  $('payment-balance').textContent = fmt$(portal.billing.totalBalance);
+  $('payment-amount').value = (portal.billing.totalBalance ?? 0).toFixed(2);
+  $('modal-payment').classList.remove('hidden');
+}
 async function submitPayment() {
-  const amount = parseFloat($('payment-amount').value) || 0
-  if (amount <= 0) { showToast('Enter a valid payment amount', false); return }
-  showToast(`Payment of ${fmt$(amount)} recorded (demo only)`)
-  closeModal('modal-payment')
+  showToast('Payment submitted (demo — no charge processed)');
+  closeModal('modal-payment');
 }
 
-/* ── Messages Tab ───────────────────────────────────────────────────────────── */
+// ── Messages ──────────────────────────────────────────────────────────────────
 async function loadMessages() {
-  const res = await api('GET', '/messages')
-  portal.threads = res.data ?? []
-  renderThreadList()
+  const d = await api('GET', '/messages');
+  if (!d.success) return;
+  portal.threads = d.data ?? [];
+  renderThreadList();
 }
 
 function renderThreadList() {
-  const el = $('thread-list')
+  const el = $('thread-list');
   if (!portal.threads.length) {
-    el.innerHTML = '<div class="card text-slate-500 text-sm py-6 text-center">No messages yet.</div>'
-    return
+    el.innerHTML = '<div class="card text-center text-slate-500 py-6 text-sm">No messages yet</div>';
+    return;
   }
   el.innerHTML = portal.threads.map(t => `
-    <div class="p-3 rounded-xl border cursor-pointer transition-all hover:border-blue-500/40 hover:bg-slate-800/50 ${t.status === 'UNREAD' ? 'border-blue-500/30 bg-blue-500/5' : 'border-slate-700/50 bg-slate-800/20'}"
-      id="thread-item-${t.threadId}" onclick="openThread('${t.threadId}')">
-      <div class="flex items-start gap-2 mb-1">
-        <div class="w-7 h-7 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0">
-          <i class="fas ${MSG_CAT_ICONS[t.category] ?? 'fa-comment'} text-blue-400 text-xs"></i>
+    <button onclick="openThread('${t.threadId}')" class="card w-full text-left hover:border-blue-500/40 transition-colors ${t.unreadCount > 0 ? 'border-blue-500/40' : ''}">
+      <div class="flex items-start gap-2">
+        <div class="w-8 h-8 rounded-full bg-blue-600/20 flex items-center justify-center text-xs font-bold text-blue-400 shrink-0">
+          <i class="fas fa-comment-medical text-xs"></i>
         </div>
         <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium text-white truncate ${t.status === 'UNREAD' ? 'font-semibold' : ''}">${t.subject}</p>
-          <p class="text-xs text-slate-500">${fmtDateTime(t.updatedAt)}</p>
+          <div class="flex items-center justify-between gap-1">
+            <p class="text-sm font-medium text-white truncate">${t.subject}</p>
+            ${t.unreadCount > 0 ? `<span class="w-4 h-4 bg-red-500 rounded-full text-xs flex items-center justify-center text-white shrink-0">${t.unreadCount}</span>` : ''}
+          </div>
+          <p class="text-xs text-slate-500 truncate">${t.category?.replace(/_/g,' ') ?? 'General'}</p>
+          <p class="text-xs text-slate-600">${fmtDateTime(t.lastMessageAt)}</p>
         </div>
-        ${t.status === 'UNREAD' ? '<div class="w-2 h-2 bg-blue-400 rounded-full shrink-0 mt-1.5"></div>' : ''}
       </div>
-      <p class="text-xs text-slate-400 line-clamp-1 ml-9">${t.lastMessage?.body ?? ''}</p>
-    </div>`).join('')
+    </button>`).join('');
 }
 
 async function openThread(threadId) {
-  portal.selectedThread = threadId
+  const detail = $('thread-detail');
+  detail.innerHTML = '<div class="flex-1 flex items-center justify-center"><i class="fas fa-spinner fa-spin text-slate-500 text-xl"></i></div>';
+  detail.classList.remove('hidden');
+  detail.classList.add('flex','flex-col');
 
-  // Mark as read
-  await api('GET', `/messages/${threadId}`)
+  const d = await api('GET', `/messages/${threadId}`);
+  if (!d.success) { detail.innerHTML = `<p class="text-red-400 p-4">${d.error}</p>`; return; }
+  const messages = d.data ?? [];
+  const thread = portal.threads.find(t => t.threadId === threadId);
 
-  const thread = portal.threads.find(t => t.threadId === threadId)
-  if (!thread) return
-
-  // Update thread item style
-  const item = $(`thread-item-${threadId}`)
-  if (item) {
-    item.className = item.className.replace('border-blue-500/30 bg-blue-500/5', 'border-slate-700/50 bg-slate-800/20')
-    item.querySelector('.w-2.h-2')?.remove()
-    const subj = item.querySelector('p.font-semibold')
-    if (subj) subj.classList.remove('font-semibold')
-  }
-
-  // Get messages
-  const msgRes = await api('GET', `/messages/${threadId}`)
-  const messages = Array.isArray(msgRes.data) ? msgRes.data : [thread.lastMessage]
-
-  const detailEl = $('thread-detail')
-  detailEl.innerHTML = `
-    <div class="flex items-center justify-between p-4 border-b border-slate-800">
+  detail.innerHTML = `
+    <div class="p-4 border-b border-slate-700/50 flex items-center gap-2">
       <div>
-        <p class="font-semibold text-white">${thread.subject}</p>
-        <p class="text-xs text-slate-500">${(thread.category ?? '').replace(/_/g,' ')}</p>
+        <p class="font-semibold text-white text-sm">${thread?.subject ?? 'Conversation'}</p>
+        <p class="text-xs text-slate-500">${thread?.category?.replace(/_/g,' ') ?? ''}</p>
       </div>
     </div>
-    <div class="flex-1 overflow-y-auto p-4 space-y-4" id="msg-body-${threadId}">
+    <div class="flex-1 overflow-y-auto p-4 space-y-3" id="msg-bubbles">
       ${messages.map(m => `
-        <div class="${m.fromPatient ? 'flex flex-col items-end' : 'flex flex-col items-start'}">
-          <div class="${m.fromPatient ? 'msg-bubble-patient' : 'msg-bubble-staff'}">
-            <p class="text-xs font-semibold ${m.fromPatient ? 'text-blue-400' : 'text-slate-400'} mb-1">${m.senderName}</p>
-            <p class="text-sm text-slate-200 whitespace-pre-wrap">${m.body}</p>
+        <div class="${m.fromPatient ? 'flex justify-end' : 'flex justify-start'}">
+          <div class="${m.fromPatient ? 'msg-bubble-patient' : 'msg-bubble-staff'} max-w-sm">
+            <p class="text-xs font-medium ${m.fromPatient ? 'text-blue-300' : 'text-slate-400'} mb-1">${m.senderName ?? (m.fromPatient ? 'You' : 'Care Team')}</p>
+            <p class="text-sm text-white">${m.body}</p>
+            <p class="text-xs text-slate-500 mt-1 text-right">${fmtDateTime(m.sentAt)}</p>
           </div>
-          <p class="text-xs text-slate-600 mt-1 px-2">${fmtDateTime(m.createdAt)}</p>
         </div>`).join('')}
     </div>
-    <div class="p-4 border-t border-slate-800">
-      <div class="flex gap-2">
-        <textarea id="reply-body-${threadId}" class="input-field flex-1 h-16 resize-none" placeholder="Type your reply…"></textarea>
-        <button onclick="sendReply('${threadId}')" class="btn-primary px-3 self-end"><i class="fas fa-paper-plane"></i></button>
-      </div>
-    </div>`
+    <div class="p-3 border-t border-slate-700/50 flex gap-2">
+      <textarea id="reply-input-${threadId}" class="input-field flex-1 resize-none h-16 text-sm" placeholder="Type a reply…"></textarea>
+      <button onclick="sendReply('${threadId}')" class="btn-primary self-end"><i class="fas fa-paper-plane"></i></button>
+    </div>`;
 
-  // Mobile: replace thread list with detail
-  if (window.innerWidth < 768) {
-    $('thread-list').classList.add('hidden')
-    detailEl.classList.remove('hidden')
-    detailEl.classList.add('flex')
-  } else {
-    detailEl.classList.remove('hidden')
-    detailEl.classList.add('flex')
-    detailEl.classList.remove('hidden')
-  }
+  // Reload thread list to clear unread badge
+  const t = portal.threads.find(t => t.threadId === threadId);
+  if (t) t.unreadCount = 0;
+  renderThreadList();
 }
 
 async function sendReply(threadId) {
-  const bodyEl = $(`reply-body-${threadId}`)
-  const body = bodyEl?.value.trim()
-  if (!body) return
-
-  const thread = portal.threads.find(t => t.threadId === threadId)
-  if (!thread) return
-
-  const res = await api('POST', '/messages', {
-    subject: `Re: ${thread.subject}`,
-    category: thread.category,
-    body,
-    threadId,
-  })
-
-  if (res.success) {
-    bodyEl.value = ''
-    showToast('Reply sent')
-    // Re-open the thread to refresh
-    await openThread(threadId)
-  } else {
-    showToast(res.error ?? 'Failed to send', false)
-  }
+  const input = $(`reply-input-${threadId}`);
+  const body = input.value.trim();
+  if (!body) return;
+  const d = await api('POST', '/messages', {
+    subject: 'Re: message', body, category: 'GENERAL', threadId,
+  });
+  if (!d.success) { showToast(d.error ?? 'Failed to send', false); return; }
+  input.value = '';
+  await openThread(threadId);
 }
 
-/* ── New Message ────────────────────────────────────────────────────────────── */
-function openNewMsgModal() {
-  $('msg-subject').value = ''
-  $('msg-body').value    = ''
-  $('modal-new-msg').classList.remove('hidden')
-}
-
+function openNewMsgModal() { $('modal-new-msg').classList.remove('hidden'); }
 async function submitMessage() {
-  const subject  = $('msg-subject').value.trim()
-  const body     = $('msg-body').value.trim()
-  const category = $('msg-category').value
-  if (!subject || !body) { showToast('Subject and message are required', false); return }
+  const subject = $('msg-subject').value.trim();
+  const body = $('msg-body').value.trim();
+  const category = $('msg-category').value;
+  if (!subject || !body) { showToast('Subject and message required', false); return; }
+  const d = await api('POST', '/messages', { subject, body, category });
+  if (!d.success) { showToast(d.error ?? 'Failed', false); return; }
+  showToast('Message sent!');
+  closeModal('modal-new-msg');
+  $('msg-subject').value = '';
+  $('msg-body').value = '';
+  loadMessages();
+}
 
-  const res = await api('POST', '/messages', { subject, body, category })
-  if (res.success) {
-    showToast('Message sent to care team')
-    closeModal('modal-new-msg')
-    portal.threads = []
-    loadMessages()
-  } else {
-    showToast(res.error ?? 'Failed to send', false)
+// ── Settings ──────────────────────────────────────────────────────────────────
+async function loadSettings() {
+  const p = portal.patient;
+  $('settings-name').textContent = p?.patientName ?? '—';
+  $('settings-dob').textContent = p?.patientDob ? fmtDate(p.patientDob) : '—';
+
+  // Load account info
+  const aRes = await api('GET', '/auth/account');
+  if (aRes.success) {
+    portal.account = aRes.data ?? {};
+    $('settings-email').textContent = aRes.data?.email ?? p?.patientEmail ?? '—';
+    $('settings-login-method').textContent = (aRes.data?.loginMethod ?? 'dob').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+  }
+
+  // Load notification prefs
+  const nRes = await api('GET', '/notifications/prefs');
+  if (nRes.success) {
+    portal.notifPrefs = nRes.data ?? {};
+    applyNotifPrefsToUI(nRes.data);
   }
 }
 
-/* ── Keyboard ───────────────────────────────────────────────────────────────── */
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    closeModal('modal-new-appt')
-    closeModal('modal-new-msg')
-    closeModal('modal-payment')
-    // Mobile back from thread detail
-    if (window.innerWidth < 768 && $('thread-detail').classList.contains('flex')) {
-      $('thread-detail').classList.remove('flex')
-      $('thread-detail').classList.add('hidden')
-      $('thread-list').classList.remove('hidden')
+function applyNotifPrefsToUI(prefs) {
+  ['appointmentReminders','recallNotices','billingAlerts','messageNotifications'].forEach(key => {
+    const btn = document.querySelector(`[data-key="${key}"]`);
+    if (!btn) return;
+    const on = prefs[key] !== false;
+    btn.dataset.on = on;
+    btn.classList.toggle('bg-blue-600', on);
+    btn.classList.toggle('bg-slate-700', !on);
+    btn.querySelector('.toggle-thumb').classList.toggle('translate-x-5', on);
+    btn.querySelector('.toggle-thumb').classList.toggle('translate-x-0.5', !on);
+  });
+  const channel = $('notif-channel');
+  if (channel && prefs.preferredChannel) channel.value = prefs.preferredChannel;
+}
+
+function togglePref(btn, key) {
+  const on = btn.dataset.on !== 'true';
+  btn.dataset.on = on;
+  btn.classList.toggle('bg-blue-600', on);
+  btn.classList.toggle('bg-slate-700', !on);
+  btn.querySelector('.toggle-thumb').classList.toggle('translate-x-5', on);
+  btn.querySelector('.toggle-thumb').classList.toggle('translate-x-0.5', !on);
+  portal.notifPrefs[key] = on;
+}
+
+async function saveNotifPrefs() {
+  const prefs = {
+    ...portal.notifPrefs,
+    preferredChannel: $('notif-channel').value,
+  };
+  const d = await api('PATCH', '/notifications/prefs', prefs);
+  showToast(d.success ? 'Preferences saved!' : (d.error ?? 'Failed'), d.success);
+}
+
+async function changePassword() {
+  const current = $('settings-current-pw').value;
+  const newPw = $('settings-new-pw').value;
+  const confirm = $('settings-confirm-pw').value;
+  if (!current || !newPw) { showToast('Current and new password required', false); return; }
+  if (newPw.length < 8) { showToast('Password must be at least 8 characters', false); return; }
+  if (newPw !== confirm) { showToast('Passwords do not match', false); return; }
+  const d = await api('PATCH', '/auth/account', { currentPassword: current, newPassword: newPw });
+  if (!d.success) { showToast(d.error ?? 'Failed to update password', false); return; }
+  showToast('Password updated!');
+  $('settings-current-pw').value = '';
+  $('settings-new-pw').value = '';
+  $('settings-confirm-pw').value = '';
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(async () => {
+  // Suppress auth-nav.js redirect — portal has its own auth
+  window.__PORTAL_PAGE__ = true;
+
+  // Try auto-login from saved session
+  const ok = await tryAutoLogin();
+  if (ok) {
+    enterPortal();
+  } else {
+    $('login-screen').classList.remove('hidden');
+  }
+
+  // Handle magic-link token in URL ?magic=xxx
+  const params = new URLSearchParams(window.location.search);
+  const magic = params.get('magic');
+  if (magic) {
+    const d = await api('POST', '/auth/magic-verify', { token: magic });
+    if (d.success) {
+      saveSession(d.data);
+      history.replaceState({}, '', '/portal');
+      enterPortal();
+    } else {
+      showLoginError('Magic link expired or invalid. Please request a new one.');
+      switchLoginTab('email', $('ltab-email'));
     }
   }
-  if (e.key === 'Enter' && e.target === $('login-lastname')) $('login-dob').focus()
-  if (e.key === 'Enter' && e.target === $('login-dob')) doLogin()
-})
-
-/* ── Init ───────────────────────────────────────────────────────────────────── */
-window.addEventListener('DOMContentLoaded', async () => {
-  // Try auto-login from saved session
-  const autoLogged = await tryAutoLogin()
-  if (autoLogged) {
-    enterPortal()
-  }
-  // Default urgency label styling
-  setUrgency('routine')
-})
+})();

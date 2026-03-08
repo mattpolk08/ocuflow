@@ -517,7 +517,7 @@ export interface PortalAccount {
 }
 
 // ── Crypto helpers ─────────────────────────────────────────────────────────────
-async function hashPassword(password: string, salt?: string): Promise<{ hash: string; salt: string }> {
+export async function hashPassword(password: string, salt?: string): Promise<{ hash: string; salt: string }> {
   const s = salt ?? Array.from(crypto.getRandomValues(new Uint8Array(16)))
     .map(b => b.toString(16).padStart(2, '0')).join('')
   const enc = new TextEncoder()
@@ -530,7 +530,7 @@ async function hashPassword(password: string, salt?: string): Promise<{ hash: st
   return { hash, salt: s }
 }
 
-async function verifyPassword(password: string, storedHash: string, salt: string): Promise<boolean> {
+export async function verifyPassword(password: string, storedHash: string, salt: string): Promise<boolean> {
   const { hash } = await hashPassword(password, salt)
   return hash === storedHash
 }

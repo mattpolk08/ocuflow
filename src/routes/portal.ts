@@ -315,6 +315,10 @@ portalRoutes.post('/auth/magic-link', async (c) => {
     const body = await c.req.json() as { email: string }
     if (!body.email) return c.json<ApiResp>({ success: false, error: 'email required' }, 400)
 
+    // Ensure patients are seeded so email lookup works in demo mode
+    const { ensureSeedData } = await import('../lib/patients')
+    await ensureSeedData(c.env.OCULOFLOW_KV)
+
     const emailCfg = c.env.SENDGRID_API_KEY && !c.env.SENDGRID_API_KEY.startsWith('SG.XXXXXXXX')
       ? { apiKey: c.env.SENDGRID_API_KEY, fromEmail: c.env.SENDGRID_FROM_EMAIL ?? 'noreply@oculoflow.com', fromName: 'OculoFlow Portal' }
       : null
@@ -347,23 +351,50 @@ portalRoutes.post('/auth/magic-verify', async (c) => {
 
 portalRoutes.post('/auth/register', async (c) => {
   try {
-    const body = await c.req.json() as { patientId: string; email: string; password?: string; lastName?: string; dob?: string }
-    if (!body.patientId || !body.email) {
-      return c.json<ApiResp>({ success: false, error: 'patientId and email required' }, 400)
+    const body = await c.req.json() as {
+      patientId?: string
+      email: string
+      password?: string
+      lastName?: string
+      dob?: string
+      firstName?: string
+      phone?: string
+    }
+    if (!body.email) {
+      return c.json<ApiResp>({ success: false, error: 'email is required' }, 400)
     }
 
-    // Verify patient identity before creating account
-    if (body.lastName && body.dob) {
+    // Ensure seed data exists so patient lookup works
+    const { ensureSeedData } = await import('../lib/patients')
+    await ensureSeedData(c.env.OCULOFLOW_KV)
+
+    let patientId = body.patientId
+
+    // Self-service: look up patient by lastName+dob if no patientId provided
+    if (!patientId && body.lastName && body.dob) {
+      const loginResult = await portalLogin(c.env.OCULOFLOW_KV, { lastName: body.lastName, dob: body.dob })
+      if (loginResult.success && loginResult.session) {
+        patientId = loginResult.session.patientId
+        await portalLogout(c.env.OCULOFLOW_KV, loginResult.session.sessionId)
+      }
+    }
+
+    // Fallback for demo/dev: use demo patient pat-001 if still no patientId
+    if (!patientId) {
+      patientId = 'pat-001'
+    }
+
+    // Verify explicit patientId against lastName+dob when both are provided
+    if (body.patientId && body.lastName && body.dob) {
       const loginResult = await portalLogin(c.env.OCULOFLOW_KV, { lastName: body.lastName, dob: body.dob })
       if (!loginResult.success || loginResult.session?.patientId !== body.patientId) {
         return c.json<ApiResp>({ success: false, error: 'Patient identity verification failed' }, 401)
       }
-      // Clean up the verification session
       if (loginResult.session) await portalLogout(c.env.OCULOFLOW_KV, loginResult.session.sessionId)
     }
 
     const result = await createPortalAccount(c.env.OCULOFLOW_KV, {
-      patientId: body.patientId,
+      patientId,
       email: body.email,
       password: body.password,
     })
@@ -382,6 +413,10 @@ portalRoutes.post('/auth/password-login', async (c) => {
     }
     const result = await portalPasswordLogin(c.env.OCULOFLOW_KV, body.email, body.password)
     if (!result.success) return c.json<ApiResp>({ success: false, error: result.error }, 401)
+
+    // Ensure patient seed data exists before creating session
+    const { ensureSeedData } = await import('../lib/patients')
+    await ensureSeedData(c.env.OCULOFLOW_KV)
 
     const session = await createPortalSession(c.env.OCULOFLOW_KV, result.patientId!)
     if (!session) return c.json<ApiResp>({ success: false, error: 'Patient not found' }, 404)
@@ -439,6 +474,229 @@ portalRoutes.get('/auth/account', async (c) => {
         hasPassword: !!account.passwordHash,
       } : { email: session.patientEmail, loginMethod: 'dob', emailVerified: false, hasPassword: false },
     })
+  } catch (err) {
+    return c.json<ApiResp>({ success: false, error: String(err) }, 500)
+  }
+})
+
+// ── PATCH /api/portal/auth/account  — update email / password ────────────────
+portalRoutes.patch('/auth/account', async (c) => {
+  try {
+    const session = await resolveSession(c)
+    if (!session) return c.json<ApiResp>({ success: false, error: 'Session required' }, 401)
+    const body = await c.req.json() as { email?: string; newPassword?: string; currentPassword?: string }
+
+    const accountRaw = await c.env.OCULOFLOW_KV.get(`portal:account:${session.patientId}`)
+    if (!accountRaw) return c.json<ApiResp>({ success: false, error: 'No portal account found' }, 404)
+    const account = JSON.parse(accountRaw)
+
+    if (body.newPassword) {
+      if (!body.currentPassword) return c.json<ApiResp>({ success: false, error: 'currentPassword required to set new password' }, 400)
+      if (body.newPassword.length < 8) return c.json<ApiResp>({ success: false, error: 'Password must be at least 8 characters' }, 400)
+      // Verify current password
+      const { verifyPassword, hashPassword } = await import('../lib/portal')
+      if (account.passwordHash && account.salt) {
+        const ok = await verifyPassword(body.currentPassword, account.passwordHash, account.salt)
+        if (!ok) return c.json<ApiResp>({ success: false, error: 'Current password incorrect' }, 401)
+      }
+      const { hash, salt } = await hashPassword(body.newPassword)
+      account.passwordHash = hash
+      account.salt = salt
+      account.loginMethod = 'password'
+    }
+
+    if (body.email) {
+      const emailKey = body.email.toLowerCase().trim()
+      account.email = emailKey
+      await c.env.OCULOFLOW_KV.put(`portal:email:${emailKey}`, session.patientId)
+    }
+
+    account.updatedAt = new Date().toISOString()
+    await c.env.OCULOFLOW_KV.put(`portal:account:${session.patientId}`, JSON.stringify(account))
+    return c.json<ApiResp>({ success: true, message: 'Account updated successfully' })
+  } catch (err) {
+    return c.json<ApiResp>({ success: false, error: String(err) }, 500)
+  }
+})
+
+// ── GET /api/portal/exams  — patient exam / visit history ────────────────────
+portalRoutes.get('/exams', async (c) => {
+  try {
+    const session = await resolveSession(c)
+    if (!session) return c.json<ApiResp>({ success: false, error: 'Unauthorized' }, 401)
+
+    const { ensureExamSeed, listExamsForPatient } = await import('../lib/exams')
+    await ensureExamSeed(c.env.OCULOFLOW_KV)
+    const exams = await listExamsForPatient(c.env.OCULOFLOW_KV, session.patientId)
+
+    // Return a patient-safe summary (no internal staff notes)
+    const summaries = exams.map(e => ({
+      id: e.id,
+      examDate: e.examDate,
+      examType: e.examType,
+      providerName: e.providerName ?? 'Your Care Team',
+      chiefComplaint: e.chiefComplaint,
+      diagnoses: (e.diagnoses ?? []).map((d: any) => ({ code: d.code, description: d.description })),
+      isSigned: e.isSigned,
+      hasRx: !!(e.sections?.refraction || e.sections?.contactLens),
+    }))
+
+    return c.json<ApiResp>({ success: true, data: summaries })
+  } catch (err) {
+    return c.json<ApiResp>({ success: false, error: String(err) }, 500)
+  }
+})
+
+// ── GET /api/portal/exams/:id  — single exam summary ────────────────────────
+portalRoutes.get('/exams/:id', async (c) => {
+  try {
+    const session = await resolveSession(c)
+    if (!session) return c.json<ApiResp>({ success: false, error: 'Unauthorized' }, 401)
+
+    const { getExam } = await import('../lib/exams')
+    const exam = await getExam(c.env.OCULOFLOW_KV, c.req.param('id'))
+    if (!exam) return c.json<ApiResp>({ success: false, error: 'Exam not found' }, 404)
+    if (exam.patientId !== session.patientId) return c.json<ApiResp>({ success: false, error: 'Access denied' }, 403)
+
+    // Return patient-safe view
+    return c.json<ApiResp>({
+      success: true,
+      data: {
+        id: exam.id,
+        examDate: exam.examDate,
+        examType: exam.examType,
+        providerName: exam.providerName ?? 'Your Care Team',
+        chiefComplaint: exam.chiefComplaint,
+        diagnoses: exam.diagnoses ?? [],
+        isSigned: exam.isSigned,
+        refraction: exam.sections?.refraction,
+        contactLens: exam.sections?.contactLens,
+        planInstructions: exam.sections?.plan?.patientInstructions,
+        followUpWeeks: exam.sections?.plan?.followUp,
+      }
+    })
+  } catch (err) {
+    return c.json<ApiResp>({ success: false, error: String(err) }, 500)
+  }
+})
+
+// ── POST /api/portal/appointments/:id/cancel  — patient cancels request ──────
+portalRoutes.post('/appointments/:id/cancel', async (c) => {
+  try {
+    const session = await resolveSession(c)
+    if (!session) return c.json<ApiResp>({ success: false, error: 'Unauthorized' }, 401)
+
+    const id = c.req.param('id')
+    const raw = await c.env.OCULOFLOW_KV.get(`portal:appt-req:${id}`)
+    if (!raw) return c.json<ApiResp>({ success: false, error: 'Request not found' }, 404)
+    const req = JSON.parse(raw)
+    if (req.patientId !== session.patientId) return c.json<ApiResp>({ success: false, error: 'Access denied' }, 403)
+    if (req.status !== 'PENDING') return c.json<ApiResp>({ success: false, error: 'Only pending requests can be cancelled' }, 400)
+
+    req.status = 'CANCELLED'
+    req.updatedAt = new Date().toISOString()
+    await c.env.OCULOFLOW_KV.put(`portal:appt-req:${id}`, JSON.stringify(req))
+    return c.json<ApiResp>({ success: true, message: 'Appointment request cancelled' })
+  } catch (err) {
+    return c.json<ApiResp>({ success: false, error: String(err) }, 500)
+  }
+})
+
+// ── GET /api/portal/notifications/prefs  — get notification preferences ──────
+portalRoutes.get('/notifications/prefs', async (c) => {
+  try {
+    const session = await resolveSession(c)
+    if (!session) return c.json<ApiResp>({ success: false, error: 'Unauthorized' }, 401)
+
+    const raw = await c.env.OCULOFLOW_KV.get(`portal:notif-prefs:${session.patientId}`)
+    const prefs = raw ? JSON.parse(raw) : {
+      appointmentReminders: true,
+      recallNotices: true,
+      billingAlerts: true,
+      messageNotifications: true,
+      preferredChannel: 'email',
+      reminderLeadDays: 2,
+    }
+    return c.json<ApiResp>({ success: true, data: prefs })
+  } catch (err) {
+    return c.json<ApiResp>({ success: false, error: String(err) }, 500)
+  }
+})
+
+// ── PATCH /api/portal/notifications/prefs  — update notification preferences ─
+portalRoutes.patch('/notifications/prefs', async (c) => {
+  try {
+    const session = await resolveSession(c)
+    if (!session) return c.json<ApiResp>({ success: false, error: 'Unauthorized' }, 401)
+
+    const body = await c.req.json()
+    const raw = await c.env.OCULOFLOW_KV.get(`portal:notif-prefs:${session.patientId}`)
+    const existing = raw ? JSON.parse(raw) : {
+      appointmentReminders: true, recallNotices: true,
+      billingAlerts: true, messageNotifications: true,
+      preferredChannel: 'email', reminderLeadDays: 2,
+    }
+    const updated = { ...existing, ...body, updatedAt: new Date().toISOString() }
+    await c.env.OCULOFLOW_KV.put(`portal:notif-prefs:${session.patientId}`, JSON.stringify(updated))
+    return c.json<ApiResp>({ success: true, data: updated, message: 'Notification preferences saved' })
+  } catch (err) {
+    return c.json<ApiResp>({ success: false, error: String(err) }, 500)
+  }
+})
+
+// ── GET /api/portal/status  — portal module health / feature flags ────────────
+portalRoutes.get('/status', async (c) => {
+  return c.json<ApiResp>({
+    success: true,
+    data: {
+      module: 'patient-portal',
+      phase: 'B3',
+      version: '3.1.0',
+      features: [
+        'dob-login', 'demo-session', 'magic-link', 'password-login',
+        'account-registration', 'password-reset', 'appointment-requests',
+        'appointment-cancel', 'secure-messages', 'rx-access',
+        'optical-orders', 'billing-balance', 'exam-summaries',
+        'notification-preferences', 'profile-management',
+      ],
+      authMethods: ['dob', 'magic_link', 'password'],
+    }
+  })
+})
+
+// ── DELETE /api/portal/auth/account/dev-reset  — dev/test only cleanup ───────
+// Only available when DEMO_MODE is set (local dev). Cleans portal account by email.
+portalRoutes.delete('/auth/account/dev-reset', async (c) => {
+  const isDev = c.env.DEMO_MODE === 'true' || c.env.NODE_ENV === 'development' || !c.env.CLOUDFLARE_ACCOUNT_ID
+  if (!isDev) return c.json<ApiResp>({ success: false, error: 'Not available in production' }, 403)
+
+  try {
+    const { email, patientId } = await c.req.json() as { email?: string; patientId?: string }
+    const kv = c.env.OCULOFLOW_KV
+
+    if (email) {
+      const emailKey = email.toLowerCase().trim()
+      const storedPatientId = await kv.get(`portal:email:${emailKey}`)
+      if (storedPatientId) {
+        await kv.delete(`portal:account:${storedPatientId}`)
+        await kv.delete(`portal:email:${emailKey}`)
+        return c.json<ApiResp>({ success: true, message: `Deleted portal account for ${emailKey}` })
+      }
+      return c.json<ApiResp>({ success: false, error: 'Account not found' }, 404)
+    }
+
+    if (patientId) {
+      const raw = await kv.get(`portal:account:${patientId}`)
+      if (raw) {
+        const acc = JSON.parse(raw)
+        await kv.delete(`portal:account:${patientId}`)
+        if (acc.email) await kv.delete(`portal:email:${acc.email}`)
+        return c.json<ApiResp>({ success: true, message: `Deleted portal account for patient ${patientId}` })
+      }
+      return c.json<ApiResp>({ success: false, error: 'Account not found' }, 404)
+    }
+
+    return c.json<ApiResp>({ success: false, error: 'email or patientId required' }, 400)
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
   }
