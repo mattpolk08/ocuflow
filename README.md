@@ -2,7 +2,7 @@
 
 ## Project Overview
 - **Name**: OculoFlow
-- **Version**: 2.8.0
+- **Version**: 3.1.0
 - **Goal**: Full-stack ophthalmology EHR and practice management system built on Cloudflare Pages + Hono
 - **Stack**: TypeScript · Hono · Cloudflare Workers · KV Storage · Vite · Tailwind CSS (CDN) · Chart.js
 
@@ -297,7 +297,7 @@
 7. **Billing** `/billing` — Build superbills, manage claims queue, post payments
 8. **Reports** `/reports` — Analytics dashboard with date-range picker
 9. **Optical** `/optical` — Manage frames/lenses/CL inventory, track lab orders, view Rx
-10. **Patient Portal** `/portal` — Click "Demo Login" → navigate Overview / Appointments / Records / Optical / Billing / Messages tabs
+10. **Patient Portal** `/portal` — Click "Demo Login" → navigate Overview / Appointments (create, cancel) / Records / Optical / Billing / Messages tabs; or log in via magic-link (OTP) or password account (self-register with last name + DOB)
 11. **Clinical Messaging** `/messaging` — Staff inbox: browse threads, reply, manage tasks and recall list
 12. **Reminders & Comms** `/reminders` — Overview dashboard → Message Log (filter by status/type) → No-Shows (send follow-ups) → Campaigns (launch) → Templates (edit/preview) → Automation Rules (toggle)
 13. **Provider Scorecards** `/scorecards` — Select provider from sidebar → view scorecard, benchmarks, trends, goals; use date-range pills (7d/30d/90d/YTD); switch to Practice tab for leaderboard
@@ -316,13 +316,41 @@
 ## Deployment
 - **Platform**: Cloudflare Pages (Hono SSR Workers + KV Storage)
 - **Status**: ✅ Live at **https://oculoflow.pages.dev**
-- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~1.07 MB, 116 modules)
+- **Build**: `npm run build` → Vite SSR → `dist/_worker.js` (~1.16 MB, 121 modules)
 - **Start (local)**: `pm2 start ecosystem.config.cjs`
 - **Deploy**: `npm run build && npx wrangler pages deploy dist --project-name oculoflow`
 - **KV Namespace**: `OCULOFLOW_KV` (id: 3de6133cdd914fa7b9b6eea4142322e0)
 - **Secrets**: `JWT_SECRET` (set via `wrangler pages secret put`)
-- **Last Updated**: 2026-03-07
-- **Version**: 2.8.0
+- **Last Updated**: 2026-03-08
+- **Version**: 3.1.0
+
+## Recent Additions (v3.1.0)
+
+### Phase B3 — Patient Portal Full Auth Suite *(v3.1.0)*
+- **Magic-link**: email OTP/token; demo mode returns OTP directly; real sends via SendGrid
+- **Self-service registration**: `POST /api/portal/auth/register` — lastName+dob lookup (no patientId needed)
+- **Password login**: `POST /api/portal/auth/password-login` after account creation
+- **Appointment cancel**: `POST /api/portal/appointments/:id/cancel` — PENDING requests only
+- **Exam history**: `GET /api/portal/exams` and `GET /api/portal/exams/:id`
+- **Notification prefs**: `GET|PATCH /api/portal/notifications/prefs`
+- **Account management**: `GET|PATCH /api/portal/auth/account`
+- **Portal status**: `GET /api/portal/status`
+- Tests: **40/40** ✅
+
+### Phase A2+ — HIPAA Audit & Compliance *(v3.1.0)*
+- 18 AuditEvent types, enhanced audit middleware (durationMs, recordCount, sessionId, risk)
+- HIPAA Compliance Report endpoint: 10 compliance checks, 6-year retention policy
+- Audit Dashboard at `/audit` (admin-only)
+- Session timeout: 15-min warning, auto-logout after 8h, AUTH_SESSION_EXPIRED event
+- Tests: **25/25** ✅ — 10/10 compliance checks PASS
+
+### Test Results Summary
+| Phase | Tests | Result |
+|-------|-------|--------|
+| Phase 10A Analytics | 23/23 | ✅ PASS |
+| RBAC (all 23 route modules) | enforced | ✅ PASS |
+| HIPAA Audit & Compliance | 25/25 | ✅ PASS |
+| Phase B3 Portal Auth | 40/40 | ✅ PASS |
 
 ## Pending / Next Steps
 - **Enhancement**: Real Twilio/SendGrid credentials in production (replace demo simulation with live send)
