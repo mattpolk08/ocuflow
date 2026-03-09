@@ -1,7 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// OculoFlow — Billing & Claims Library  (Phase 2A)
-// src/lib/billing.ts
-// KV-backed superbill store with CPT/ICD-10 mapping, payments, and AR management
+// OculoFlow — Billing & Claims Library (D1-backed)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
@@ -16,31 +14,15 @@ import {
   CPT_MAP,
   EXAM_TYPE_CPT_MAP,
 } from '../types/billing'
-
-// ── KV key helpers ────────────────────────────────────────────────────────────
-const KEY_INDEX    = 'billing:index'
-const KEY_SB       = (id: string) => `billing:superbill:${id}`
-const KEY_PATIENT  = (pid: string) => `billing:patient:${pid}`
-const KEY_PAYMENTS = 'billing:payments:index'
-const KEY_PAYMENT  = (id: string) => `billing:payment:${id}`
-const KEY_SEEDED   = 'billing:seeded'
-
-// ── Short UUID helper ─────────────────────────────────────────────────────────
-function uid8(): string {
-  return Math.random().toString(36).slice(2, 10)
-}
+import { dbGet, dbAll, dbRun, uid as genUid, toJson, fromJson, now } from './db'
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
-function today(): string {
-  return new Date().toISOString().slice(0, 10)
-}
+function today(): string { return new Date().toISOString().slice(0, 10) }
 function daysAgo(n: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() - n)
-  return d.toISOString().slice(0, 10)
+  const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10)
 }
 
-// ── Default suggested CPT codes for an exam type ─────────────────────────────
+// ── Suggest CPT codes ─────────────────────────────────────────────────────────
 export function suggestCptCodes(examType: string): string[] {
   const key = examType.toUpperCase().replace(/[^A-Z_]/g, '')
   for (const [k, codes] of Object.entries(EXAM_TYPE_CPT_MAP)) {
@@ -49,426 +31,263 @@ export function suggestCptCodes(examType: string): string[] {
   return ['92014']
 }
 
-// ── Build line items from CPT codes + diagnoses ───────────────────────────────
-export function buildLineItems(
-  cptCodes: string[],
-  icd10Codes: string[],
-): BillLineItem[] {
-  return cptCodes
-    .map((code) => {
-      const cpt = CPT_MAP[code]
-      if (!cpt) return null
-      const item: BillLineItem = {
-        id:            `li-${uid8()}`,
-        cptCode:       cpt.code,
-        description:   cpt.description,
-        icd10Pointers: cpt.requiresDx ? icd10Codes.slice(0, 4) : [],
-        units:         cpt.units ?? 1,
-        fee:           cpt.fee,
-        total:         cpt.fee * (cpt.units ?? 1),
-        approved:      true,
-      }
-      return item
-    })
-    .filter(Boolean) as BillLineItem[]
+// ── Build line items ──────────────────────────────────────────────────────────
+export function buildLineItems(cptCodes: string[], icd10Codes: string[]): BillLineItem[] {
+  return cptCodes.map((code) => {
+    const cpt = CPT_MAP[code]
+    if (!cpt) return null
+    return {
+      id: `li-${genUid('x')}`,
+      cptCode: cpt.code,
+      description: cpt.description,
+      icd10Pointers: cpt.requiresDx ? icd10Codes.slice(0, 4) : [],
+      units: cpt.units ?? 1,
+      fee: cpt.fee,
+      total: cpt.fee * (cpt.units ?? 1),
+      approved: true,
+    } as BillLineItem
+  }).filter(Boolean) as BillLineItem[]
 }
 
-// ── Compute financial totals ──────────────────────────────────────────────────
-function computeTotals(
-  lineItems: BillLineItem[],
-  copayAmount: number,
-  copayCollected: number,
+// ── Compute totals ────────────────────────────────────────────────────────────
+export function computeTotals(
+  lineItems: BillLineItem[], copayAmount: number, copayCollected: number
 ): Pick<Superbill, 'totalCharge' | 'insuranceBilled' | 'patientBalance' | 'adjustments'> {
   const totalCharge = lineItems.reduce((s, li) => s + li.total, 0)
-  const contractualRate = 0.72  // 72 % of charges (typical managed care rate)
+  const contractualRate = 0.72
   const insuranceBilled = parseFloat((totalCharge * contractualRate).toFixed(2))
-  const adjustments     = parseFloat(((totalCharge - insuranceBilled)).toFixed(2))
-  const patientBalance  = parseFloat((copayAmount - copayCollected).toFixed(2))
+  const adjustments = parseFloat((totalCharge - insuranceBilled).toFixed(2))
+  const patientBalance = parseFloat((copayAmount - copayCollected).toFixed(2))
   return { totalCharge, insuranceBilled, patientBalance, adjustments }
 }
 
-// ── Seed data ─────────────────────────────────────────────────────────────────
-const SEED_SUPERBILLS: Omit<Superbill, 'totalCharge' | 'insuranceBilled' | 'patientBalance' | 'adjustments'>[] = [
-  {
-    id: 'sb-001',
-    organizationId: 'org-001',
-    patientId: 'pt-001',
-    patientName: 'Margaret Sullivan',
-    examId: 'exam-001',
-    appointmentId: 'appt-001',
-    serviceDate: daysAgo(3),
-    providerId: 'dr-chen',
-    providerName: 'Dr. Sarah Chen, OD',
-    providerNpi: '1234567890',
-    primaryInsurance: {
-      payerName: 'Blue Cross Blue Shield',
-      payerId: 'BCBS',
-      memberId: 'BCB-001-5892',
-      groupId: 'GRP-4421',
-      copay: 25,
-    },
-    diagnoses: [
-      { icd10Code: 'H40.1130', description: 'Primary open-angle glaucoma, bilateral, mild stage', primary: true },
-      { icd10Code: 'H52.10',   description: 'Myopia, unspecified', primary: false },
-    ],
-    lineItems: buildLineItems(['92014', '92083', '92133'], ['H40.1130', 'H52.10']),
-    copayAmount: 25,
-    copayCollected: 25,
-    status: 'SUBMITTED',
-    claimNumber: 'CLM-2026-001',
-    submittedAt: daysAgo(2) + 'T09:00:00Z',
-    createdAt: daysAgo(3) + 'T14:00:00Z',
-    updatedAt: daysAgo(2) + 'T09:00:00Z',
-  },
-  {
-    id: 'sb-002',
-    organizationId: 'org-001',
-    patientId: 'pt-002',
-    patientName: 'Derek Holloway',
-    examId: 'exam-002',
-    appointmentId: 'appt-002',
-    serviceDate: daysAgo(1),
-    providerId: 'dr-patel',
-    providerName: 'Dr. Raj Patel, MD',
-    providerNpi: '0987654321',
-    primaryInsurance: {
-      payerName: 'Aetna',
-      payerId: 'AETNA',
-      memberId: 'AET-002-7731',
-      groupId: 'GRP-8810',
-      copay: 40,
-    },
-    diagnoses: [
-      { icd10Code: 'H33.001', description: 'Unspecified retinal detachment, right eye', primary: true },
-      { icd10Code: 'Z98.41',  description: 'Cataract extraction status, right eye', primary: false },
-    ],
-    lineItems: buildLineItems(['99214', '92134', '92250'], ['H33.001', 'Z98.41']),
-    copayAmount: 40,
-    copayCollected: 40,
-    status: 'PENDING_REVIEW',
-    createdAt: daysAgo(1) + 'T11:30:00Z',
-    updatedAt: daysAgo(1) + 'T11:30:00Z',
-  },
-  {
-    id: 'sb-003',
-    organizationId: 'org-001',
-    patientId: 'pt-003',
-    patientName: 'Priya Nair',
-    examId: 'exam-003',
-    appointmentId: 'appt-003',
-    serviceDate: today(),
-    providerId: 'dr-chen',
-    providerName: 'Dr. Sarah Chen, OD',
-    providerNpi: '1234567890',
-    primaryInsurance: {
-      payerName: 'UnitedHealthcare',
-      payerId: 'UHC',
-      memberId: 'UHC-003-2291',
-      copay: 20,
-    },
-    diagnoses: [
-      { icd10Code: 'H52.13',  description: 'Myopia, bilateral', primary: true },
-      { icd10Code: 'Z80.2',   description: 'Family history of glaucoma', primary: false },
-    ],
-    lineItems: buildLineItems(['92004', '92310', '99070'], ['H52.13', 'Z80.2']),
-    copayAmount: 20,
-    copayCollected: 0,
-    status: 'DRAFT',
-    createdAt: today() + 'T08:00:00Z',
-    updatedAt: today() + 'T08:00:00Z',
-  },
-  {
-    id: 'sb-004',
-    organizationId: 'org-001',
-    patientId: 'pt-004',
-    patientName: 'Raymond Osei',
-    serviceDate: daysAgo(7),
-    providerId: 'dr-patel',
-    providerName: 'Dr. Raj Patel, MD',
-    providerNpi: '0987654321',
-    primaryInsurance: {
-      payerName: 'Medicare Part B',
-      payerId: 'MEDICARE',
-      memberId: 'MED-004-9981',
-      copay: 0,
-    },
-    diagnoses: [
-      { icd10Code: 'E11.3511', description: 'Type 2 diabetes with moderate nonproliferative retinopathy, right eye', primary: true },
-      { icd10Code: 'H35.81',   description: 'Retinal edema', primary: false },
-    ],
-    lineItems: buildLineItems(['92014', '92134', '92250', '67028'], ['E11.3511', 'H35.81']),
-    copayAmount: 0,
-    copayCollected: 0,
-    status: 'PAID',
-    claimNumber: 'CLM-2026-004',
-    submittedAt: daysAgo(6) + 'T10:00:00Z',
-    paidAt: daysAgo(2) + 'T14:00:00Z',
-    createdAt: daysAgo(7) + 'T15:00:00Z',
-    updatedAt: daysAgo(2) + 'T14:00:00Z',
-  },
-  {
-    id: 'sb-005',
-    organizationId: 'org-001',
-    patientId: 'pt-005',
-    patientName: 'Linda Tran',
-    serviceDate: daysAgo(5),
-    providerId: 'dr-chen',
-    providerName: 'Dr. Sarah Chen, OD',
-    providerNpi: '1234567890',
-    diagnoses: [
-      { icd10Code: 'H10.11', description: 'Acute atopic conjunctivitis, right eye', primary: true },
-    ],
-    lineItems: buildLineItems(['99213'], ['H10.11']),
-    copayAmount: 30,
-    copayCollected: 30,
-    status: 'DENIED',
-    claimNumber: 'CLM-2026-005',
-    notes: 'Denied: service not covered under vision plan. Resubmit to medical plan.',
-    submittedAt: daysAgo(4) + 'T08:30:00Z',
-    createdAt: daysAgo(5) + 'T09:00:00Z',
-    updatedAt: daysAgo(3) + 'T11:00:00Z',
-  },
-]
-
-// ── Ensure seed data ──────────────────────────────────────────────────────────
-export async function ensureBillingSeed(kv: KVNamespace): Promise<void> {
-  const seeded = await kv.get(KEY_SEEDED)
-  if (seeded) return
-
-  const ids: string[] = []
-
-  for (const partial of SEED_SUPERBILLS) {
-    const totals = computeTotals(partial.lineItems, partial.copayAmount, partial.copayCollected)
-    const sb: Superbill = { ...partial, ...totals }
-    await kv.put(KEY_SB(sb.id), JSON.stringify(sb))
-
-    // Patient index
-    const patList: string[] = JSON.parse((await kv.get(KEY_PATIENT(sb.patientId))) ?? '[]')
-    patList.push(sb.id)
-    await kv.put(KEY_PATIENT(sb.patientId), JSON.stringify(patList))
-
-    ids.push(sb.id)
+// ── Row to Superbill ──────────────────────────────────────────────────────────
+function rowToSuperbill(r: Record<string, unknown>, diagnoses: unknown[], lineItems: unknown[]): Superbill {
+  return {
+    id: r.id as string,
+    organizationId: r.organization_id as string,
+    patientId: r.patient_id as string,
+    patientName: r.patient_name as string,
+    examId: r.exam_id as string,
+    appointmentId: r.appointment_id as string,
+    serviceDate: r.service_date as string,
+    providerId: r.provider_id as string,
+    providerName: r.provider_name as string,
+    providerNpi: r.provider_npi as string,
+    primaryInsurance: fromJson(r.primary_insurance as string) as Superbill['primaryInsurance'],
+    lineItems: lineItems as BillLineItem[],
+    diagnoses: diagnoses as Superbill['diagnoses'],
+    totalCharge: (r.total_charge as number) || 0,
+    copayAmount: (r.copay_amount as number) || 0,
+    copayCollected: (r.copay_collected as number) || 0,
+    insuranceBilled: (r.insurance_billed as number) || 0,
+    insurancePaid: (r.insurance_paid as number) || 0,
+    patientBalance: (r.patient_balance as number) || 0,
+    adjustments: (r.adjustments as number) || 0,
+    status: r.status as SuperbillStatus,
+    notes: r.notes as string,
+    claimNumber: r.claim_number as string,
+    submittedAt: r.submitted_at as string,
+    paidAt: r.paid_at as string,
+    createdAt: r.created_at as string,
+    updatedAt: r.updated_at as string,
+    createdBy: r.created_by as string,
   }
-
-  await kv.put(KEY_INDEX, JSON.stringify(ids))
-  await kv.put(KEY_SEEDED, '1')
 }
 
-// ── CRUD helpers ──────────────────────────────────────────────────────────────
+// ── Seed ──────────────────────────────────────────────────────────────────────
+export async function ensureBillingSeed(kv: KVNamespace, db?: D1Database): Promise<void> {
+  if (!db) return
+  const count = await dbGet<{ n: number }>(db, 'SELECT COUNT(*) as n FROM superbills')
+  if (count && count.n > 0) return
+  const ts = now()
+  const sd = daysAgo(3)
+  const sb1Id = 'sb-001'
+  await dbRun(db, `INSERT OR IGNORE INTO superbills
+    (id, organization_id, patient_id, patient_name, exam_id, appointment_id, service_date, provider_id, provider_name, total_charge, copay_amount, copay_collected, insurance_billed, patient_balance, adjustments, status, created_at, updated_at)
+    VALUES (?, 'org-001', 'pt-001', 'Margaret Sullivan', 'exam-001', 'appt-001', ?, 'dr-chen', 'Dr. Sarah Chen, OD', 350.00, 30.00, 30.00, 252.00, 0.00, 98.00, 'REVIEWED', ?, ?)`,
+    [sb1Id, sd, ts, ts])
+}
 
-export async function listSuperbills(kv: KVNamespace): Promise<SuperbillSummary[]> {
-  await ensureBillingSeed(kv)
-  const ids: string[] = JSON.parse((await kv.get(KEY_INDEX)) ?? '[]')
-  const results: SuperbillSummary[] = []
-  for (const id of ids) {
-    const raw = await kv.get(KEY_SB(id))
-    if (!raw) continue
-    const sb: Superbill = JSON.parse(raw)
-    results.push({
-      id:             sb.id,
-      patientId:      sb.patientId,
-      patientName:    sb.patientName,
-      serviceDate:    sb.serviceDate,
-      providerName:   sb.providerName,
-      status:         sb.status,
-      totalCharge:    sb.totalCharge,
-      patientBalance: sb.patientBalance,
-      copayCollected: sb.copayCollected,
-      diagnosisCodes: sb.diagnoses.map(d => d.icd10Code),
-      cptCodes:       sb.lineItems.map(li => li.cptCode),
-      claimNumber:    sb.claimNumber,
-    })
+// ── List superbills ───────────────────────────────────────────────────────────
+export async function listSuperbills(kv: KVNamespace, db?: D1Database): Promise<SuperbillSummary[]> {
+  if (db) {
+    const rows = await dbAll<Record<string, unknown>>(db,
+      `SELECT id, organization_id, patient_id, patient_name, service_date, provider_name, total_charge, copay_collected, insurance_paid, patient_balance, status, created_at, updated_at
+       FROM superbills WHERE organization_id = 'org-001' ORDER BY created_at DESC`)
+    return rows.map(r => ({
+      id: r.id as string,
+      patientId: r.patient_id as string,
+      patientName: r.patient_name as string,
+      serviceDate: r.service_date as string,
+      providerName: r.provider_name as string,
+      totalCharge: (r.total_charge as number) || 0,
+      amountPaid: ((r.copay_collected as number) || 0) + ((r.insurance_paid as number) || 0),
+      balance: (r.patient_balance as number) || 0,
+      status: r.status as SuperbillStatus,
+      createdAt: r.created_at as string,
+      updatedAt: r.updated_at as string,
+    }))
   }
-  // Newest first
-  return results.sort((a, b) => b.serviceDate.localeCompare(a.serviceDate))
+  return []
 }
 
-export async function getSuperbill(kv: KVNamespace, id: string): Promise<Superbill | null> {
-  await ensureBillingSeed(kv)
-  const raw = await kv.get(KEY_SB(id))
-  return raw ? JSON.parse(raw) : null
+// ── Get superbill ─────────────────────────────────────────────────────────────
+export async function getSuperbill(kv: KVNamespace, id: string, db?: D1Database): Promise<Superbill | null> {
+  if (db) {
+    const row = await dbGet<Record<string, unknown>>(db, 'SELECT * FROM superbills WHERE id = ?', [id])
+    if (!row) return null
+    const dx = await dbAll<Superbill['diagnoses'][0]>(db, 'SELECT * FROM superbill_diagnoses WHERE superbill_id = ? ORDER BY sort_order', [id])
+    const li = await dbAll<BillLineItem>(db, 'SELECT * FROM superbill_line_items WHERE superbill_id = ? ORDER BY sort_order', [id])
+    return rowToSuperbill(row, dx, li)
+  }
+  return null
 }
 
-export async function getPatientSuperbills(kv: KVNamespace, patientId: string): Promise<SuperbillSummary[]> {
-  await ensureBillingSeed(kv)
-  const all = await listSuperbills(kv)
-  return all.filter(sb => sb.patientId === patientId)
+// ── Get patient superbills ────────────────────────────────────────────────────
+export async function getPatientSuperbills(kv: KVNamespace, patientId: string, db?: D1Database): Promise<SuperbillSummary[]> {
+  if (db) {
+    const rows = await dbAll<Record<string, unknown>>(db,
+      `SELECT id, patient_id, patient_name, service_date, provider_name, total_charge, copay_collected, insurance_paid, patient_balance, status, created_at, updated_at
+       FROM superbills WHERE patient_id = ? ORDER BY created_at DESC`, [patientId])
+    return rows.map(r => ({
+      id: r.id as string, patientId: r.patient_id as string, patientName: r.patient_name as string,
+      serviceDate: r.service_date as string, providerName: r.provider_name as string,
+      totalCharge: (r.total_charge as number) || 0,
+      amountPaid: ((r.copay_collected as number) || 0) + ((r.insurance_paid as number) || 0),
+      balance: (r.patient_balance as number) || 0,
+      status: r.status as SuperbillStatus, createdAt: r.created_at as string, updatedAt: r.updated_at as string,
+    }))
+  }
+  return []
 }
 
-export async function createSuperbill(kv: KVNamespace, input: SuperbillCreateInput): Promise<Superbill> {
-  await ensureBillingSeed(kv)
-
-  const id      = `sb-${uid8()}`
-  const now     = new Date().toISOString()
-  const copay   = input.copayAmount ?? 0
-  const lineItems = buildLineItems(
-    suggestCptCodes('COMPREHENSIVE'),
-    (input.diagnoses ?? []).map(d => d.icd10Code),
-  )
-  const totals = computeTotals(lineItems, copay, 0)
-
+// ── Create superbill ──────────────────────────────────────────────────────────
+export async function createSuperbill(kv: KVNamespace, input: SuperbillCreateInput, db?: D1Database): Promise<Superbill> {
+  const id = genUid('sb')
+  const ts = now()
+  const totals = computeTotals(input.lineItems || [], input.copayAmount || 0, input.copayCollected || 0)
   const sb: Superbill = {
-    id,
-    organizationId: 'org-001',
-    patientId:      input.patientId,
-    patientName:    input.patientName,
-    examId:         input.examId,
-    appointmentId:  input.appointmentId,
-    serviceDate:    input.serviceDate,
-    providerId:     input.providerId,
-    providerName:   input.providerName,
+    id, organizationId: 'org-001',
+    patientId: input.patientId, patientName: input.patientName || '',
+    examId: input.examId, appointmentId: input.appointmentId,
+    serviceDate: input.serviceDate || today(),
+    providerId: input.providerId, providerName: input.providerName || '', providerNpi: input.providerNpi,
     primaryInsurance: input.primaryInsurance,
-    diagnoses:      input.diagnoses ?? [],
-    lineItems,
-    copayAmount:    copay,
-    copayCollected: 0,
-    status:         'DRAFT',
-    ...totals,
-    createdAt: now,
-    updatedAt: now,
+    lineItems: input.lineItems || [], diagnoses: input.diagnoses || [],
+    copayAmount: input.copayAmount || 0, copayCollected: input.copayCollected || 0,
+    insuranceBilled: 0, insurancePaid: 0,
+    ...totals, adjustments: totals.adjustments,
+    status: 'DRAFT', notes: input.notes, createdBy: input.createdBy,
+    createdAt: ts, updatedAt: ts,
   }
 
-  await kv.put(KEY_SB(id), JSON.stringify(sb))
+  if (db) {
+    await dbRun(db, `INSERT INTO superbills
+      (id, organization_id, patient_id, patient_name, exam_id, appointment_id, service_date,
+       provider_id, provider_name, provider_npi, primary_insurance, total_charge, copay_amount,
+       copay_collected, insurance_billed, insurance_paid, patient_balance, adjustments, status, notes, created_by, created_at, updated_at)
+      VALUES (?, 'org-001', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'DRAFT', ?, ?, ?, ?)`,
+      [id, sb.patientId, sb.patientName, sb.examId || null, sb.appointmentId || null,
+       sb.serviceDate, sb.providerId || null, sb.providerName, sb.providerNpi || null,
+       toJson(sb.primaryInsurance), sb.totalCharge, sb.copayAmount, sb.copayCollected,
+       sb.insuranceBilled, sb.patientBalance, sb.adjustments,
+       sb.notes || null, sb.createdBy || null, ts, ts])
 
-  // Update indices
-  const ids: string[] = JSON.parse((await kv.get(KEY_INDEX)) ?? '[]')
-  ids.unshift(id)
-  await kv.put(KEY_INDEX, JSON.stringify(ids))
-
-  const patList: string[] = JSON.parse((await kv.get(KEY_PATIENT(input.patientId))) ?? '[]')
-  patList.unshift(id)
-  await kv.put(KEY_PATIENT(input.patientId), JSON.stringify(patList))
-
+    for (let i = 0; i < (sb.diagnoses || []).length; i++) {
+      const dx = sb.diagnoses[i]
+      await dbRun(db, `INSERT INTO superbill_diagnoses (id, superbill_id, icd10_code, description, is_primary, sort_order) VALUES (?, ?, ?, ?, ?, ?)`,
+        [genUid('dx'), id, dx.icd10Code, dx.description || '', dx.isPrimary ? 1 : 0, i])
+    }
+    for (let i = 0; i < (sb.lineItems || []).length; i++) {
+      const li = sb.lineItems[i]
+      await dbRun(db, `INSERT INTO superbill_line_items (id, superbill_id, cpt_code, description, icd10_pointers, units, fee, total, modifier, eye, approved, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [genUid('li'), id, li.cptCode, li.description || '', toJson(li.icd10Pointers),
+         li.units || 1, li.fee || 0, li.total || 0, li.modifier || null, li.eye || null, li.approved ? 1 : 0, i])
+    }
+  }
   return sb
 }
 
-// ── Update line items / diagnoses ─────────────────────────────────────────────
+// ── Update superbill items ────────────────────────────────────────────────────
 export async function updateSuperbillItems(
-  kv: KVNamespace,
-  id: string,
-  lineItems: BillLineItem[],
-  diagnoses: Superbill['diagnoses'],
+  kv: KVNamespace, id: string, lineItems: BillLineItem[], diagnoses: Superbill['diagnoses'], db?: D1Database
 ): Promise<Superbill | null> {
-  const sb = await getSuperbill(kv, id)
-  if (!sb) return null
-  if (sb.status === 'SUBMITTED' || sb.status === 'PAID') return null
+  const sb = await getSuperbill(kv, id, db)
+  if (!sb || sb.status === 'SUBMITTED' || sb.status === 'PAID') return null
 
   const totals = computeTotals(lineItems, sb.copayAmount, sb.copayCollected)
-  const updated: Superbill = {
-    ...sb,
-    lineItems,
-    diagnoses,
-    ...totals,
-    updatedAt: new Date().toISOString(),
+  if (db) {
+    await dbRun(db, `UPDATE superbills SET total_charge=?, patient_balance=?, adjustments=?, updated_at=? WHERE id=?`,
+      [totals.totalCharge, totals.patientBalance, totals.adjustments, now(), id])
+    await dbRun(db, 'DELETE FROM superbill_line_items WHERE superbill_id = ?', [id])
+    await dbRun(db, 'DELETE FROM superbill_diagnoses WHERE superbill_id = ?', [id])
+    for (let i = 0; i < lineItems.length; i++) {
+      const li = lineItems[i]
+      await dbRun(db, `INSERT INTO superbill_line_items (id, superbill_id, cpt_code, description, icd10_pointers, units, fee, total, modifier, eye, approved, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [genUid('li'), id, li.cptCode, li.description || '', toJson(li.icd10Pointers),
+         li.units || 1, li.fee || 0, li.total || 0, li.modifier || null, li.eye || null, li.approved ? 1 : 0, i])
+    }
+    for (let i = 0; i < diagnoses.length; i++) {
+      const dx = diagnoses[i]
+      await dbRun(db, `INSERT INTO superbill_diagnoses (id, superbill_id, icd10_code, description, is_primary, sort_order) VALUES (?, ?, ?, ?, ?, ?)`,
+        [genUid('dx'), id, dx.icd10Code, dx.description || '', dx.isPrimary ? 1 : 0, i])
+    }
   }
-  await kv.put(KEY_SB(id), JSON.stringify(updated))
-  return updated
+  return getSuperbill(kv, id, db)
 }
 
 // ── Advance status ────────────────────────────────────────────────────────────
 const STATUS_FLOW: Partial<Record<SuperbillStatus, SuperbillStatus>> = {
-  DRAFT:           'PENDING_REVIEW',
-  PENDING_REVIEW:  'REVIEWED',
-  REVIEWED:        'SUBMITTED',
-  SUBMITTED:       'PAID',
-  DENIED:          'PENDING_REVIEW',  // re-submit flow
+  DRAFT: 'PENDING_REVIEW', PENDING_REVIEW: 'REVIEWED', REVIEWED: 'SUBMITTED',
+  SUBMITTED: 'PAID', DENIED: 'PENDING_REVIEW',
 }
 
-export async function advanceSuperbillStatus(
-  kv: KVNamespace,
-  id: string,
-  toStatus?: SuperbillStatus,
-): Promise<Superbill | null> {
-  const sb = await getSuperbill(kv, id)
+export async function advanceSuperbillStatus(kv: KVNamespace, id: string, db?: D1Database): Promise<Superbill | null> {
+  const sb = await getSuperbill(kv, id, db)
   if (!sb) return null
-
-  const next = toStatus ?? STATUS_FLOW[sb.status]
+  const next = STATUS_FLOW[sb.status]
   if (!next) return null
-
-  const now = new Date().toISOString()
-  const updated: Superbill = {
-    ...sb,
-    status: next,
-    updatedAt: now,
-    ...(next === 'SUBMITTED' ? { submittedAt: now, claimNumber: `CLM-${new Date().getFullYear()}-${uid8().slice(0,6).toUpperCase()}` } : {}),
-    ...(next === 'PAID'      ? { paidAt: now } : {}),
+  if (db) {
+    const ts = now()
+    await dbRun(db, 'UPDATE superbills SET status=?, updated_at=? WHERE id=?', [next, ts, id])
+    if (next === 'SUBMITTED') await dbRun(db, 'UPDATE superbills SET submitted_at=? WHERE id=?', [ts, id])
+    if (next === 'PAID') await dbRun(db, 'UPDATE superbills SET paid_at=? WHERE id=?', [ts, id])
   }
-  await kv.put(KEY_SB(id), JSON.stringify(updated))
-  return updated
+  return getSuperbill(kv, id, db)
 }
 
-// ── Record a payment ──────────────────────────────────────────────────────────
+// ── Record payment ────────────────────────────────────────────────────────────
 export async function recordPayment(
-  kv: KVNamespace,
-  superbillId: string,
-  amount: number,
-  method: PaymentMethod,
-  paidBy: 'PATIENT' | 'INSURANCE',
-  reference?: string,
-  notes?: string,
-): Promise<Payment | null> {
-  const sb = await getSuperbill(kv, superbillId)
-  if (!sb) return null
-
-  const id  = `pay-${uid8()}`
-  const now = new Date().toISOString()
-  const pmt: Payment = {
-    id,
-    superbillId,
-    patientId:   sb.patientId,
-    patientName: sb.patientName,
-    amount,
-    method,
-    status: 'COMPLETED',
-    reference,
-    paidBy,
-    notes,
-    postedAt:  now,
-    createdAt: now,
+  kv: KVNamespace, patientId: string, superbillId: string, amount: number, method: PaymentMethod, reference?: string, db?: D1Database
+): Promise<Payment> {
+  const id = genUid('pay')
+  const ts = now()
+  const payment: Payment = { id, patientId, superbillId, amount, paymentMethod: method, referenceNumber: reference, postedAt: ts }
+  if (db) {
+    await dbRun(db, `INSERT INTO payments (id, organization_id, patient_id, superbill_id, amount, payment_method, reference_number, posted_at)
+      VALUES (?, 'org-001', ?, ?, ?, ?, ?, ?)`,
+      [id, patientId, superbillId, amount, method, reference || null, ts])
+    await dbRun(db, `UPDATE superbills SET copay_collected = copay_collected + ?, patient_balance = patient_balance - ?, updated_at = ? WHERE id = ?`,
+      [amount, amount, ts, superbillId])
   }
-
-  await kv.put(KEY_PAYMENT(id), JSON.stringify(pmt))
-
-  const pmtIds: string[] = JSON.parse((await kv.get(KEY_PAYMENTS)) ?? '[]')
-  pmtIds.unshift(id)
-  await kv.put(KEY_PAYMENTS, JSON.stringify(pmtIds))
-
-  // Update superbill financials
-  const updatedSb: Superbill = {
-    ...sb,
-    copayCollected: paidBy === 'PATIENT'
-      ? sb.copayCollected + amount
-      : sb.copayCollected,
-    insurancePaid: paidBy === 'INSURANCE'
-      ? (sb.insurancePaid ?? 0) + amount
-      : sb.insurancePaid,
-    patientBalance: Math.max(0, sb.patientBalance - (paidBy === 'PATIENT' ? amount : 0)),
-    updatedAt: now,
-  }
-  // Auto-mark as PAID if balance is zero and insurance paid
-  if (updatedSb.patientBalance <= 0 && updatedSb.status === 'SUBMITTED') {
-    updatedSb.status  = 'PAID'
-    updatedSb.paidAt  = now
-  }
-  await kv.put(KEY_SB(superbillId), JSON.stringify(updatedSb))
-
-  return pmt
+  return payment
 }
 
-// ── AR summary ────────────────────────────────────────────────────────────────
+// ── AR Summary ────────────────────────────────────────────────────────────────
 export interface ArSummary {
   totalOutstanding: number
-  totalCharged:     number
-  totalCollected:   number
+  totalCharged: number
+  totalCollected: number
   totalAdjustments: number
   byStatus: Record<SuperbillStatus, { count: number; amount: number }>
   recentActivity: SuperbillSummary[]
 }
 
-export async function getArSummary(kv: KVNamespace): Promise<ArSummary> {
-  const summaries = await listSuperbills(kv)
-  const all        = await Promise.all(summaries.map(s => getSuperbill(kv, s.id)))
-  const sbs        = all.filter(Boolean) as Superbill[]
+export async function getArSummary(kv: KVNamespace, db?: D1Database): Promise<ArSummary> {
+  const summaries = await listSuperbills(kv, db)
+  const all = await Promise.all(summaries.map(s => getSuperbill(kv, s.id, db)))
+  const sbs = all.filter(Boolean) as Superbill[]
 
   const byStatus = {} as ArSummary['byStatus']
   let totalCharged = 0, totalCollected = 0, totalAdjustments = 0, totalOutstanding = 0
@@ -477,17 +296,15 @@ export async function getArSummary(kv: KVNamespace): Promise<ArSummary> {
     if (!byStatus[sb.status]) byStatus[sb.status] = { count: 0, amount: 0 }
     byStatus[sb.status].count++
     byStatus[sb.status].amount += sb.totalCharge
-
-    totalCharged     += sb.totalCharge
-    totalCollected   += sb.copayCollected + (sb.insurancePaid ?? 0)
+    totalCharged += sb.totalCharge
+    totalCollected += sb.copayCollected + (sb.insurancePaid ?? 0)
     totalAdjustments += sb.adjustments
-    if (!['PAID', 'VOIDED'].includes(sb.status)) totalOutstanding += sb.patientBalance
+    if (!['PAID', 'VOID'].includes(sb.status)) totalOutstanding += sb.patientBalance
   }
-
   return {
     totalOutstanding: parseFloat(totalOutstanding.toFixed(2)),
-    totalCharged:     parseFloat(totalCharged.toFixed(2)),
-    totalCollected:   parseFloat(totalCollected.toFixed(2)),
+    totalCharged: parseFloat(totalCharged.toFixed(2)),
+    totalCollected: parseFloat(totalCollected.toFixed(2)),
     totalAdjustments: parseFloat(totalAdjustments.toFixed(2)),
     byStatus,
     recentActivity: summaries.slice(0, 5),
@@ -496,8 +313,6 @@ export async function getArSummary(kv: KVNamespace): Promise<ArSummary> {
 
 // ── CPT search ────────────────────────────────────────────────────────────────
 export function searchCptCodes(query: string) {
-  const q = query.toLowerCase()
-  return CPT_CODES.filter(c =>
-    c.code.includes(q) || c.description.toLowerCase().includes(q)
-  ).slice(0, 20)
+  const q = query.toUpperCase()
+  return CPT_CODES.filter(c => c.code.includes(q) || c.description.toUpperCase().includes(q)).slice(0, 10)
 }

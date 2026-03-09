@@ -22,6 +22,7 @@ import { CPT_CODES, SuperbillStatus } from '../types/billing'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
+  DB: D1Database
   DEMO_MODE: string
 }
 
@@ -31,7 +32,7 @@ const billing = new Hono<{ Bindings: Bindings }>()
 // List all superbills (summary view)
 billing.get('/superbills', async (c) => {
   try {
-    const summaries = await listSuperbills(c.env.OCULOFLOW_KV)
+    const summaries = await listSuperbills(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
     const status    = c.req.query('status')
     const filtered  = status
       ? summaries.filter(s => s.status === status.toUpperCase())
@@ -45,8 +46,8 @@ billing.get('/superbills', async (c) => {
 // ── GET /api/billing/superbills/:id ──────────────────────────────────────────
 billing.get('/superbills/:id', async (c) => {
   try {
-    await ensureBillingSeed(c.env.OCULOFLOW_KV)
-    const sb = await getSuperbill(c.env.OCULOFLOW_KV, c.req.param('id'))
+    await ensureBillingSeed(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    const sb = await getSuperbill(c.env.OCULOFLOW_KV, c.env.DB, c.req.param('id'))
     if (!sb) return c.json<ApiResponse<null>>({ success: false, error: 'Superbill not found' }, 404)
     return c.json<ApiResponse<typeof sb>>({ success: true, data: sb })
   } catch (e: any) {
@@ -57,7 +58,7 @@ billing.get('/superbills/:id', async (c) => {
 // ── GET /api/billing/patient/:patientId ──────────────────────────────────────
 billing.get('/patient/:patientId', async (c) => {
   try {
-    const sbs = await getPatientSuperbills(c.env.OCULOFLOW_KV, c.req.param('patientId'))
+    const sbs = await getPatientSuperbills(c.env.OCULOFLOW_KV, c.env.DB, c.req.param('patientId'))
     return c.json<ApiResponse<typeof sbs>>({ success: true, data: sbs })
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
@@ -74,7 +75,7 @@ billing.post('/superbills', async (c) => {
         { success: false, error: 'patientId, serviceDate, and providerId are required' }, 400
       )
     }
-    const sb = await createSuperbill(c.env.OCULOFLOW_KV, body)
+    const sb = await createSuperbill(c.env.OCULOFLOW_KV, c.env.DB, body)
     return c.json<ApiResponse<typeof sb>>({ success: true, data: sb }, 201)
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
@@ -90,7 +91,7 @@ billing.put('/superbills/:id/items', async (c) => {
     if (!lineItems || !diagnoses) {
       return c.json<ApiResponse<null>>({ success: false, error: 'lineItems and diagnoses required' }, 400)
     }
-    const sb = await updateSuperbillItems(c.env.OCULOFLOW_KV, c.req.param('id'), lineItems, diagnoses)
+    const sb = await updateSuperbillItems(c.env.OCULOFLOW_KV, c.env.DB, c.req.param('id'), lineItems, diagnoses)
     if (!sb) {
       return c.json<ApiResponse<null>>({ success: false, error: 'Superbill not found or locked' }, 404)
     }
@@ -106,7 +107,7 @@ billing.post('/superbills/:id/status', async (c) => {
   try {
     const body   = await c.req.json().catch(() => ({}))
     const status = body.status as SuperbillStatus | undefined
-    const sb     = await advanceSuperbillStatus(c.env.OCULOFLOW_KV, c.req.param('id'), status)
+    const sb     = await advanceSuperbillStatus(c.env.OCULOFLOW_KV, c.env.DB, c.req.param('id'), status)
     if (!sb) {
       return c.json<ApiResponse<null>>({ success: false, error: 'Cannot advance status' }, 400)
     }
@@ -147,7 +148,7 @@ billing.post('/superbills/:id/payment', async (c) => {
 // Accounts-receivable summary dashboard data
 billing.get('/ar', async (c) => {
   try {
-    const summary = await getArSummary(c.env.OCULOFLOW_KV)
+    const summary = await getArSummary(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
     return c.json<ApiResponse<typeof summary>>({ success: true, data: summary })
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)

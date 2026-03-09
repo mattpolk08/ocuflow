@@ -1,6 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// OculoFlow — Phase 3A: Optical Dispensary Library
-// KV-backed store: frames, lenses, contact lenses, orders, Rx
+// OculoFlow — Optical Dispensary Library (D1-backed)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type {
@@ -9,527 +8,338 @@ import type {
   FrameCreateInput, LensCreateInput, OrderCreateInput, OrderStatus,
   FrameStatus, LensStatus, CLStatus,
 } from '../types/optical'
-
-// KV key constants
-const KV_FRAME_INDEX   = 'optical:frames:index'
-const KV_FRAME_PFX     = 'optical:frame:'
-const KV_LENS_INDEX    = 'optical:lenses:index'
-const KV_LENS_PFX      = 'optical:lens:'
-const KV_CL_INDEX      = 'optical:cl:index'
-const KV_CL_PFX        = 'optical:cl:'
-const KV_RX_INDEX      = 'optical:rx:index'
-const KV_RX_PFX        = 'optical:rx:'
-const KV_ORDER_INDEX   = 'optical:orders:index'
-const KV_ORDER_PFX     = 'optical:order:'
-
-// ── Utilities ─────────────────────────────────────────────────────────────────
-
-function uid(prefix: string): string {
-  return `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).substring(2, 7)}`
-}
+import { dbGet, dbAll, dbRun, uid as genUid, toJson, fromJson, now } from './db'
 
 function orderNumber(): string {
-  const now = new Date()
-  const yy  = String(now.getFullYear()).slice(2)
-  const mm  = String(now.getMonth() + 1).padStart(2, '0')
-  const dd  = String(now.getDate()).padStart(2, '0')
-  const seq = Math.floor(Math.random() * 9000 + 1000)
-  return `OPT-${yy}${mm}${dd}-${seq}`
+  const d = new Date()
+  const yy = String(d.getFullYear()).slice(2)
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `OPT-${yy}${mm}${dd}-${Math.floor(Math.random() * 9000 + 1000)}`
 }
 
-async function getIndex(kv: KVNamespace, key: string): Promise<string[]> {
-  const raw = await kv.get(key)
-  return raw ? JSON.parse(raw) : []
+function rowToFrame(r: Record<string, unknown>): Frame {
+  return {
+    id: r.id as string, organizationId: r.organization_id as string,
+    sku: r.sku as string, brand: r.brand as string, model: r.model as string,
+    color: r.color as string, size: r.size as string, category: r.category as string,
+    gender: r.gender as string, material: r.material as string,
+    wholesale: (r.wholesale as number) || 0, retail: (r.retail as number) || 0,
+    insuranceAllowance: (r.insurance_allowance as number) || 0,
+    quantity: (r.quantity as number) || 0, minQuantity: (r.min_quantity as number) || 2,
+    status: r.status as FrameStatus, imageUrl: r.image_url as string,
+    location: r.location as string, upc: r.upc as string,
+    createdAt: r.created_at as string, updatedAt: r.updated_at as string,
+  }
 }
 
-async function addToIndex(kv: KVNamespace, key: string, id: string): Promise<void> {
-  const ids = await getIndex(kv, key)
-  if (!ids.includes(id)) { ids.unshift(id); await kv.put(key, JSON.stringify(ids)) }
+function rowToLens(r: Record<string, unknown>): Lens {
+  return {
+    id: r.id as string, organizationId: r.organization_id as string,
+    sku: r.sku as string, name: r.name as string, type: r.type as string,
+    material: r.material as string, coating: r.coating as string,
+    indexValue: r.index_value as number,
+    sphereMin: r.sphere_min as number, sphereMax: r.sphere_max as number,
+    cylinderMax: r.cylinder_max as number,
+    wholesale: (r.wholesale as number) || 0, retail: (r.retail as number) || 0,
+    insuranceAllowance: (r.insurance_allowance as number) || 0,
+    quantity: (r.quantity as number) || 0, minQuantity: (r.min_quantity as number) || 5,
+    status: r.status as LensStatus,
+    createdAt: r.created_at as string, updatedAt: r.updated_at as string,
+  }
 }
 
-async function removeFromIndex(kv: KVNamespace, key: string, id: string): Promise<void> {
-  const ids = (await getIndex(kv, key)).filter(x => x !== id)
-  await kv.put(key, JSON.stringify(ids))
+function rowToContactLens(r: Record<string, unknown>): ContactLens {
+  return {
+    id: r.id as string, organizationId: r.organization_id as string,
+    sku: r.sku as string, brand: r.brand as string, product: r.product as string,
+    modality: r.modality as string, material: r.material as string,
+    sphereMin: r.sphere_min as number, sphereMax: r.sphere_max as number,
+    cylinder: r.cylinder as number, axis: r.axis as number,
+    baseCurve: r.base_curve as string, diameter: r.diameter as number,
+    wholesale: (r.wholesale as number) || 0, retail: (r.retail as number) || 0,
+    quantity: (r.quantity as number) || 0, minQuantity: (r.min_quantity as number) || 10,
+    status: r.status as CLStatus,
+    createdAt: r.created_at as string, updatedAt: r.updated_at as string,
+  }
 }
 
-// ── Seed Data ─────────────────────────────────────────────────────────────────
+function rowToRx(r: Record<string, unknown>): OpticalRx {
+  return {
+    id: r.id as string, patientId: r.patient_id as string,
+    examId: r.exam_id as string, providerId: r.provider_id as string,
+    rxDate: r.rx_date as string,
+    od: { sphere: r.od_sphere as number, cylinder: r.od_cylinder as number, axis: r.od_axis as number, add: r.od_add as number, prism: r.od_prism as number, base: r.od_base as string, pd: r.od_pd as number, va: r.od_va as string },
+    os: { sphere: r.os_sphere as number, cylinder: r.os_cylinder as number, axis: r.os_axis as number, add: r.os_add as number, prism: r.os_prism as number, base: r.os_base as string, pd: r.os_pd as number, va: r.os_va as string },
+    binocularPd: r.binocular_pd as number, lensType: r.lens_type as string,
+    notes: r.notes as string, createdAt: r.created_at as string,
+  }
+}
 
-let _seeded = false
+function rowToOrder(r: Record<string, unknown>, lineItems: OrderLineItem[]): OpticalOrder {
+  return {
+    id: r.id as string, organizationId: r.organization_id as string,
+    patientId: r.patient_id as string, patientName: r.patient_name as string,
+    rxId: r.rx_id as string, orderNumber: r.order_number as string,
+    orderType: r.order_type as string, status: r.status as OrderStatus,
+    frameId: r.frame_id as string,
+    frame: r.frame_sku ? { sku: r.frame_sku as string, brand: r.frame_brand as string, model: r.frame_model as string, color: r.frame_color as string } : undefined,
+    lensId: r.lens_id as string,
+    lens: r.lens_sku ? { sku: r.lens_sku as string, name: r.lens_name as string, type: r.lens_type as string } : undefined,
+    rx: {
+      odSphere: r.od_sphere as number, odCylinder: r.od_cylinder as number, odAxis: r.od_axis as number, odAdd: r.od_add as number, odPd: r.od_pd as number,
+      osSphere: r.os_sphere as number, osCylinder: r.os_cylinder as number, osAxis: r.os_axis as number, osAdd: r.os_add as number, osPd: r.os_pd as number,
+      binocularPd: r.binocular_pd as number,
+    },
+    coating: r.coating as string, tint: r.tint as string, lab: r.lab as string,
+    labOrderNumber: r.lab_order_number as string, estimatedReady: r.estimated_ready as string,
+    labSentAt: r.lab_sent_at as string, dispensedAt: r.dispensed_at as string,
+    lineItems, subtotal: (r.subtotal as number) || 0, discount: (r.discount as number) || 0,
+    insuranceBenefit: (r.insurance_benefit as number) || 0, taxAmount: (r.tax_amount as number) || 0,
+    totalCharge: (r.total_charge as number) || 0, depositPaid: (r.deposit_paid as number) || 0,
+    balanceDue: (r.balance_due as number) || 0,
+    specialInstructions: r.special_instructions as string, internalNotes: r.internal_notes as string,
+    createdAt: r.created_at as string, updatedAt: r.updated_at as string,
+  }
+}
 
-export async function ensureOpticalSeed(kv: KVNamespace): Promise<void> {
-  if (_seeded) return
-  const existing = await kv.get(KV_FRAME_INDEX)
-  if (existing) { _seeded = true; return }
-
-  const now = new Date().toISOString()
-
-  // ── Seed Frames ───────────────────────────────────────────────────────────
-  const frames: Frame[] = [
-    {
-      id: 'frame-001', sku: 'MNZ-BLK-52', brand: 'Maui Jim', model: 'Westside', color: 'Matte Black',
-      size: '52-18-140', category: 'FULL_RIM', gender: 'UNISEX', material: 'Titanium',
-      wholesale: 85, retail: 195, insuranceAllowance: 150, quantity: 4, minQuantity: 2,
-      status: 'IN_STOCK', location: 'A1', createdAt: now, updatedAt: now,
-    },
-    {
-      id: 'frame-002', sku: 'RAY-TORT-54', brand: 'Ray-Ban', model: 'RB5154 Clubmaster', color: 'Tortoise',
-      size: '54-21-145', category: 'SEMI_RIM', gender: 'UNISEX', material: 'Acetate',
-      wholesale: 60, retail: 155, insuranceAllowance: 130, quantity: 3, minQuantity: 2,
-      status: 'IN_STOCK', location: 'A2', createdAt: now, updatedAt: now,
-    },
-    {
-      id: 'frame-003', sku: 'LNS-ROSE-50', brand: 'Lindberg', model: 'Strip Titanium', color: 'Rose Gold',
-      size: '50-15-135', category: 'RIMLESS', gender: 'WOMENS', material: 'Pure Titanium',
-      wholesale: 210, retail: 480, insuranceAllowance: 150, quantity: 2, minQuantity: 2,
-      status: 'LOW_STOCK', location: 'B1', createdAt: now, updatedAt: now,
-    },
-    {
-      id: 'frame-004', sku: 'OAK-BLU-55', brand: 'Oakley', model: 'OX3156 Crosslink', color: 'Navy Blue',
-      size: '55-17-138', category: 'SPORTS', gender: 'MENS', material: 'O-Matter',
-      wholesale: 75, retail: 178, quantity: 5, minQuantity: 3, status: 'IN_STOCK', location: 'C3', createdAt: now, updatedAt: now,
-    },
-    {
-      id: 'frame-005', sku: 'KID-RED-44', brand: 'Miraflex', model: 'Baby Twist', color: 'Red',
-      size: '44-14-120', category: 'PEDIATRIC', gender: 'KIDS', material: 'Soft Polymer',
-      wholesale: 35, retail: 89, quantity: 6, minQuantity: 3, status: 'IN_STOCK', location: 'D1', createdAt: now, updatedAt: now,
-    },
-    {
-      id: 'frame-006', sku: 'GUC-GLD-51', brand: 'Gucci', model: 'GG0396O', color: 'Gold/Havana',
-      size: '51-19-145', category: 'FULL_RIM', gender: 'WOMENS', material: 'Metal/Acetate',
-      wholesale: 175, retail: 395, insuranceAllowance: 150, quantity: 1, minQuantity: 2,
-      status: 'LOW_STOCK', location: 'B3', createdAt: now, updatedAt: now,
-    },
+// ── Seed ──────────────────────────────────────────────────────────────────────
+export async function ensureOpticalSeed(kv: KVNamespace, db?: D1Database): Promise<void> {
+  if (!db) return
+  const count = await dbGet<{ n: number }>(db, 'SELECT COUNT(*) as n FROM frames')
+  if (count && count.n > 0) return
+  const ts = now()
+  const frames = [
+    { id: 'frm-001', sku: 'RB3025-001', brand: 'Ray-Ban', model: 'Aviator', color: 'Gold/Green', size: '58-14', category: 'SUNGLASSES', gender: 'UNISEX', material: 'Metal', wholesale: 75, retail: 185, qty: 3 },
+    { id: 'frm-002', sku: 'VO5051-001', brand: 'Vogue', model: 'VO5051S', color: 'Black', size: '54-16', category: 'EYEGLASSES', gender: 'FEMALE', material: 'Acetate', wholesale: 45, retail: 120, qty: 5 },
+    { id: 'frm-003', sku: 'OO9013-001', brand: 'Oakley', model: 'Holbrook', color: 'Matte Black', size: '55-18', category: 'SUNGLASSES', gender: 'MALE', material: 'O-Matter', wholesale: 85, retail: 200, qty: 0 },
   ]
-
   for (const f of frames) {
-    await kv.put(`${KV_FRAME_PFX}${f.id}`, JSON.stringify(f))
+    await dbRun(db, `INSERT OR IGNORE INTO frames (id, organization_id, sku, brand, model, color, size, category, gender, material, wholesale, retail, quantity, min_quantity, status, created_at, updated_at) VALUES (?, 'org-001', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, ?, ?, ?)`,
+      [f.id, f.sku, f.brand, f.model, f.color, f.size, f.category, f.gender, f.material,
+       f.wholesale, f.retail, f.qty, f.qty <= 0 ? 'OUT_OF_STOCK' : f.qty <= 2 ? 'LOW_STOCK' : 'IN_STOCK', ts, ts])
   }
-  await kv.put(KV_FRAME_INDEX, JSON.stringify(frames.map(f => f.id)))
-
-  // ── Seed Lenses ───────────────────────────────────────────────────────────
-  const lenses: Lens[] = [
-    {
-      id: 'lens-001', sku: 'SV-PC-AR', name: 'Single Vision Polycarbonate AR', type: 'SINGLE_VISION',
-      material: 'POLYCARBONATE', coating: 'AR', index: 1.59, sphereRange: '+6.00 to -8.00',
-      wholesale: 35, retail: 85, insuranceAllowance: 70, quantity: 50, minQuantity: 10,
-      status: 'IN_STOCK', labTurnaround: 5, createdAt: now, updatedAt: now,
-    },
-    {
-      id: 'lens-002', sku: 'PROG-167-AR', name: 'Progressive High Index 1.67 AR Premium', type: 'PROGRESSIVE',
-      material: 'HIGH_INDEX_1_67', coating: 'AR_PREMIUM', index: 1.67, sphereRange: '+4.00 to -8.00', cylRange: 'up to -4.00',
-      wholesale: 95, retail: 245, insuranceAllowance: 120, quantity: 25, minQuantity: 5,
-      status: 'IN_STOCK', labTurnaround: 7, createdAt: now, updatedAt: now,
-    },
-    {
-      id: 'lens-003', sku: 'PHOTO-174-AR', name: 'Transitions Gen 8 Hi-Index 1.74', type: 'SINGLE_VISION',
-      material: 'HIGH_INDEX_1_74', coating: 'PHOTOCHROMIC', index: 1.74, sphereRange: '+4.00 to -10.00',
-      wholesale: 115, retail: 285, quantity: 15, minQuantity: 5, status: 'IN_STOCK', labTurnaround: 7, createdAt: now, updatedAt: now,
-    },
-    {
-      id: 'lens-004', sku: 'BLU-PC', name: 'Blue Light Blocking Polycarbonate', type: 'SINGLE_VISION',
-      material: 'POLYCARBONATE', coating: 'BLUE_LIGHT', index: 1.59,
-      wholesale: 45, retail: 110, quantity: 30, minQuantity: 10, status: 'IN_STOCK', labTurnaround: 5, createdAt: now, updatedAt: now,
-    },
-    {
-      id: 'lens-005', sku: 'BIF-PC-FL', name: 'Flat-top Bifocal Polycarbonate', type: 'BIFOCAL',
-      material: 'POLYCARBONATE', coating: 'AR', index: 1.59,
-      wholesale: 55, retail: 130, insuranceAllowance: 100, quantity: 8, minQuantity: 5,
-      status: 'IN_STOCK', labTurnaround: 7, createdAt: now, updatedAt: now,
-    },
+  const lenses = [
+    { id: 'len-001', sku: 'CR39-SV-001', name: 'CR-39 Single Vision', type: 'SINGLE_VISION', material: 'CR-39', coating: 'AR', index: 1.50, wholesale: 25, retail: 80, qty: 20 },
+    { id: 'len-002', sku: 'POLY-SV-001', name: 'Polycarbonate Single Vision', type: 'SINGLE_VISION', material: 'Polycarbonate', coating: 'AR+UV', index: 1.59, wholesale: 35, retail: 110, qty: 15 },
   ]
-
   for (const l of lenses) {
-    await kv.put(`${KV_LENS_PFX}${l.id}`, JSON.stringify(l))
+    await dbRun(db, `INSERT OR IGNORE INTO lenses (id, organization_id, sku, name, type, material, coating, index_value, wholesale, retail, quantity, min_quantity, status, created_at, updated_at) VALUES (?, 'org-001', ?, ?, ?, ?, ?, ?, ?, ?, ?, 5, 'IN_STOCK', ?, ?)`,
+      [l.id, l.sku, l.name, l.type, l.material, l.coating, l.index, l.wholesale, l.retail, l.qty, ts, ts])
   }
-  await kv.put(KV_LENS_INDEX, JSON.stringify(lenses.map(l => l.id)))
-
-  // ── Seed Contact Lenses ───────────────────────────────────────────────────
-  const cls: import('../types/optical').ContactLens[] = [
-    {
-      id: 'cl-001', sku: 'AIR-OPT-D-300', brand: 'Alcon', product: 'Air Optix Plus HydraGlyde',
-      type: 'MONTHLY', modality: 'CONVENTIONAL', baseCurve: 8.6, diameter: 14.2,
-      sphere: -3.00, unitsPerBox: 6, wholesale: 18, retail: 35, insuranceAllowance: 150,
-      quantity: 12, minQuantity: 4, status: 'IN_STOCK', eye: 'OU', createdAt: now, updatedAt: now,
-    },
-    {
-      id: 'cl-002', sku: 'ACUVUE-1D-200', brand: 'J&J', product: 'Acuvue Oasys 1-Day',
-      type: 'DAILY', modality: 'DAILY_DISPOSABLE', baseCurve: 8.5, diameter: 14.3,
-      sphere: -2.00, unitsPerBox: 90, wholesale: 42, retail: 75, insuranceAllowance: 150,
-      quantity: 8, minQuantity: 4, status: 'IN_STOCK', eye: 'OU', createdAt: now, updatedAt: now,
-    },
-    {
-      id: 'cl-003', sku: 'BIOTRUE-TOR-100', brand: 'Bausch+Lomb', product: 'Biotrue ONEday for Astigmatism',
-      type: 'TORIC', modality: 'DAILY_DISPOSABLE', baseCurve: 8.7, diameter: 14.5,
-      sphere: -1.00, cylinder: -0.75, axis: 180, unitsPerBox: 90,
-      wholesale: 48, retail: 88, quantity: 3, minQuantity: 4, status: 'LOW_STOCK', eye: 'OU', createdAt: now, updatedAt: now,
-    },
-  ]
-
-  for (const cl of cls) {
-    await kv.put(`${KV_CL_PFX}${cl.id}`, JSON.stringify(cl))
-  }
-  await kv.put(KV_CL_INDEX, JSON.stringify(cls.map(c => c.id)))
-
-  // ── Seed Optical Prescriptions ────────────────────────────────────────────
-  const rxRecords: OpticalRx[] = [
-    {
-      id: 'rx-001', patientId: 'pat-001', patientName: 'Margaret Sullivan',
-      examId: 'exam-001', providerId: 'dr-chen', providerName: 'Dr. Emily Chen',
-      rxDate: '2026-02-10', expiresDate: '2028-02-10',
-      od: { sphere: -2.25, cylinder: -0.50, axis: 180, add: 2.00, pd: 31.5, va: '20/20' },
-      os: { sphere: -1.75, cylinder: -0.75, axis: 175, add: 2.00, pd: 32.0, va: '20/20' },
-      binocularPd: 63.5, lensType: 'PROGRESSIVE', signed: true,
-      createdAt: now,
-    },
-    {
-      id: 'rx-002', patientId: 'pat-002', patientName: 'Derek Holloway',
-      providerId: 'dr-patel', providerName: 'Dr. Raj Patel',
-      rxDate: '2026-01-22', expiresDate: '2028-01-22',
-      od: { sphere: -3.50, cylinder: -1.00, axis: 90, pd: 32.0, va: '20/20' },
-      os: { sphere: -3.25, cylinder: -0.75, axis: 85, pd: 31.0, va: '20/20' },
-      binocularPd: 63.0, lensType: 'SINGLE_VISION', signed: true,
-      createdAt: now,
-    },
-  ]
-
-  for (const rx of rxRecords) {
-    await kv.put(`${KV_RX_PFX}${rx.id}`, JSON.stringify(rx))
-  }
-  await kv.put(KV_RX_INDEX, JSON.stringify(rxRecords.map(r => r.id)))
-
-  // ── Seed Orders ───────────────────────────────────────────────────────────
-  const seedOrders: OpticalOrder[] = [
-    {
-      id: 'ord-001', orderNumber: 'OPT-260307-1001',
-      patientId: 'pat-001', patientName: 'Margaret Sullivan', patientPhone: '555-0101',
-      rxId: 'rx-001', examId: 'exam-001',
-      providerId: 'dr-chen', providerName: 'Dr. Emily Chen',
-      orderType: 'NEW_RX', status: 'READY_FOR_PICKUP',
-      lab: 'Vision One Labs', labOrderNumber: 'VOL-89234',
-      labSentAt: '2026-02-11T08:00:00Z', estimatedReady: '2026-02-16',
-      receivedAt: '2026-02-15T14:00:00Z',
-      lineItems: [
-        {
-          id: 'li-001a', type: 'FRAME', itemId: 'frame-001', description: 'Maui Jim Westside Matte Black 52-18',
-          quantity: 1, unitCost: 85, unitRetail: 195, discount: 0, total: 195,
-        },
-        {
-          id: 'li-001b', type: 'LENS', itemId: 'lens-002',
-          description: 'Progressive Hi-Index 1.67 AR Premium OD', quantity: 1,
-          unitCost: 95, unitRetail: 245, discount: 0, total: 245, eye: 'OD',
-        },
-        {
-          id: 'li-001c', type: 'LENS', itemId: 'lens-002',
-          description: 'Progressive Hi-Index 1.67 AR Premium OS', quantity: 1,
-          unitCost: 95, unitRetail: 245, discount: 0, total: 245, eye: 'OS',
-        },
-      ],
-      subtotal: 685, discount: 0, insuranceBenefit: 370, taxAmount: 0,
-      totalCharge: 315, depositPaid: 150, balanceDue: 165,
-      statusHistory: [
-        { status: 'DRAFT', at: '2026-02-10T10:00:00Z' },
-        { status: 'APPROVED', at: '2026-02-10T10:30:00Z', by: 'Dr. Emily Chen' },
-        { status: 'SENT_TO_LAB', at: '2026-02-11T08:00:00Z' },
-        { status: 'IN_PRODUCTION', at: '2026-02-12T09:00:00Z' },
-        { status: 'RECEIVED', at: '2026-02-15T14:00:00Z' },
-        { status: 'READY_FOR_PICKUP', at: '2026-02-15T15:00:00Z' },
-      ],
-      createdAt: '2026-02-10T10:00:00Z', updatedAt: '2026-02-15T15:00:00Z',
-    },
-    {
-      id: 'ord-002', orderNumber: 'OPT-260307-1002',
-      patientId: 'pat-002', patientName: 'Derek Holloway', patientPhone: '555-0202',
-      rxId: 'rx-002',
-      providerId: 'dr-patel', providerName: 'Dr. Raj Patel',
-      orderType: 'NEW_RX', status: 'IN_PRODUCTION',
-      lab: 'ClearVision Lab', labOrderNumber: 'CVL-56789',
-      labSentAt: '2026-02-23T08:00:00Z', estimatedReady: '2026-02-28',
-      lineItems: [
-        {
-          id: 'li-002a', type: 'FRAME', itemId: 'frame-002', description: 'Ray-Ban Clubmaster Tortoise 54-21',
-          quantity: 1, unitCost: 60, unitRetail: 155, discount: 0, total: 155,
-        },
-        {
-          id: 'li-002b', type: 'LENS', itemId: 'lens-003',
-          description: 'Transitions Gen 8 Hi-Index 1.74 OU', quantity: 2,
-          unitCost: 115, unitRetail: 285, discount: 0, total: 570,
-        },
-      ],
-      subtotal: 725, discount: 25, insuranceBenefit: 300, taxAmount: 0,
-      totalCharge: 400, depositPaid: 200, balanceDue: 200,
-      statusHistory: [
-        { status: 'DRAFT', at: '2026-02-22T11:00:00Z' },
-        { status: 'APPROVED', at: '2026-02-22T11:30:00Z' },
-        { status: 'SENT_TO_LAB', at: '2026-02-23T08:00:00Z' },
-        { status: 'IN_PRODUCTION', at: '2026-02-24T09:00:00Z' },
-      ],
-      createdAt: '2026-02-22T11:00:00Z', updatedAt: '2026-02-24T09:00:00Z',
-    },
-    {
-      id: 'ord-003', orderNumber: 'OPT-260307-1003',
-      patientId: 'pat-003', patientName: 'Priya Nair', patientPhone: '555-0303',
-      providerId: 'dr-chen', providerName: 'Dr. Emily Chen',
-      orderType: 'CONTACT_LENS', status: 'DRAFT',
-      lineItems: [
-        {
-          id: 'li-003a', type: 'CONTACT_LENS', itemId: 'cl-002',
-          description: 'Acuvue Oasys 1-Day -2.00 OD × 3 boxes', quantity: 3,
-          unitCost: 42, unitRetail: 75, discount: 0, total: 225, eye: 'OD',
-        },
-        {
-          id: 'li-003b', type: 'CONTACT_LENS', itemId: 'cl-002',
-          description: 'Acuvue Oasys 1-Day -2.00 OS × 3 boxes', quantity: 3,
-          unitCost: 42, unitRetail: 75, discount: 0, total: 225, eye: 'OS',
-        },
-      ],
-      subtotal: 450, discount: 0, insuranceBenefit: 150, taxAmount: 0,
-      totalCharge: 300, depositPaid: 0, balanceDue: 300,
-      statusHistory: [{ status: 'DRAFT', at: now }],
-      createdAt: now, updatedAt: now,
-    },
-  ]
-
-  for (const o of seedOrders) {
-    await kv.put(`${KV_ORDER_PFX}${o.id}`, JSON.stringify(o))
-  }
-  await kv.put(KV_ORDER_INDEX, JSON.stringify(seedOrders.map(o => o.id)))
-  _seeded = true
 }
 
-// ── Frame CRUD ─────────────────────────────────────────────────────────────────
-
-export async function listFrames(kv: KVNamespace): Promise<Frame[]> {
-  await ensureOpticalSeed(kv)
-  const ids = await getIndex(kv, KV_FRAME_INDEX)
-  const frames = await Promise.all(
-    ids.map(async id => {
-      const raw = await kv.get(`${KV_FRAME_PFX}${id}`)
-      return raw ? JSON.parse(raw) as Frame : null
-    })
-  )
-  return frames.filter(Boolean) as Frame[]
+// ── Frame CRUD ────────────────────────────────────────────────────────────────
+export async function listFrames(kv: KVNamespace, db?: D1Database): Promise<Frame[]> {
+  await ensureOpticalSeed(kv, db)
+  if (db) return (await dbAll<Record<string, unknown>>(db, 'SELECT * FROM frames WHERE organization_id = \'org-001\'')).map(rowToFrame)
+  return []
 }
 
-export async function getFrame(kv: KVNamespace, id: string): Promise<Frame | null> {
-  const raw = await kv.get(`${KV_FRAME_PFX}${id}`)
-  return raw ? JSON.parse(raw) : null
-}
-
-export async function createFrame(kv: KVNamespace, input: FrameCreateInput): Promise<Frame> {
-  const now = new Date().toISOString()
-  const frame: Frame = {
-    ...input,
-    id: uid('frame'),
-    status: input.status ?? (input.quantity > input.minQuantity ? 'IN_STOCK' : input.quantity > 0 ? 'LOW_STOCK' : 'OUT_OF_STOCK'),
-    createdAt: now, updatedAt: now,
+export async function getFrame(kv: KVNamespace, id: string, db?: D1Database): Promise<Frame | null> {
+  if (db) {
+    const row = await dbGet<Record<string, unknown>>(db, 'SELECT * FROM frames WHERE id = ?', [id])
+    return row ? rowToFrame(row) : null
   }
-  await kv.put(`${KV_FRAME_PFX}${frame.id}`, JSON.stringify(frame))
-  await addToIndex(kv, KV_FRAME_INDEX, frame.id)
+  return null
+}
+
+export async function createFrame(kv: KVNamespace, input: FrameCreateInput, db?: D1Database): Promise<Frame> {
+  const id = genUid('frm')
+  const ts = now()
+  const qty = input.quantity || 0
+  const status: FrameStatus = qty <= 0 ? 'OUT_OF_STOCK' : qty <= (input.minQuantity || 2) ? 'LOW_STOCK' : 'IN_STOCK'
+  const frame: Frame = { id, organizationId: 'org-001', ...input, quantity: qty, minQuantity: input.minQuantity || 2, status, createdAt: ts, updatedAt: ts }
+  if (db) {
+    await dbRun(db, `INSERT INTO frames (id, organization_id, sku, brand, model, color, size, category, gender, material, wholesale, retail, insurance_allowance, quantity, min_quantity, status, image_url, location, upc, created_at, updated_at) VALUES (?, 'org-001', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, input.sku, input.brand || null, input.model || null, input.color || null,
+       input.size || null, input.category || null, input.gender || null, input.material || null,
+       input.wholesale || 0, input.retail || 0, input.insuranceAllowance || 0,
+       qty, input.minQuantity || 2, status, input.imageUrl || null, input.location || null, input.upc || null, ts, ts])
+  }
   return frame
 }
 
-export async function updateFrame(kv: KVNamespace, id: string, updates: Partial<Frame>): Promise<Frame | null> {
-  const frame = await getFrame(kv, id)
+export async function updateFrame(kv: KVNamespace, id: string, updates: Partial<Frame>, db?: D1Database): Promise<Frame | null> {
+  const frame = await getFrame(kv, id, db)
   if (!frame) return null
-  const updated: Frame = { ...frame, ...updates, id, updatedAt: new Date().toISOString() }
-  // Auto-compute status from quantity
+  const updated: Frame = { ...frame, ...updates, id, updatedAt: now() }
   if (updates.quantity !== undefined && !updates.status) {
     updated.status = updated.quantity <= 0 ? 'OUT_OF_STOCK' : updated.quantity <= updated.minQuantity ? 'LOW_STOCK' : 'IN_STOCK'
   }
-  await kv.put(`${KV_FRAME_PFX}${id}`, JSON.stringify(updated))
+  if (db) {
+    await dbRun(db, `UPDATE frames SET brand=?, model=?, sku=?, color=?, size=?, wholesale=?, retail=?, quantity=?, min_quantity=?, status=?, updated_at=? WHERE id=?`,
+      [updated.brand, updated.model, updated.sku, updated.color, updated.size,
+       updated.wholesale, updated.retail, updated.quantity, updated.minQuantity, updated.status, updated.updatedAt, id])
+  }
   return updated
 }
 
-// ── Lens CRUD ──────────────────────────────────────────────────────────────────
-
-export async function listLenses(kv: KVNamespace): Promise<Lens[]> {
-  await ensureOpticalSeed(kv)
-  const ids = await getIndex(kv, KV_LENS_INDEX)
-  const items = await Promise.all(ids.map(async id => {
-    const raw = await kv.get(`${KV_LENS_PFX}${id}`)
-    return raw ? JSON.parse(raw) as Lens : null
-  }))
-  return items.filter(Boolean) as Lens[]
+// ── Lens CRUD ─────────────────────────────────────────────────────────────────
+export async function listLenses(kv: KVNamespace, db?: D1Database): Promise<Lens[]> {
+  await ensureOpticalSeed(kv, db)
+  if (db) return (await dbAll<Record<string, unknown>>(db, 'SELECT * FROM lenses WHERE organization_id = \'org-001\'')).map(rowToLens)
+  return []
 }
 
-export async function getLens(kv: KVNamespace, id: string): Promise<Lens | null> {
-  const raw = await kv.get(`${KV_LENS_PFX}${id}`)
-  return raw ? JSON.parse(raw) : null
+export async function getLens(kv: KVNamespace, id: string, db?: D1Database): Promise<Lens | null> {
+  if (db) {
+    const row = await dbGet<Record<string, unknown>>(db, 'SELECT * FROM lenses WHERE id = ?', [id])
+    return row ? rowToLens(row) : null
+  }
+  return null
 }
 
-// ── Contact Lens CRUD ──────────────────────────────────────────────────────────
-
-export async function listContactLenses(kv: KVNamespace): Promise<import('../types/optical').ContactLens[]> {
-  await ensureOpticalSeed(kv)
-  const ids = await getIndex(kv, KV_CL_INDEX)
-  const items = await Promise.all(ids.map(async id => {
-    const raw = await kv.get(`${KV_CL_PFX}${id}`)
-    return raw ? JSON.parse(raw) as import('../types/optical').ContactLens : null
-  }))
-  return items.filter(Boolean) as import('../types/optical').ContactLens[]
+// ── Contact Lens CRUD ─────────────────────────────────────────────────────────
+export async function listContactLenses(kv: KVNamespace, db?: D1Database): Promise<ContactLens[]> {
+  await ensureOpticalSeed(kv, db)
+  if (db) return (await dbAll<Record<string, unknown>>(db, 'SELECT * FROM contact_lenses WHERE organization_id = \'org-001\'')).map(rowToContactLens)
+  return []
 }
 
-// ── Rx CRUD ────────────────────────────────────────────────────────────────────
-
-export async function listRxForPatient(kv: KVNamespace, patientId: string): Promise<OpticalRx[]> {
-  await ensureOpticalSeed(kv)
-  const ids = await getIndex(kv, KV_RX_INDEX)
-  const items = await Promise.all(ids.map(async id => {
-    const raw = await kv.get(`${KV_RX_PFX}${id}`)
-    return raw ? JSON.parse(raw) as OpticalRx : null
-  }))
-  return (items.filter(Boolean) as OpticalRx[]).filter(r => r.patientId === patientId)
+// ── Rx CRUD ───────────────────────────────────────────────────────────────────
+export async function listRxForPatient(kv: KVNamespace, patientId: string, db?: D1Database): Promise<OpticalRx[]> {
+  if (db) return (await dbAll<Record<string, unknown>>(db, 'SELECT * FROM optical_rx WHERE patient_id = ? ORDER BY rx_date DESC', [patientId])).map(rowToRx)
+  return []
 }
 
-export async function getRx(kv: KVNamespace, id: string): Promise<OpticalRx | null> {
-  const raw = await kv.get(`${KV_RX_PFX}${id}`)
-  return raw ? JSON.parse(raw) : null
+export async function getRx(kv: KVNamespace, id: string, db?: D1Database): Promise<OpticalRx | null> {
+  if (db) {
+    const row = await dbGet<Record<string, unknown>>(db, 'SELECT * FROM optical_rx WHERE id = ?', [id])
+    return row ? rowToRx(row) : null
+  }
+  return null
 }
 
-export async function createRx(kv: KVNamespace, rx: Omit<OpticalRx, 'id' | 'createdAt'>): Promise<OpticalRx> {
-  const now = new Date().toISOString()
-  const record: OpticalRx = { ...rx, id: uid('rx'), createdAt: now }
-  await kv.put(`${KV_RX_PFX}${record.id}`, JSON.stringify(record))
-  await addToIndex(kv, KV_RX_INDEX, record.id)
+export async function createRx(kv: KVNamespace, rx: Omit<OpticalRx, 'id' | 'createdAt'>, db?: D1Database): Promise<OpticalRx> {
+  const id = genUid('rx')
+  const ts = now()
+  const record: OpticalRx = { ...rx, id, createdAt: ts }
+  if (db) {
+    await dbRun(db, `INSERT INTO optical_rx (id, patient_id, exam_id, provider_id, rx_date, od_sphere, od_cylinder, od_axis, od_add, od_prism, od_base, od_pd, od_va, os_sphere, os_cylinder, os_axis, os_add, os_prism, os_base, os_pd, os_va, binocular_pd, lens_type, notes, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, rx.patientId, rx.examId || null, rx.providerId || null, rx.rxDate,
+       rx.od?.sphere || null, rx.od?.cylinder || null, rx.od?.axis || null, rx.od?.add || null,
+       rx.od?.prism || null, rx.od?.base || null, rx.od?.pd || null, rx.od?.va || null,
+       rx.os?.sphere || null, rx.os?.cylinder || null, rx.os?.axis || null, rx.os?.add || null,
+       rx.os?.prism || null, rx.os?.base || null, rx.os?.pd || null, rx.os?.va || null,
+       rx.binocularPd || null, rx.lensType || null, rx.notes || null, ts])
+  }
   return record
 }
 
-// ── Order CRUD ─────────────────────────────────────────────────────────────────
-
-export async function listOrders(kv: KVNamespace): Promise<OpticalOrder[]> {
-  await ensureOpticalSeed(kv)
-  const ids = await getIndex(kv, KV_ORDER_INDEX)
-  const items = await Promise.all(ids.map(async id => {
-    const raw = await kv.get(`${KV_ORDER_PFX}${id}`)
-    return raw ? JSON.parse(raw) as OpticalOrder : null
-  }))
-  return items.filter(Boolean) as OpticalOrder[]
+// ── Order CRUD ────────────────────────────────────────────────────────────────
+export async function listOrders(kv: KVNamespace, db?: D1Database): Promise<OpticalOrder[]> {
+  if (db) {
+    const rows = await dbAll<Record<string, unknown>>(db, 'SELECT * FROM optical_orders WHERE organization_id = \'org-001\' ORDER BY created_at DESC')
+    return Promise.all(rows.map(async r => {
+      const li = await dbAll<OrderLineItem>(db, 'SELECT * FROM optical_order_line_items WHERE order_id = ?', [r.id as string])
+      return rowToOrder(r, li)
+    }))
+  }
+  return []
 }
 
-export async function getOrder(kv: KVNamespace, id: string): Promise<OpticalOrder | null> {
-  const raw = await kv.get(`${KV_ORDER_PFX}${id}`)
-  return raw ? JSON.parse(raw) : null
+export async function getOrder(kv: KVNamespace, id: string, db?: D1Database): Promise<OpticalOrder | null> {
+  if (db) {
+    const row = await dbGet<Record<string, unknown>>(db, 'SELECT * FROM optical_orders WHERE id = ?', [id])
+    if (!row) return null
+    const li = await dbAll<OrderLineItem>(db, 'SELECT * FROM optical_order_line_items WHERE order_id = ?', [id])
+    return rowToOrder(row, li)
+  }
+  return null
 }
 
-export async function createOrder(kv: KVNamespace, input: OrderCreateInput): Promise<OpticalOrder> {
-  const now = new Date().toISOString()
-
-  const lineItems: OrderLineItem[] = input.lineItems.map((li, i) => ({
-    ...li,
-    id: `li-${uid('x')}-${i}`,
-    total: li.quantity * li.unitRetail - (li.discount ?? 0),
+export async function createOrder(kv: KVNamespace, input: OrderCreateInput, db?: D1Database): Promise<OpticalOrder> {
+  const id = genUid('ord')
+  const ts = now()
+  const lineItems: OrderLineItem[] = (input.lineItems || []).map((li, i) => ({
+    ...li, id: `li-${genUid('x')}-${i}`, total: li.quantity * li.unitRetail - (li.discount ?? 0),
   }))
-
   const subtotal = lineItems.reduce((s, l) => s + l.total, 0)
   const discount = input.discount ?? 0
   const insuranceBenefit = input.insuranceBenefit ?? 0
   const taxAmount = input.taxAmount ?? 0
   const totalCharge = subtotal - discount - insuranceBenefit + taxAmount
   const depositPaid = input.depositPaid ?? 0
-
+  const oNum = orderNumber()
   const order: OpticalOrder = {
-    id: uid('ord'),
-    orderNumber: orderNumber(),
-    patientId: input.patientId,
-    patientName: input.patientName,
-    patientPhone: input.patientPhone,
-    rxId: input.rxId,
-    examId: input.examId,
-    providerId: input.providerId,
-    providerName: input.providerName,
-    orderType: input.orderType,
-    status: 'DRAFT',
-    lab: input.lab,
-    estimatedReady: input.estimatedReady,
-    lineItems,
-    subtotal,
-    discount,
-    insuranceBenefit,
-    taxAmount,
-    totalCharge,
-    depositPaid,
-    balanceDue: totalCharge - depositPaid,
-    rx: input.rx as OpticalRx | undefined,
-    specialInstructions: input.specialInstructions,
-    internalNotes: input.internalNotes,
-    statusHistory: [{ status: 'DRAFT', at: now }],
-    createdAt: now, updatedAt: now,
+    id, organizationId: 'org-001', patientId: input.patientId, patientName: input.patientName || '',
+    rxId: input.rxId, orderNumber: oNum, orderType: input.orderType || 'GLASSES',
+    status: 'DRAFT' as OrderStatus, frameId: input.frameId, frame: input.frame,
+    lensId: input.lensId, lens: input.lens, rx: input.rx, coating: input.coating, tint: input.tint,
+    lineItems, subtotal, discount, insuranceBenefit, taxAmount, totalCharge, depositPaid,
+    balanceDue: totalCharge - depositPaid, specialInstructions: input.specialInstructions,
+    internalNotes: input.internalNotes, createdAt: ts, updatedAt: ts,
   }
-
-  await kv.put(`${KV_ORDER_PFX}${order.id}`, JSON.stringify(order))
-  await addToIndex(kv, KV_ORDER_INDEX, order.id)
+  if (db) {
+    await dbRun(db, `INSERT INTO optical_orders (id, organization_id, patient_id, patient_name, rx_id, order_number, order_type, status, frame_id, frame_sku, frame_brand, frame_model, frame_color, lens_id, lens_sku, lens_name, lens_type, od_sphere, od_cylinder, od_axis, od_add, od_pd, os_sphere, os_cylinder, os_axis, os_add, os_pd, binocular_pd, coating, tint, subtotal, discount, insurance_benefit, tax_amount, total_charge, deposit_paid, balance_due, special_instructions, internal_notes, created_at, updated_at)
+      VALUES (?, 'org-001', ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, input.patientId, input.patientName || '', input.rxId || null, oNum,
+       input.orderType || 'GLASSES', input.frameId || null,
+       input.frame?.sku || null, input.frame?.brand || null, input.frame?.model || null, input.frame?.color || null,
+       input.lensId || null, input.lens?.sku || null, input.lens?.name || null, input.lens?.type || null,
+       input.rx?.odSphere || null, input.rx?.odCylinder || null, input.rx?.odAxis || null, input.rx?.odAdd || null, input.rx?.odPd || null,
+       input.rx?.osSphere || null, input.rx?.osCylinder || null, input.rx?.osAxis || null, input.rx?.osAdd || null, input.rx?.osPd || null,
+       input.rx?.binocularPd || null, input.coating || null, input.tint || null,
+       subtotal, discount, insuranceBenefit, taxAmount, totalCharge, depositPaid, totalCharge - depositPaid,
+       input.specialInstructions || null, input.internalNotes || null, ts, ts])
+    for (const li of lineItems) {
+      await dbRun(db, `INSERT INTO optical_order_line_items (id, order_id, item_type, item_id, sku, name, description, quantity, unit_retail, discount, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [li.id, id, li.itemType || null, li.itemId || null, li.sku || null,
+         li.name || null, li.description || null, li.quantity || 1,
+         li.unitRetail || 0, li.discount || 0, li.total || 0])
+    }
+  }
   return order
 }
 
-// ── Order Status Workflow ──────────────────────────────────────────────────────
-
-const STATUS_FLOW: Record<OrderStatus, OrderStatus[]> = {
-  DRAFT:             ['PENDING_APPROVAL', 'APPROVED', 'CANCELLED'],
-  PENDING_APPROVAL:  ['APPROVED', 'CANCELLED'],
-  APPROVED:          ['SENT_TO_LAB', 'CANCELLED'],
-  SENT_TO_LAB:       ['IN_PRODUCTION', 'CANCELLED'],
-  IN_PRODUCTION:     ['QUALITY_CHECK', 'REMAKE', 'CANCELLED'],
-  QUALITY_CHECK:     ['RECEIVED', 'REMAKE'],
-  RECEIVED:          ['READY_FOR_PICKUP'],
-  READY_FOR_PICKUP:  ['DISPENSED'],
-  DISPENSED:         [],
-  CANCELLED:         [],
-  REMAKE:            ['SENT_TO_LAB', 'CANCELLED'],
-}
-
-export async function advanceOrderStatus(
-  kv: KVNamespace, id: string, newStatus: OrderStatus, by?: string, note?: string
-): Promise<{ success: boolean; order?: OpticalOrder; error?: string }> {
-  const order = await getOrder(kv, id)
-  if (!order) return { success: false, error: 'Order not found' }
-
-  const allowed = STATUS_FLOW[order.status] ?? []
-  if (!allowed.includes(newStatus)) {
-    return { success: false, error: `Cannot transition from ${order.status} → ${newStatus}` }
+export async function advanceOrderStatus(kv: KVNamespace, id: string, db?: D1Database): Promise<OpticalOrder | null> {
+  const flow: Partial<Record<OrderStatus, OrderStatus>> = {
+    DRAFT: 'PENDING_APPROVAL', PENDING_APPROVAL: 'APPROVED', APPROVED: 'SENT_TO_LAB',
+    SENT_TO_LAB: 'IN_PRODUCTION', IN_PRODUCTION: 'QUALITY_CHECK', QUALITY_CHECK: 'RECEIVED',
+    RECEIVED: 'READY_FOR_PICKUP', READY_FOR_PICKUP: 'DISPENSED',
   }
-
-  const now = new Date().toISOString()
-  const updated: OpticalOrder = {
-    ...order,
-    status: newStatus,
-    updatedAt: now,
-    ...(newStatus === 'SENT_TO_LAB'       ? { labSentAt: now }    : {}),
-    ...(newStatus === 'RECEIVED'          ? { receivedAt: now }   : {}),
-    ...(newStatus === 'DISPENSED'         ? { dispensedAt: now, dispensedBy: by } : {}),
-    statusHistory: [...order.statusHistory, { status: newStatus, at: now, by, note }],
+  const order = await getOrder(kv, id, db)
+  if (!order) return null
+  const next = flow[order.status]
+  if (!next) return null
+  if (db) {
+    const ts = now()
+    await dbRun(db, 'UPDATE optical_orders SET status=?, updated_at=? WHERE id=?', [next, ts, id])
+    if (next === 'SENT_TO_LAB') await dbRun(db, 'UPDATE optical_orders SET lab_sent_at=? WHERE id=?', [ts, id])
+    if (next === 'DISPENSED') await dbRun(db, 'UPDATE optical_orders SET dispensed_at=? WHERE id=?', [ts, id])
   }
-
-  await kv.put(`${KV_ORDER_PFX}${id}`, JSON.stringify(updated))
-  return { success: true, order: updated }
+  return getOrder(kv, id, db)
 }
 
 export async function updateOrderNotes(
-  kv: KVNamespace, id: string, updates: { lab?: string; labOrderNumber?: string; estimatedReady?: string; specialInstructions?: string; internalNotes?: string; depositPaid?: number }
+  kv: KVNamespace, id: string,
+  updates: { lab?: string; labOrderNumber?: string; estimatedReady?: string; specialInstructions?: string; internalNotes?: string; depositPaid?: number },
+  db?: D1Database
 ): Promise<OpticalOrder | null> {
-  const order = await getOrder(kv, id)
-  if (!order) return null
-  const updated = {
-    ...order,
-    ...updates,
-    balanceDue: order.totalCharge - (updates.depositPaid ?? order.depositPaid),
-    updatedAt: new Date().toISOString(),
+  if (db) {
+    const ts = now()
+    if (updates.lab !== undefined) await dbRun(db, 'UPDATE optical_orders SET lab=?, updated_at=? WHERE id=?', [updates.lab, ts, id])
+    if (updates.labOrderNumber !== undefined) await dbRun(db, 'UPDATE optical_orders SET lab_order_number=?, updated_at=? WHERE id=?', [updates.labOrderNumber, ts, id])
+    if (updates.estimatedReady !== undefined) await dbRun(db, 'UPDATE optical_orders SET estimated_ready=?, updated_at=? WHERE id=?', [updates.estimatedReady, ts, id])
+    if (updates.specialInstructions !== undefined) await dbRun(db, 'UPDATE optical_orders SET special_instructions=?, updated_at=? WHERE id=?', [updates.specialInstructions, ts, id])
+    if (updates.internalNotes !== undefined) await dbRun(db, 'UPDATE optical_orders SET internal_notes=?, updated_at=? WHERE id=?', [updates.internalNotes, ts, id])
+    if (updates.depositPaid !== undefined) {
+      const order = await getOrder(kv, id, db)
+      if (order) await dbRun(db, 'UPDATE optical_orders SET deposit_paid=?, balance_due=?, updated_at=? WHERE id=?',
+        [updates.depositPaid, order.totalCharge - updates.depositPaid, ts, id])
+    }
+    return getOrder(kv, id, db)
   }
-  await kv.put(`${KV_ORDER_PFX}${id}`, JSON.stringify(updated))
-  return updated
+  return null
 }
 
-// ── Inventory Summary ──────────────────────────────────────────────────────────
-
-export async function getInventorySummary(kv: KVNamespace): Promise<InventorySummary> {
-  const [frames, lenses, cls] = await Promise.all([
-    listFrames(kv),
-    listLenses(kv),
-    listContactLenses(kv),
-  ])
-
+// ── Inventory Summary ─────────────────────────────────────────────────────────
+export async function getInventorySummary(kv: KVNamespace, db?: D1Database): Promise<InventorySummary> {
+  const [frames, lenses, cls] = await Promise.all([listFrames(kv, db), listLenses(kv, db), listContactLenses(kv, db)])
   const alerts: InventoryAlert[] = []
   const outAlerts: InventoryAlert[] = []
-
   for (const f of frames) {
     if (f.status === 'OUT_OF_STOCK') outAlerts.push({ itemId: f.id, itemType: 'FRAME', sku: f.sku, name: `${f.brand} ${f.model}`, currentQty: f.quantity, minQty: f.minQuantity, status: f.status })
     else if (f.status === 'LOW_STOCK') alerts.push({ itemId: f.id, itemType: 'FRAME', sku: f.sku, name: `${f.brand} ${f.model}`, currentQty: f.quantity, minQty: f.minQuantity, status: f.status })
@@ -542,53 +352,43 @@ export async function getInventorySummary(kv: KVNamespace): Promise<InventorySum
     if (c.status === 'OUT_OF_STOCK') outAlerts.push({ itemId: c.id, itemType: 'CONTACT_LENS', sku: c.sku, name: `${c.brand} ${c.product}`, currentQty: c.quantity, minQty: c.minQuantity, status: c.status })
     else if (c.status === 'LOW_STOCK') alerts.push({ itemId: c.id, itemType: 'CONTACT_LENS', sku: c.sku, name: `${c.brand} ${c.product}`, currentQty: c.quantity, minQty: c.minQuantity, status: c.status })
   }
-
   const totalInventoryValue =
     frames.reduce((s, f) => s + f.wholesale * f.quantity, 0) +
     lenses.reduce((s, l) => s + l.wholesale * l.quantity, 0) +
     cls.reduce((s, c) => s + c.wholesale * c.quantity, 0)
-
   const totalRetailValue =
     frames.reduce((s, f) => s + f.retail * f.quantity, 0) +
     lenses.reduce((s, l) => s + l.retail * l.quantity, 0) +
     cls.reduce((s, c) => s + c.retail * c.quantity, 0)
-
   return {
-    totalFrames: frames.length,
-    totalLenses: lenses.length,
-    totalContactLenses: cls.length,
-    lowStockAlerts: alerts,
-    outOfStockAlerts: outAlerts,
-    totalInventoryValue,
-    totalRetailValue,
+    totalItems: frames.length + lenses.length + cls.length,
+    totalValue: parseFloat(totalInventoryValue.toFixed(2)),
+    totalRetailValue: parseFloat(totalRetailValue.toFixed(2)),
+    lowStockItems: alerts.length,
+    outOfStockItems: outAlerts.length,
+    alerts: [...outAlerts, ...alerts],
+    byCategory: {
+      frames: { count: frames.length, value: parseFloat(frames.reduce((s, f) => s + f.wholesale * f.quantity, 0).toFixed(2)) },
+      lenses: { count: lenses.length, value: parseFloat(lenses.reduce((s, l) => s + l.wholesale * l.quantity, 0).toFixed(2)) },
+      contactLenses: { count: cls.length, value: parseFloat(cls.reduce((s, c) => s + c.wholesale * c.quantity, 0).toFixed(2)) },
+    },
   }
 }
 
-// ── Orders Summary ─────────────────────────────────────────────────────────────
-
-export async function getOrdersSummary(kv: KVNamespace): Promise<OrdersSummary> {
-  const orders = await listOrders(kv)
-  const today  = new Date().toISOString().slice(0, 10)
-
+// ── Orders Summary ────────────────────────────────────────────────────────────
+export async function getOrdersSummary(kv: KVNamespace, db?: D1Database): Promise<OrdersSummary> {
+  const orders = await listOrders(kv, db)
+  const today = new Date().toISOString().slice(0, 10)
   const inProgress: OrderStatus[] = ['PENDING_APPROVAL','APPROVED','SENT_TO_LAB','IN_PRODUCTION','QUALITY_CHECK','RECEIVED','REMAKE']
-
   const dispensedToday = orders.filter(o => o.dispensedAt && o.dispensedAt.slice(0, 10) === today).length
-  const overdue = orders.filter(o =>
-    o.estimatedReady && o.estimatedReady < today &&
-    !['DISPENSED','CANCELLED','READY_FOR_PICKUP'].includes(o.status)
-  ).length
-
-  const turnarounds = orders
-    .filter(o => o.dispensedAt && o.labSentAt)
-    .map(o => (new Date(o.dispensedAt!).getTime() - new Date(o.labSentAt!).getTime()) / 86400000)
-
+  const overdue = orders.filter(o => o.estimatedReady && o.estimatedReady < today && !['DISPENSED','CANCELLED','READY_FOR_PICKUP'].includes(o.status)).length
+  const turnarounds = orders.filter(o => o.dispensedAt && o.labSentAt).map(o => (new Date(o.dispensedAt!).getTime() - new Date(o.labSentAt!).getTime()) / 86400000)
   return {
     totalOrders: orders.length,
     draftOrders: orders.filter(o => o.status === 'DRAFT').length,
     inProgressOrders: orders.filter(o => inProgress.includes(o.status)).length,
     readyForPickup: orders.filter(o => o.status === 'READY_FOR_PICKUP').length,
-    dispensedToday,
-    overdueOrders: overdue,
+    dispensedToday, overdueOrders: overdue,
     totalRevenue: orders.filter(o => o.status === 'DISPENSED').reduce((s, o) => s + o.totalCharge, 0),
     avgTurnaround: turnarounds.length ? Math.round(turnarounds.reduce((a, b) => a + b, 0) / turnarounds.length) : 0,
   }
