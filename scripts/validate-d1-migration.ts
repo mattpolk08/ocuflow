@@ -138,9 +138,9 @@ async function suiteSchemaIntegrity() {
     'organizations', 'staff_users', 'auth_sessions', 'providers', 'rooms', 'patients',
     'appointments', 'waitlist',
     'superbills', 'superbill_diagnoses', 'superbill_line_items', 'payments',
-    'frames', 'lenses', 'contact_lenses', 'optical_rx', 'optical_orders', 'optical_order_items',
-    'portal_accounts', 'portal_sessions', 'appointment_requests', 'message_threads', 'messages',
-    'insurance_plans',
+    'frames', 'lenses', 'contact_lenses', 'optical_rx', 'optical_orders', 'optical_order_line_items',
+    'portal_accounts', 'portal_sessions', 'portal_appointment_requests', 'portal_message_threads', 'portal_messages',
+    'patient_insurance',
   ]
 
   await run(SUITE, 'All expected tables exist', () => {
@@ -160,7 +160,7 @@ async function suiteSchemaIntegrity() {
     superbill_line_items:['id', 'superbill_id', 'cpt_code', 'fee', 'total'],
     frames:              ['id', 'organization_id', 'sku', 'brand', 'model', 'quantity', 'status'],
     optical_rx:          ['id', 'patient_id', 'od_sphere', 'os_sphere'],
-    optical_orders:      ['id', 'patient_id', 'status', 'total_price'],
+    optical_orders:      ['id', 'organization_id', 'patient_id', 'status', 'total_charge', 'deposit_paid', 'balance_due'],
   }
 
   for (const [table, cols] of Object.entries(columnChecks)) {
@@ -177,7 +177,7 @@ async function suiteSchemaIntegrity() {
     appointments: ['idx_appointments_date', 'idx_appointments_patient', 'idx_appointments_provider'],
     patients:     ['idx_patients_mrn', 'idx_patients_org'],
     superbills:   ['idx_superbills_patient', 'idx_superbills_status'],
-    frames:       ['idx_frames_sku', 'idx_frames_status'],
+    frames:       ['idx_frames_org'],
   }
   for (const [table, idxList] of Object.entries(indexChecks)) {
     await run(SUITE, `${table} — indexes exist`, () => {
@@ -501,8 +501,11 @@ async function suiteD1Queries() {
   })
 
   await run(SUITE, '[optical] getOrdersSummary — orders aggregate', () => {
-    const rows = sqlAll(`SELECT status, COUNT(*) as n, SUM(total_price) as total FROM optical_orders GROUP BY status`)
+    const rows = sqlAll(`SELECT status, COUNT(*) as n, SUM(total_charge) as total FROM optical_orders GROUP BY status`)
     assert(Array.isArray(rows), 'Expected array from orders aggregate')
+    const cols = sqlAll<{name:string}>(`PRAGMA table_info(optical_orders)`).map(r => r.name)
+    assert(cols.includes('total_charge'), 'optical_orders must have total_charge (not total_price)')
+    assert(!cols.includes('total_price'), 'optical_orders must NOT have legacy total_price column')
   })
 
   // ── Foreign Key Integrity ──────────────────────────────────────────────
@@ -629,17 +632,16 @@ async function suiteKvParity() {
     })
   })
 
-  await run(SUITE, 'Superbill totals consistent (charge = copay + insurance + balance + adj)', () => {
+  await run(SUITE, 'Superbill totals consistent (total_charge = insurance_billed + adjustments)', () => {
+    // OculoFlow billing model: total_charge = insurance_billed + adjustments (contractual write-off)
     const rows = sqlAll<{
-      id: string; total_charge: number; copay_collected: number;
-      insurance_billed: number; patient_balance: number; adjustments: number
-    }>(`SELECT id, total_charge, copay_collected, insurance_billed, patient_balance, adjustments FROM superbills LIMIT 10`)
+      id: string; total_charge: number;
+      insurance_billed: number; adjustments: number
+    }>(`SELECT id, total_charge, insurance_billed, adjustments FROM superbills LIMIT 10`)
     rows.forEach(r => {
-      // total_charge ≈ copay_collected + patient_balance + adjustments
-      // (insurance_billed may exceed total due to contractual rates — allow ±$1 rounding)
-      const recon = (r.copay_collected ?? 0) + (r.patient_balance ?? 0) + (r.adjustments ?? 0)
+      const recon = (r.insurance_billed ?? 0) + (r.adjustments ?? 0)
       const diff  = Math.abs((r.total_charge ?? 0) - recon)
-      assert(diff < 1.00, `Superbill ${r.id} totals don't reconcile: charge=${r.total_charge}, recon=${recon}, diff=${diff}`)
+      assert(diff < 1.00, `Superbill ${r.id}: total_charge(${r.total_charge}) ≠ ins_billed(${r.insurance_billed}) + adj(${r.adjustments}) = ${recon}`)
     })
   })
 }
