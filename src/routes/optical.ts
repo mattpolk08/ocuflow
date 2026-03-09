@@ -26,7 +26,7 @@ const opticalRoutes = new Hono<{ Bindings: Bindings }>()
 // ── Seed ──────────────────────────────────────────────────────────────────────
 opticalRoutes.post('/seed', async (c) => {
   try {
-    await ensureOpticalSeed(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    await ensureOpticalSeed(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<ApiResp>({ success: true, message: 'Optical seed complete' })
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
@@ -36,7 +36,7 @@ opticalRoutes.post('/seed', async (c) => {
 // ── Inventory Summary ─────────────────────────────────────────────────────────
 opticalRoutes.get('/inventory', async (c) => {
   try {
-    const summary = await getInventorySummary(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    const summary = await getInventorySummary(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<ApiResp>({ success: true, data: summary })
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
@@ -46,7 +46,7 @@ opticalRoutes.get('/inventory', async (c) => {
 // ── Orders Summary ────────────────────────────────────────────────────────────
 opticalRoutes.get('/orders/summary', async (c) => {
   try {
-    const summary = await getOrdersSummary(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    const summary = await getOrdersSummary(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<ApiResp>({ success: true, data: summary })
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
@@ -59,7 +59,7 @@ opticalRoutes.get('/frames', async (c) => {
     const q      = (c.req.query('q') ?? '').toLowerCase()
     const cat    = c.req.query('category')
     const status = c.req.query('status')
-    let frames   = await listFrames(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    let frames   = await listFrames(c.env.OCULOFLOW_KV, c.env.DB)
 
     if (q)      frames = frames.filter(f => `${f.brand} ${f.model} ${f.color} ${f.sku}`.toLowerCase().includes(q))
     if (cat)    frames = frames.filter(f => f.category === cat)
@@ -106,7 +106,7 @@ opticalRoutes.patch('/frames/:id', async (c) => {
 opticalRoutes.get('/lenses', async (c) => {
   try {
     const q    = (c.req.query('q') ?? '').toLowerCase()
-    let lenses = await listLenses(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    let lenses = await listLenses(c.env.OCULOFLOW_KV, c.env.DB)
     if (q) lenses = lenses.filter(l => `${l.name} ${l.sku} ${l.type} ${l.material}`.toLowerCase().includes(q))
     return c.json<ApiResp>({ success: true, data: lenses })
   } catch (err) {
@@ -124,7 +124,7 @@ opticalRoutes.get('/lenses/:id', async (c) => {
 opticalRoutes.get('/contact-lenses', async (c) => {
   try {
     const q   = (c.req.query('q') ?? '').toLowerCase()
-    let items = await listContactLenses(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    let items = await listContactLenses(c.env.OCULOFLOW_KV, c.env.DB)
     if (q) items = items.filter(cl => `${cl.brand} ${cl.product} ${cl.sku}`.toLowerCase().includes(q))
     return c.json<ApiResp>({ success: true, data: items })
   } catch (err) {
@@ -166,7 +166,7 @@ opticalRoutes.get('/orders', async (c) => {
   try {
     const status = c.req.query('status')
     const pid    = c.req.query('patientId')
-    let orders   = await listOrders(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    let orders   = await listOrders(c.env.OCULOFLOW_KV, c.env.DB)
     if (status) orders = orders.filter(o => o.status === status)
     if (pid)    orders = orders.filter(o => o.patientId === pid)
     return c.json<ApiResp>({ success: true, data: orders })

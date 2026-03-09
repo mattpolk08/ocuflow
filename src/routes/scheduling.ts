@@ -74,7 +74,7 @@ scheduleRoutes.get('/week', async (c) => {
   }
 
   try {
-    await ensureScheduleSeed(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    await ensureScheduleSeed(c.env.OCULOFLOW_KV, c.env.DB)
     const schedule = await getScheduleRange(c.env.OCULOFLOW_KV, c.env.DB, startDate, Math.min(days, 14))
     return c.json<ApiResponse>({ success: true, data: { schedule, startDate } })
   } catch (err) {
@@ -88,7 +88,7 @@ scheduleRoutes.get('/day', async (c) => {
   const date = c.req.query('date') || new Date().toISOString().split('T')[0]
 
   try {
-    await ensureScheduleSeed(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    await ensureScheduleSeed(c.env.OCULOFLOW_KV, c.env.DB)
     const appts = await getAppointmentsByDate(c.env.OCULOFLOW_KV, c.env.DB, date)
 
     // Compute KPIs for the day
@@ -122,7 +122,7 @@ scheduleRoutes.get('/slots', async (c) => {
   const providerId = c.req.query('providerId')
 
   try {
-    await ensureScheduleSeed(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    await ensureScheduleSeed(c.env.OCULOFLOW_KV, c.env.DB)
     const slots = await getAvailableSlots(c.env.OCULOFLOW_KV, c.env.DB, date, providerId)
     return c.json<ApiResponse>({
       success: true,
@@ -142,7 +142,7 @@ scheduleRoutes.get('/slots', async (c) => {
 scheduleRoutes.get('/appointment/:id', async (c) => {
   const id = c.req.param('id')
   try {
-    await ensureScheduleSeed(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    await ensureScheduleSeed(c.env.OCULOFLOW_KV, c.env.DB)
     const appt = await getAppointment(c.env.OCULOFLOW_KV, c.env.DB, id)
     if (!appt) return c.json<ApiResponse>({ success: false, error: 'Appointment not found' }, 404)
     return c.json<ApiResponse>({ success: true, data: appt })
@@ -250,8 +250,8 @@ scheduleRoutes.delete('/appointment/:id', requireRole('ADMIN', 'FRONT_DESK'), as
 // ── GET /api/schedule/waitlist ────────────────────────────────────────────
 scheduleRoutes.get('/waitlist', async (c) => {
   try {
-    await ensureScheduleSeed(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
-    const entries = await getWaitlist(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    await ensureScheduleSeed(c.env.OCULOFLOW_KV, c.env.DB)
+    const entries = await getWaitlist(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<ApiResponse>({ success: true, data: { waitlist: entries, total: entries.length } })
   } catch (err) {
     return c.json<ApiResponse>({ success: false, error: 'Could not load waitlist' }, 500)

@@ -40,14 +40,14 @@ patientRoutes.get('/', async (c) => {
   const limit   = parseInt(c.req.query('limit') || '25', 10)
 
   try {
-    await ensureSeedData(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    await ensureSeedData(c.env.OCULOFLOW_KV, c.env.DB)
 
     if (q && q.trim().length >= 2) {
       const results = await searchPatients(c.env.OCULOFLOW_KV, c.env.DB, q, limit)
       return c.json<ApiResponse>({ success: true, data: { patients: results, total: results.length, query: q } })
     }
 
-    const data = await listPatients(c.env.OCULOFLOW_KV, c.env.DB, page, limit)
+    const data = await listPatients(c.env.OCULOFLOW_KV, { page, limit }, c.env.DB)
     return c.json<ApiResponse>({ success: true, data: { ...data, page, limit } })
   } catch (err) {
     console.error('List patients error:', err)
@@ -59,7 +59,7 @@ patientRoutes.get('/', async (c) => {
 patientRoutes.get('/:id', async (c) => {
   const id = c.req.param('id')
   try {
-    await ensureSeedData(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    await ensureSeedData(c.env.OCULOFLOW_KV, c.env.DB)
     const patient = await getPatient(c.env.OCULOFLOW_KV, c.env.DB, id)
     if (!patient) return c.json<ApiResponse>({ success: false, error: 'Patient not found' }, 404)
     return c.json<ApiResponse>({ success: true, data: patient })

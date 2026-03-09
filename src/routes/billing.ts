@@ -32,7 +32,7 @@ const billing = new Hono<{ Bindings: Bindings }>()
 // List all superbills (summary view)
 billing.get('/superbills', async (c) => {
   try {
-    const summaries = await listSuperbills(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    const summaries = await listSuperbills(c.env.OCULOFLOW_KV, c.env.DB)
     const status    = c.req.query('status')
     const filtered  = status
       ? summaries.filter(s => s.status === status.toUpperCase())
@@ -46,7 +46,7 @@ billing.get('/superbills', async (c) => {
 // ── GET /api/billing/superbills/:id ──────────────────────────────────────────
 billing.get('/superbills/:id', async (c) => {
   try {
-    await ensureBillingSeed(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    await ensureBillingSeed(c.env.OCULOFLOW_KV, c.env.DB)
     const sb = await getSuperbill(c.env.OCULOFLOW_KV, c.env.DB, c.req.param('id'))
     if (!sb) return c.json<ApiResponse<null>>({ success: false, error: 'Superbill not found' }, 404)
     return c.json<ApiResponse<typeof sb>>({ success: true, data: sb })
@@ -148,7 +148,7 @@ billing.post('/superbills/:id/payment', async (c) => {
 // Accounts-receivable summary dashboard data
 billing.get('/ar', async (c) => {
   try {
-    const summary = await getArSummary(c.env.OCULOFLOW_KV, c.env.DB,  c.env.DB)
+    const summary = await getArSummary(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<ApiResponse<typeof summary>>({ success: true, data: summary })
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
