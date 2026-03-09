@@ -7,7 +7,10 @@
     "build": "vite build",
     "preview": "wrangler pages dev dist",
     "deploy": "npm run build && wrangler pages deploy dist",
-    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "validate:d1": "npx tsx scripts/validate-d1-migration.ts",
+    "validate:d1:verbose": "npx tsx scripts/validate-d1-migration.ts --verbose",
+    "validate:d1:json": "npx tsx scripts/validate-d1-migration.ts --json"
   },
   "dependencies": {
     "hono": "^4.12.5"
@@ -17,6 +20,9 @@
     "@hono/vite-build": "^1.2.0",
     "@hono/vite-dev-server": "^0.18.2",
     "vite": "^6.3.5",
-    "wrangler": "^4.4.0"
+    "wrangler": "^4.4.0",
+    "better-sqlite3": "^9.4.3",
+    "@types/better-sqlite3": "^7.6.8",
+    "tsx": "^4.7.0"
   }
 }
