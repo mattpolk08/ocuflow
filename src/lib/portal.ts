@@ -40,27 +40,48 @@ async function addToIndex(kv: KVNamespace, key: string, id: string): Promise<voi
 
 export async function portalLogin(
   kv: KVNamespace,
-  req: PortalLoginRequest
+  req: PortalLoginRequest,
+  db?: D1Database
 ): Promise<{ success: boolean; session?: PortalSession; error?: string }> {
-  // Fetch patient by last name match from patient KV index
-  const patientIndexRaw = await kv.get('patients:index')
-  if (!patientIndexRaw) return { success: false, error: 'No patient records found' }
-
-  const patientIds: string[] = JSON.parse(patientIndexRaw)
   let matchedPatient: any = null
 
-  for (const pid of patientIds) {
-    const raw = await kv.get(`patient:${pid}`)
-    if (!raw) continue
-    const p = JSON.parse(raw)
-    const lastNameMatch = p.lastName?.toLowerCase() === req.lastName.toLowerCase() ||
-      p.name?.toLowerCase().includes(req.lastName.toLowerCase())
-    const dobMatch = p.dob === req.dob || p.dateOfBirth === req.dob
-    const mrnMatch = req.mrn ? p.mrn === req.mrn || p.id === req.mrn : true
-    const emailMatch = req.email ? p.email?.toLowerCase() === req.email.toLowerCase() : true
-    if (lastNameMatch && dobMatch && (req.mrn ? mrnMatch : true) && (req.email ? emailMatch : true)) {
-      matchedPatient = p
-      break
+  if (db) {
+    // D1 path: query patients table directly
+    const { dbAll } = await import('./db')
+    let sql = 'SELECT * FROM patients WHERE LOWER(last_name) = LOWER(?) AND date_of_birth = ? AND is_active = 1'
+    const params: (string | number | boolean | null)[] = [req.lastName, req.dob]
+    if (req.mrn) { sql += ' AND mrn = ?'; params.push(req.mrn) }
+    if (req.email) { sql += ' AND LOWER(email) = LOWER(?)'; params.push(req.email) }
+    const rows = await dbAll<Record<string, unknown>>(db, sql, params)
+    if (rows.length > 0) {
+      const r = rows[0]
+      matchedPatient = {
+        id: r.id as string,
+        name: `${r.first_name} ${r.last_name}`,
+        email: r.email as string,
+        dob: r.date_of_birth as string,
+        dateOfBirth: r.date_of_birth as string,
+      }
+    }
+  } else {
+    // KV fallback (legacy)
+    const patientIndexRaw = await kv.get('patients:index')
+    if (patientIndexRaw) {
+      const patientIds: string[] = JSON.parse(patientIndexRaw)
+      for (const pid of patientIds) {
+        const raw = await kv.get(`patient:${pid}`)
+        if (!raw) continue
+        const p = JSON.parse(raw)
+        const lastNameMatch = p.lastName?.toLowerCase() === req.lastName.toLowerCase() ||
+          p.name?.toLowerCase().includes(req.lastName.toLowerCase())
+        const dobMatch = p.dob === req.dob || p.dateOfBirth === req.dob
+        const mrnMatch = req.mrn ? p.mrn === req.mrn || p.id === req.mrn : true
+        const emailMatch = req.email ? p.email?.toLowerCase() === req.email.toLowerCase() : true
+        if (lastNameMatch && dobMatch && (req.mrn ? mrnMatch : true) && (req.email ? emailMatch : true)) {
+          matchedPatient = p
+          break
+        }
+      }
     }
   }
 
@@ -103,16 +124,40 @@ export async function portalLogout(kv: KVNamespace, sessionId: string): Promise<
 // ── Demo Session (no auth) ────────────────────────────────────────────────────
 // For demo mode: create a pre-authenticated session for pat-001
 
-export async function createDemoSession(kv: KVNamespace): Promise<PortalSession> {
-  const patRaw = await kv.get('patient:pat-001')
-  const patient = patRaw ? JSON.parse(patRaw) : null
+export async function createDemoSession(kv: KVNamespace, db?: D1Database): Promise<PortalSession> {
+  let patientName = 'Margaret Sullivan'
+  let patientEmail = 'msullivan@email.com'
+  let patientDob = '1948-03-12'
+  let patientId = 'pt-001'
+
+  if (db) {
+    const { dbGet } = await import('./db')
+    const row = await dbGet<Record<string, unknown>>(db, 'SELECT * FROM patients WHERE id = ?', ['pt-001'])
+    if (row) {
+      patientId = row.id as string
+      patientName = `${row.first_name} ${row.last_name}`
+      patientEmail = (row.email as string) || patientEmail
+      patientDob = (row.date_of_birth as string) || patientDob
+    }
+  } else {
+    // KV fallback: try old id too
+    const raw = await kv.get('patient:pat-001') ?? await kv.get('patient:pt-001')
+    if (raw) {
+      const p = JSON.parse(raw)
+      patientId = p.id ?? patientId
+      patientName = (p.name ?? `${p.firstName ?? ''} ${p.lastName ?? ''}`).trim() || patientName
+      patientEmail = p.email ?? patientEmail
+      patientDob = p.dob ?? p.dateOfBirth ?? patientDob
+    }
+  }
+
   const now = new Date()
   const session: PortalSession = {
     sessionId: uid('psess'),
-    patientId: 'pat-001',
-    patientName: patient?.name ?? 'Margaret Sullivan',
-    patientEmail: patient?.email ?? 'margaret.sullivan@email.com',
-    patientDob: patient?.dob ?? '1955-04-12',
+    patientId,
+    patientName,
+    patientEmail,
+    patientDob,
     createdAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + 3600_000).toISOString(),
     lastActivity: now.toISOString(),
@@ -329,32 +374,62 @@ export async function ensureMessageSeed(kv: KVNamespace): Promise<void> {
 // ── Portal Dashboard Aggregation ──────────────────────────────────────────────
 
 export async function getPortalDashboard(
-  kv: KVNamespace, patientId: string
+  kv: KVNamespace, patientId: string, db?: D1Database
 ): Promise<PortalDashboard> {
-  // Load patient record
-  const patRaw = await kv.get(`patient:${patientId}`)
-  const patient = patRaw ? JSON.parse(patRaw) : { id: patientId, name: 'Unknown', dob: '', email: '' }
-
-  // Load upcoming appointments
-  const apptIndexRaw = await kv.get('appts:index')
-  const apptIds: string[] = apptIndexRaw ? JSON.parse(apptIndexRaw) : []
-  const today = new Date().toISOString().slice(0, 10)
-  const upcomingAppts: PortalDashboard['upcomingAppointments'] = []
-
-  for (const aid of apptIds.slice(0, 30)) {
-    const raw = await kv.get(`appt:${aid}`)
-    if (!raw) continue
-    const a = JSON.parse(raw)
-    if (a.patientId === patientId && a.date >= today && a.status !== 'CANCELLED') {
-      upcomingAppts.push({
-        date: a.date, time: a.startTime ?? a.time,
-        provider: a.providerName ?? a.providerId,
-        type: (a.appointmentType ?? '').replace(/_/g, ' '),
-        status: a.status,
-      })
+  // Load patient record — D1 preferred, KV fallback
+  let patient: any = { id: patientId, name: 'Unknown', dob: '', email: '', phone: '' }
+  if (db) {
+    const { dbGet, dbAll } = await import('./db')
+    const row = await dbGet<Record<string, unknown>>(db, 'SELECT * FROM patients WHERE id = ?', [patientId])
+    if (row) {
+      patient = {
+        id: row.id as string,
+        name: `${row.first_name} ${row.last_name}`,
+        firstName: row.first_name as string,
+        lastName: row.last_name as string,
+        dob: row.date_of_birth as string,
+        dateOfBirth: row.date_of_birth as string,
+        email: row.email as string,
+        phone: row.phone as string,
+        insurancePlans: row.insurance_plans_json ? JSON.parse(row.insurance_plans_json as string) : [],
+      }
     }
+
+    // Load upcoming appointments from D1
+    const today2 = new Date().toISOString().slice(0, 10)
+    const apptRows = await dbAll<Record<string, unknown>>(db,
+      `SELECT * FROM appointments WHERE patient_id = ? AND date >= ? AND status != 'CANCELLED' ORDER BY date, start_time LIMIT 5`,
+      [patientId, today2])
+    var upcomingAppts: PortalDashboard['upcomingAppointments'] = apptRows.map((a: any) => ({
+      date: a.date as string,
+      time: a.start_time as string,
+      provider: a.provider_name as string ?? a.provider_id as string,
+      type: ((a.appointment_type as string) ?? '').replace(/_/g, ' '),
+      status: a.status as string,
+    }))
+  } else {
+    // KV fallback
+    const patRaw = await kv.get(`patient:${patientId}`)
+    if (patRaw) patient = JSON.parse(patRaw)
+    const apptIndexRaw = await kv.get('appts:index')
+    const apptIds: string[] = apptIndexRaw ? JSON.parse(apptIndexRaw) : []
+    const today = new Date().toISOString().slice(0, 10)
+    var upcomingAppts: PortalDashboard['upcomingAppointments'] = []
+    for (const aid of apptIds.slice(0, 30)) {
+      const raw = await kv.get(`appt:${aid}`)
+      if (!raw) continue
+      const a = JSON.parse(raw)
+      if (a.patientId === patientId && a.date >= today && a.status !== 'CANCELLED') {
+        upcomingAppts.push({
+          date: a.date, time: a.startTime ?? a.time,
+          provider: a.providerName ?? a.providerId,
+          type: (a.appointmentType ?? '').replace(/_/g, ' '),
+          status: a.status,
+        })
+      }
+    }
+    upcomingAppts.sort((a, b) => a.date.localeCompare(b.date))
   }
-  upcomingAppts.sort((a, b) => a.date.localeCompare(b.date))
 
   // Load appointment requests
   const pendingRequests = await listAppointmentRequests(kv, patientId, 'PENDING')
@@ -389,76 +464,131 @@ export async function getPortalDashboard(
     if (recentExams.length >= 3) break
   }
 
-  // Load active Rx (from optical)
-  const rxIndexRaw = await kv.get('optical:rx:index')
-  const rxIds: string[] = rxIndexRaw ? JSON.parse(rxIndexRaw) : []
+  // Load active Rx — D1 preferred
   let activeRx: PortalRxSummary | undefined
-
-  for (const rid of rxIds) {
-    const raw = await kv.get(`optical:rx:${rid}`)
-    if (!raw) continue
-    const rx = JSON.parse(raw)
-    if (rx.patientId !== patientId) continue
-    if (!rx.signed) continue
-    // Use most recent
-    if (!activeRx || rx.rxDate > (activeRx as any).rxDate) {
+  if (db) {
+    const { listRxForPatient } = await import('./optical')
+    const rxList = await listRxForPatient(kv, patientId, db)
+    const signedRx = rxList.filter((r: any) => r.signed)
+    if (signedRx.length > 0) {
+      const rx = signedRx[0]  // already ordered desc by rx_date
       activeRx = {
-        rxId: rx.id, rxDate: rx.rxDate, expiresDate: rx.expiresDate,
-        providerName: rx.providerName ?? rx.providerId,
-        lensType: (rx.lensType ?? '').replace(/_/g, ' '),
-        signed: rx.signed,
-        od: rx.od ?? {}, os: rx.os ?? {},
-        binocularPd: rx.binocularPd,
+        rxId: (rx as any).id ?? (rx as any).rxId,
+        rxDate: (rx as any).rxDate,
+        expiresDate: (rx as any).expiresDate,
+        providerName: (rx as any).providerName ?? (rx as any).providerId ?? '',
+        lensType: ((rx as any).lensType ?? '').replace(/_/g, ' '),
+        signed: (rx as any).signed,
+        od: (rx as any).od ?? {},
+        os: (rx as any).os ?? {},
+        binocularPd: (rx as any).binocularPd,
+      }
+    }
+  } else {
+    // KV fallback
+    const rxIndexRaw = await kv.get('optical:rx:index')
+    const rxIds: string[] = rxIndexRaw ? JSON.parse(rxIndexRaw) : []
+    for (const rid of rxIds) {
+      const raw = await kv.get(`optical:rx:${rid}`)
+      if (!raw) continue
+      const rx = JSON.parse(raw)
+      if (rx.patientId !== patientId) continue
+      if (!rx.signed) continue
+      if (!activeRx || rx.rxDate > (activeRx as any).rxDate) {
+        activeRx = {
+          rxId: rx.id, rxDate: rx.rxDate, expiresDate: rx.expiresDate,
+          providerName: rx.providerName ?? rx.providerId,
+          lensType: (rx.lensType ?? '').replace(/_/g, ' '),
+          signed: rx.signed,
+          od: rx.od ?? {}, os: rx.os ?? {},
+          binocularPd: rx.binocularPd,
+        }
       }
     }
   }
 
-  // Load optical orders
-  const ordIndexRaw = await kv.get('optical:orders:index')
-  const ordIds: string[] = ordIndexRaw ? JSON.parse(ordIndexRaw) : []
-  const opticalOrders: PortalOrderStatus[] = []
-
-  for (const oid of ordIds) {
-    const raw = await kv.get(`optical:order:${oid}`)
-    if (!raw) continue
-    const o = JSON.parse(raw)
-    if (o.patientId !== patientId) continue
-    if (o.status === 'CANCELLED') continue
-    const liSummary = o.lineItems?.slice(0, 2).map((li: any) => li.description).join(' + ') ?? ''
-    opticalOrders.push({
-      orderId: o.id, orderNumber: o.orderNumber,
-      orderType: (o.orderType ?? '').replace(/_/g, ' '),
-      status: o.status, lab: o.lab,
-      estimatedReady: o.estimatedReady, receivedAt: o.receivedAt, dispensedAt: o.dispensedAt,
-      totalCharge: o.totalCharge, balanceDue: o.balanceDue,
-      lineItemsSummary: liSummary,
-      lastUpdated: o.updatedAt,
-    })
+  // Load optical orders — D1 preferred
+  let opticalOrders: PortalOrderStatus[] = []
+  if (db) {
+    const { listOrders } = await import('./optical')
+    const allOrders = await listOrders(kv, db)
+    opticalOrders = allOrders
+      .filter((o: any) => o.patientId === patientId && o.status !== 'CANCELLED')
+      .map((o: any) => ({
+        orderId: (o as any).id ?? (o as any).orderId,
+        orderNumber: o.orderNumber,
+        orderType: (o.orderType ?? '').replace(/_/g, ' '),
+        status: o.status, lab: o.lab,
+        estimatedReady: o.estimatedReady, receivedAt: o.receivedAt, dispensedAt: o.dispensedAt,
+        totalCharge: o.totalCharge, balanceDue: o.balanceDue,
+        lineItemsSummary: o.lineItemsSummary ?? '',
+        lastUpdated: o.updatedAt,
+      }))
+  } else {
+    // KV fallback
+    const ordIndexRaw = await kv.get('optical:orders:index')
+    const ordIds: string[] = ordIndexRaw ? JSON.parse(ordIndexRaw) : []
+    for (const oid of ordIds) {
+      const raw = await kv.get(`optical:order:${oid}`)
+      if (!raw) continue
+      const o = JSON.parse(raw)
+      if (o.patientId !== patientId) continue
+      if (o.status === 'CANCELLED') continue
+      const liSummary = o.lineItems?.slice(0, 2).map((li: any) => li.description).join(' + ') ?? ''
+      opticalOrders.push({
+        orderId: o.id, orderNumber: o.orderNumber,
+        orderType: (o.orderType ?? '').replace(/_/g, ' '),
+        status: o.status, lab: o.lab,
+        estimatedReady: o.estimatedReady, receivedAt: o.receivedAt, dispensedAt: o.dispensedAt,
+        totalCharge: o.totalCharge, balanceDue: o.balanceDue,
+        lineItemsSummary: liSummary,
+        lastUpdated: o.updatedAt,
+      })
+    }
   }
 
-  // Load billing balance
-  const sbIndexRaw = await kv.get('superbills:index')
-  const sbIds: string[] = sbIndexRaw ? JSON.parse(sbIndexRaw) : []
+  // Load billing balance — D1 preferred
   const balanceItems: PortalBalanceSummary['items'] = []
   let totalBalance = 0
-
-  for (const sid of sbIds) {
-    const raw = await kv.get(`superbill:${sid}`)
-    if (!raw) continue
-    const sb = JSON.parse(raw)
-    if (sb.patientId !== patientId) continue
-    if (['VOIDED', 'PAID'].includes(sb.status)) continue
-    const bal = sb.patientBalance ?? sb.totalCharge ?? 0
-    totalBalance += bal
-    balanceItems.push({
-      superbillId: sb.id,
-      serviceDate: sb.serviceDate ?? '',
-      description: `${sb.examType ?? 'Visit'} — ${sb.status}`,
-      totalCharge: sb.totalCharge ?? 0,
-      insurancePaid: sb.insurancePaid ?? 0,
-      patientBalance: bal,
-      status: sb.status,
-    })
+  if (db) {
+    const { getPatientSuperbills } = await import('./billing')
+    const sbs = await getPatientSuperbills(kv, patientId, db)
+    for (const sb of sbs) {
+      if (['VOIDED', 'PAID'].includes(sb.status)) continue
+      const bal = (sb as any).patientBalance ?? 0
+      totalBalance += bal
+      balanceItems.push({
+        superbillId: sb.id,
+        serviceDate: (sb as any).serviceDate ?? '',
+        description: `Visit — ${sb.status}`,
+        totalCharge: (sb as any).totalCharge ?? 0,
+        insurancePaid: (sb as any).insurancePaid ?? 0,
+        patientBalance: bal,
+        status: sb.status,
+      })
+    }
+  } else {
+    // KV fallback
+    const sbIndexRaw = await kv.get('superbills:index')
+    const sbIds: string[] = sbIndexRaw ? JSON.parse(sbIndexRaw) : []
+    for (const sid of sbIds) {
+      const raw = await kv.get(`superbill:${sid}`)
+      if (!raw) continue
+      const sb = JSON.parse(raw)
+      if (sb.patientId !== patientId) continue
+      if (['VOIDED', 'PAID'].includes(sb.status)) continue
+      const bal = sb.patientBalance ?? sb.totalCharge ?? 0
+      totalBalance += bal
+      balanceItems.push({
+        superbillId: sb.id,
+        serviceDate: sb.serviceDate ?? '',
+        description: `${sb.examType ?? 'Visit'} — ${sb.status}`,
+        totalCharge: sb.totalCharge ?? 0,
+        insurancePaid: sb.insurancePaid ?? 0,
+        patientBalance: bal,
+        status: sb.status,
+      })
+    }
   }
 
   // Load messages
@@ -606,7 +736,8 @@ export async function initiatePortalMagicLink(
   kv: KVNamespace,
   email: string,
   emailConfig: EmailConfig | null,
-  baseUrl: string
+  baseUrl: string,
+  db?: D1Database
 ): Promise<{ success: boolean; token?: string; otp?: string; demo?: boolean; error?: string }> {
   const emailKey = email.toLowerCase().trim()
 
@@ -615,8 +746,13 @@ export async function initiatePortalMagicLink(
   const account = await getPortalAccountByEmail(kv, emailKey)
   if (account) {
     patientId = account.patientId
+  } else if (db) {
+    // D1: search patients by email
+    const { dbGet } = await import('./db')
+    const row = await dbGet<Record<string, unknown>>(db, 'SELECT id FROM patients WHERE LOWER(email) = LOWER(?) AND is_active = 1', [emailKey])
+    if (row) patientId = row.id as string
   } else {
-    // Search patient records by email
+    // KV fallback
     const idxRaw = await kv.get('patients:index')
     const ids: string[] = idxRaw ? JSON.parse(idxRaw) : []
     for (const pid of ids) {
@@ -723,10 +859,11 @@ export async function initiatePasswordReset(
   kv: KVNamespace,
   email: string,
   emailConfig: EmailConfig | null,
-  baseUrl: string
+  baseUrl: string,
+  db?: D1Database
 ): Promise<{ success: boolean; token?: string; demo?: boolean }> {
   // Reuse magic-link flow for reset — same security, different UI prompt
-  return initiatePortalMagicLink(kv, email, emailConfig, `${baseUrl}/portal?reset=1`)
+  return initiatePortalMagicLink(kv, email, emailConfig, `${baseUrl}/portal?reset=1`, db)
 }
 
 export async function completePasswordReset(
@@ -759,32 +896,51 @@ export async function completePasswordReset(
 
 export async function createPortalSession(
   kv: KVNamespace,
-  patientId: string
+  patientId: string,
+  db?: D1Database
 ): Promise<PortalSession | null> {
-  // Load patient data
-  const idxRaw = await kv.get('patients:index')
-  const ids: string[] = idxRaw ? JSON.parse(idxRaw) : []
-  // Try direct key first
-  let patientRaw = await kv.get(`patient:${patientId}`)
-  if (!patientRaw) {
-    for (const pid of ids) {
-      const raw = await kv.get(`patient:${pid}`)
-      if (!raw) continue
-      const p = JSON.parse(raw)
-      if (p.id === patientId) { patientRaw = raw; break }
+  let patientName = ''
+  let patientEmail = ''
+  let patientDob = ''
+  let resolvedId = patientId
+
+  if (db) {
+    const { dbGet } = await import('./db')
+    const row = await dbGet<Record<string, unknown>>(db, 'SELECT * FROM patients WHERE id = ? AND is_active = 1', [patientId])
+    if (!row) return null
+    resolvedId = row.id as string
+    patientName = `${row.first_name} ${row.last_name}`
+    patientEmail = (row.email as string) || ''
+    patientDob = (row.date_of_birth as string) || ''
+  } else {
+    // KV fallback
+    let patientRaw = await kv.get(`patient:${patientId}`)
+    if (!patientRaw) {
+      const idxRaw = await kv.get('patients:index')
+      const ids: string[] = idxRaw ? JSON.parse(idxRaw) : []
+      for (const pid of ids) {
+        const raw = await kv.get(`patient:${pid}`)
+        if (!raw) continue
+        const p = JSON.parse(raw)
+        if (p.id === patientId) { patientRaw = raw; break }
+      }
     }
+    if (!patientRaw) return null
+    const patient = JSON.parse(patientRaw)
+    resolvedId = patient.id
+    patientName = patient.name ?? `${patient.firstName} ${patient.lastName}`
+    patientEmail = patient.email ?? ''
+    patientDob = patient.dob ?? patient.dateOfBirth ?? ''
   }
-  if (!patientRaw) return null
-  const patient = JSON.parse(patientRaw)
 
   const now = new Date()
   const expires = new Date(now.getTime() + SESSION_TTL * 1000)
   const session: PortalSession = {
     sessionId:    uid('psess'),
-    patientId:    patient.id,
-    patientName:  patient.name ?? `${patient.firstName} ${patient.lastName}`,
-    patientEmail: patient.email ?? '',
-    patientDob:   patient.dob ?? patient.dateOfBirth ?? '',
+    patientId:    resolvedId,
+    patientName,
+    patientEmail,
+    patientDob,
     createdAt:    now.toISOString(),
     expiresAt:    expires.toISOString(),
     lastActivity: now.toISOString(),
@@ -794,12 +950,12 @@ export async function createPortalSession(
     expirationTtl: SESSION_TTL,
   })
 
-  // Update last login on account
-  const accountRaw = await kv.get(`${KV_PORTAL_ACCOUNT_PFX}${patientId}`)
+  // Update last login on account (still in KV)
+  const accountRaw = await kv.get(`${KV_PORTAL_ACCOUNT_PFX}${resolvedId}`)
   if (accountRaw) {
     const acc = JSON.parse(accountRaw)
     acc.lastLogin = now.toISOString()
-    await kv.put(`${KV_PORTAL_ACCOUNT_PFX}${patientId}`, JSON.stringify(acc))
+    await kv.put(`${KV_PORTAL_ACCOUNT_PFX}${resolvedId}`, JSON.stringify(acc))
   }
 
   return session

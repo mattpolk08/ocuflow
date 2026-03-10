@@ -18,6 +18,7 @@ import type { AppointmentRequestType, MessageCategory } from '../types/portal'
 
 type Bindings = {
   OCULOFLOW_KV:         KVNamespace
+  DB:                   D1Database
   DEMO_MODE?:           string
   SENDGRID_API_KEY?:    string
   SENDGRID_FROM_EMAIL?: string
@@ -43,7 +44,7 @@ portalRoutes.post('/auth/login', async (c) => {
     if (!body.lastName || !body.dob) {
       return c.json<ApiResp>({ success: false, error: 'lastName and dob are required' }, 400)
     }
-    const result = await portalLogin(c.env.OCULOFLOW_KV, body)
+    const result = await portalLogin(c.env.OCULOFLOW_KV, body, c.env.DB)
     if (!result.success) return c.json<ApiResp>({ success: false, error: result.error }, 401)
     return c.json<ApiResp>({ success: true, data: result.session, message: `Welcome back, ${result.session!.patientName}` })
   } catch (err) {
@@ -55,8 +56,8 @@ portalRoutes.post('/auth/demo', async (c) => {
   try {
     // Ensure patients are seeded first
     const { ensureSeedData } = await import('../lib/patients')
-    await ensureSeedData(c.env.OCULOFLOW_KV)
-    const session = await createDemoSession(c.env.OCULOFLOW_KV)
+    await ensureSeedData(c.env.OCULOFLOW_KV, c.env.DB)
+    const session = await createDemoSession(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<ApiResp>({ success: true, data: session, message: `Demo session — ${session.patientName}` })
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
@@ -92,9 +93,9 @@ portalRoutes.get('/dashboard', async (c) => {
 
     // Seed patient data on first access
     const { ensureSeedData } = await import('../lib/patients')
-    await ensureSeedData(c.env.OCULOFLOW_KV)
+    await ensureSeedData(c.env.OCULOFLOW_KV, c.env.DB)
 
-    const dashboard = await getPortalDashboard(c.env.OCULOFLOW_KV, session.patientId)
+    const dashboard = await getPortalDashboard(c.env.OCULOFLOW_KV, session.patientId, c.env.DB)
     return c.json<ApiResp>({ success: true, data: dashboard })
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
@@ -250,7 +251,7 @@ portalRoutes.get('/rx', async (c) => {
     const session = await resolveSession(c)
     if (!session) return c.json<ApiResp>({ success: false, error: 'Unauthorized' }, 401)
     const { listRxForPatient } = await import('../lib/optical')
-    const rxList = await listRxForPatient(c.env.OCULOFLOW_KV, session.patientId)
+    const rxList = await listRxForPatient(c.env.OCULOFLOW_KV, session.patientId, c.env.DB)
     return c.json<ApiResp>({ success: true, data: rxList })
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
@@ -262,7 +263,7 @@ portalRoutes.get('/optical-orders', async (c) => {
     const session = await resolveSession(c)
     if (!session) return c.json<ApiResp>({ success: false, error: 'Unauthorized' }, 401)
     const { listOrders } = await import('../lib/optical')
-    const orders = (await listOrders(c.env.OCULOFLOW_KV))
+    const orders = (await listOrders(c.env.OCULOFLOW_KV, c.env.DB))
       .filter(o => o.patientId === session.patientId && o.status !== 'CANCELLED')
     return c.json<ApiResp>({ success: true, data: orders })
   } catch (err) {
@@ -274,23 +275,19 @@ portalRoutes.get('/balance', async (c) => {
   try {
     const session = await resolveSession(c)
     if (!session) return c.json<ApiResp>({ success: false, error: 'Unauthorized' }, 401)
-    // Fetch superbills for this patient
-    const sbIndexRaw = await c.env.OCULOFLOW_KV.get('superbills:index')
-    const sbIds: string[] = sbIndexRaw ? JSON.parse(sbIndexRaw) : []
+    // Fetch superbills for this patient via D1
+    const { getPatientSuperbills } = await import('../lib/billing')
+    const sbs = await getPatientSuperbills(c.env.OCULOFLOW_KV, session.patientId, c.env.DB)
     const items = []
     let total = 0
-    for (const sid of sbIds) {
-      const raw = await c.env.OCULOFLOW_KV.get(`superbill:${sid}`)
-      if (!raw) continue
-      const sb = JSON.parse(raw)
-      if (sb.patientId !== session.patientId) continue
+    for (const sb of sbs) {
       if (['VOIDED', 'PAID'].includes(sb.status)) continue
-      const bal = sb.patientBalance ?? 0
+      const bal = (sb as any).patientBalance ?? 0
       total += bal
       items.push({
-        superbillId: sb.id, serviceDate: sb.serviceDate ?? '',
-        description: `Visit — ${sb.status}`, totalCharge: sb.totalCharge ?? 0,
-        insurancePaid: sb.insurancePaid ?? 0, patientBalance: bal, status: sb.status,
+        superbillId: sb.id, serviceDate: (sb as any).serviceDate ?? '',
+        description: `Visit — ${sb.status}`, totalCharge: (sb as any).totalCharge ?? 0,
+        insurancePaid: (sb as any).insurancePaid ?? 0, patientBalance: bal, status: sb.status,
       })
     }
     return c.json<ApiResp>({ success: true, data: { totalBalance: total, items } })
@@ -317,14 +314,14 @@ portalRoutes.post('/auth/magic-link', async (c) => {
 
     // Ensure patients are seeded so email lookup works in demo mode
     const { ensureSeedData } = await import('../lib/patients')
-    await ensureSeedData(c.env.OCULOFLOW_KV)
+    await ensureSeedData(c.env.OCULOFLOW_KV, c.env.DB)
 
     const emailCfg = c.env.SENDGRID_API_KEY && !c.env.SENDGRID_API_KEY.startsWith('SG.XXXXXXXX')
       ? { apiKey: c.env.SENDGRID_API_KEY, fromEmail: c.env.SENDGRID_FROM_EMAIL ?? 'noreply@oculoflow.com', fromName: 'OculoFlow Portal' }
       : null
 
     const baseUrl = `https://${c.req.header('host') ?? 'oculoflow.pages.dev'}`
-    const result  = await initiatePortalMagicLink(c.env.OCULOFLOW_KV, body.email, emailCfg, baseUrl)
+    const result  = await initiatePortalMagicLink(c.env.OCULOFLOW_KV, body.email, emailCfg, baseUrl, c.env.DB)
     return c.json<ApiResp>({
       success: result.success,
       data: result.demo ? { demo: true, token: result.token, otp: result.otp, note: 'Demo mode — credentials returned directly' } : { sent: true },
@@ -341,7 +338,7 @@ portalRoutes.post('/auth/magic-verify', async (c) => {
     const verify = await verifyPortalMagicLink(c.env.OCULOFLOW_KV, body)
     if (!verify.success) return c.json<ApiResp>({ success: false, error: verify.error }, 401)
 
-    const session = await createPortalSession(c.env.OCULOFLOW_KV, verify.patientId!)
+    const session = await createPortalSession(c.env.OCULOFLOW_KV, verify.patientId!, c.env.DB)
     if (!session) return c.json<ApiResp>({ success: false, error: 'Patient not found' }, 404)
     return c.json<ApiResp>({ success: true, data: session, message: `Welcome back, ${session.patientName}` })
   } catch (err) {
@@ -366,13 +363,13 @@ portalRoutes.post('/auth/register', async (c) => {
 
     // Ensure seed data exists so patient lookup works
     const { ensureSeedData } = await import('../lib/patients')
-    await ensureSeedData(c.env.OCULOFLOW_KV)
+    await ensureSeedData(c.env.OCULOFLOW_KV, c.env.DB)
 
     let patientId = body.patientId
 
     // Self-service: look up patient by lastName+dob if no patientId provided
     if (!patientId && body.lastName && body.dob) {
-      const loginResult = await portalLogin(c.env.OCULOFLOW_KV, { lastName: body.lastName, dob: body.dob })
+      const loginResult = await portalLogin(c.env.OCULOFLOW_KV, { lastName: body.lastName, dob: body.dob }, c.env.DB)
       if (loginResult.success && loginResult.session) {
         patientId = loginResult.session.patientId
         await portalLogout(c.env.OCULOFLOW_KV, loginResult.session.sessionId)
@@ -386,7 +383,7 @@ portalRoutes.post('/auth/register', async (c) => {
 
     // Verify explicit patientId against lastName+dob when both are provided
     if (body.patientId && body.lastName && body.dob) {
-      const loginResult = await portalLogin(c.env.OCULOFLOW_KV, { lastName: body.lastName, dob: body.dob })
+      const loginResult = await portalLogin(c.env.OCULOFLOW_KV, { lastName: body.lastName, dob: body.dob }, c.env.DB)
       if (!loginResult.success || loginResult.session?.patientId !== body.patientId) {
         return c.json<ApiResp>({ success: false, error: 'Patient identity verification failed' }, 401)
       }
@@ -416,9 +413,9 @@ portalRoutes.post('/auth/password-login', async (c) => {
 
     // Ensure patient seed data exists before creating session
     const { ensureSeedData } = await import('../lib/patients')
-    await ensureSeedData(c.env.OCULOFLOW_KV)
+    await ensureSeedData(c.env.OCULOFLOW_KV, c.env.DB)
 
-    const session = await createPortalSession(c.env.OCULOFLOW_KV, result.patientId!)
+    const session = await createPortalSession(c.env.OCULOFLOW_KV, result.patientId!, c.env.DB)
     if (!session) return c.json<ApiResp>({ success: false, error: 'Patient not found' }, 404)
     return c.json<ApiResp>({ success: true, data: session, message: `Welcome back, ${session.patientName}` })
   } catch (err) {
@@ -436,7 +433,7 @@ portalRoutes.post('/auth/password-reset', async (c) => {
       : null
 
     const baseUrl = `https://${c.req.header('host') ?? 'oculoflow.pages.dev'}`
-    const result  = await initiatePasswordReset(c.env.OCULOFLOW_KV, body.email, emailCfg, baseUrl)
+    const result  = await initiatePasswordReset(c.env.OCULOFLOW_KV, body.email, emailCfg, baseUrl, c.env.DB)
     return c.json<ApiResp>({
       success: result.success,
       data: result.demo ? { demo: true, token: result.token, note: 'Demo mode — use token + new password to complete reset' } : { sent: true },
@@ -536,9 +533,9 @@ portalRoutes.get('/exams', async (c) => {
       examType: e.examType,
       providerName: e.providerName ?? 'Your Care Team',
       chiefComplaint: e.chiefComplaint,
-      diagnoses: (e.diagnoses ?? []).map((d: any) => ({ code: d.code, description: d.description })),
-      isSigned: e.isSigned,
-      hasRx: !!(e.sections?.refraction || e.sections?.contactLens),
+      diagnoses: ((e as any).diagnoses ?? []).map((d: any) => ({ code: d.code, description: d.description })),
+      isSigned: (e as any).isSigned,
+      hasRx: !!((e as any).sections?.refraction || (e as any).sections?.contactLens),
     }))
 
     return c.json<ApiResp>({ success: true, data: summaries })
@@ -567,12 +564,12 @@ portalRoutes.get('/exams/:id', async (c) => {
         examType: exam.examType,
         providerName: exam.providerName ?? 'Your Care Team',
         chiefComplaint: exam.chiefComplaint,
-        diagnoses: exam.diagnoses ?? [],
-        isSigned: exam.isSigned,
-        refraction: exam.sections?.refraction,
-        contactLens: exam.sections?.contactLens,
-        planInstructions: exam.sections?.plan?.patientInstructions,
-        followUpWeeks: exam.sections?.plan?.followUp,
+        diagnoses: (exam as any).diagnoses ?? [],
+        isSigned: (exam as any).isSigned,
+        refraction: (exam as any).sections?.refraction,
+        contactLens: (exam as any).sections?.contactLens,
+        planInstructions: (exam as any).sections?.plan?.patientInstructions,
+        followUpWeeks: (exam as any).sections?.plan?.followUp,
       }
     })
   } catch (err) {
@@ -667,7 +664,7 @@ portalRoutes.get('/status', async (c) => {
 // ── DELETE /api/portal/auth/account/dev-reset  — dev/test only cleanup ───────
 // Only available when DEMO_MODE is set (local dev). Cleans portal account by email.
 portalRoutes.delete('/auth/account/dev-reset', async (c) => {
-  const isDev = c.env.DEMO_MODE === 'true' || c.env.NODE_ENV === 'development' || !c.env.CLOUDFLARE_ACCOUNT_ID
+  const isDev = c.env.DEMO_MODE === 'true' || (c.env as any).NODE_ENV === 'development' || !(c.env as any).CLOUDFLARE_ACCOUNT_ID
   if (!isDev) return c.json<ApiResp>({ success: false, error: 'Not available in production' }, 403)
 
   try {
