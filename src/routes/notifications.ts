@@ -21,6 +21,7 @@ import { checkEligibility, type EligibilityRequest } from '../lib/eligibility'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
+  DB: D1Database
   JWT_SECRET?: string
   TWILIO_ACCOUNT_SID?: string
   TWILIO_AUTH_TOKEN?: string
@@ -84,7 +85,7 @@ notifRoutes.post('/test', requireAuth, requireRole('ADMIN'), async (c) => {
     ip: c.req.header('CF-Connecting-IP') ?? 'unknown',
     userAgent: c.req.header('User-Agent') ?? '',
     detail: `${channel} test to ${to} — provider: ${log.provider}`,
-  })
+  }, c.env.DB)
 
   return c.json<Resp>({
     success: log.success,
@@ -208,7 +209,7 @@ notifRoutes.post('/eligibility', requireAuth, requireRole('ADMIN', 'FRONT_DESK',
     ip: c.req.header('CF-Connecting-IP') ?? 'unknown',
     userAgent: c.req.header('User-Agent') ?? '',
     detail: `Payer: ${req.payerName} | MemberId: ${req.memberId.slice(0,4)}*** | Live: ${isLive}`,
-  })
+  }, c.env.DB)
 
   return c.json<Resp>({ success: result.success, data: { ...result, live: isLive } })
 })

@@ -24,6 +24,7 @@ import { writeAudit } from '../lib/audit'
 
 type Bindings = {
   OCULOFLOW_KV:     KVNamespace
+  DB: D1Database
   OCULOFLOW_R2?:    R2Bucket
   JWT_SECRET?:      string
   PRACTICE_NAME?:   string
@@ -140,7 +141,7 @@ docRoutes.post('/upload', requireAuth, async (c) => {
       outcome: 'success', ip: c.req.header('cf-connecting-ip') ?? 'unknown',
       userAgent: c.req.header('user-agent') ?? '',
       detail: `Uploaded ${body.category}: ${body.fileName} (${result.doc.sizeBytes} bytes) via ${result.backend}`,
-    })
+    }, c.env.DB)
 
     return c.json<Resp>({ success: true, data: result, message: `File uploaded via ${result.backend}` }, 201)
   } catch (err: any) {
@@ -171,7 +172,7 @@ docRoutes.get('/:id/download', requireAuth, async (c) => {
       outcome: 'success', ip: c.req.header('cf-connecting-ip') ?? 'unknown',
       userAgent: c.req.header('user-agent') ?? '',
       detail: `Downloaded document ${id}`,
-    })
+    }, c.env.DB)
 
     return new Response(file.body as BodyInit, {
       headers: {
@@ -198,7 +199,7 @@ docRoutes.delete('/:id', requireAuth, requireRole('ADMIN', 'PROVIDER'), async (c
     outcome: 'success', ip: c.req.header('cf-connecting-ip') ?? 'unknown',
     userAgent: c.req.header('user-agent') ?? '',
     detail: `Deleted document ${id}`,
-  })
+  }, c.env.DB)
 
   return c.json<Resp>({ success: true, message: 'Document deleted' })
 })
@@ -247,7 +248,7 @@ docRoutes.post('/pdf/superbill', requireAuth, requireRole('BILLING', 'ADMIN', 'P
       outcome: 'success', ip: c.req.header('cf-connecting-ip') ?? 'unknown',
       userAgent: c.req.header('user-agent') ?? '',
       detail: `Generated superbill PDF for ${body.patientName}`,
-    })
+    }, c.env.DB)
 
     // Return PDF directly as download
     const headers: Record<string, string> = {
@@ -305,7 +306,7 @@ docRoutes.post('/pdf/statement', requireAuth, requireRole('BILLING', 'ADMIN', 'P
       outcome: 'success', ip: c.req.header('cf-connecting-ip') ?? 'unknown',
       userAgent: c.req.header('user-agent') ?? '',
       detail: `Generated statement PDF for ${body.patientName}`,
-    })
+    }, c.env.DB)
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/pdf',
@@ -361,7 +362,7 @@ docRoutes.post('/pdf/referral', requireAuth, requireRole('PROVIDER', 'ADMIN', 'N
       outcome: 'success', ip: c.req.header('cf-connecting-ip') ?? 'unknown',
       userAgent: c.req.header('user-agent') ?? '',
       detail: `Generated referral PDF for ${body.patientName} → ${body.toProvider}`,
-    })
+    }, c.env.DB)
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/pdf',

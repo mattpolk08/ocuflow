@@ -21,6 +21,7 @@ import { getUserById, issueTokenPair, toPublic } from '../lib/auth'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
+  DB: D1Database
   JWT_SECRET?: string
   DEMO_MODE?: string
 }
@@ -51,7 +52,7 @@ mfaRoutes.post('/enroll/begin', requireAuth, async (c) => {
     resource: 'auth', action: 'POST /api/mfa/enroll/begin',
     outcome: 'SUCCESS', ip: clientIp(c), userAgent: c.req.header('User-Agent') ?? 'unknown',
     detail: 'MFA enrollment started',
-  })
+  }, c.env.DB)
 
   return c.json({
     success: true,
@@ -81,7 +82,7 @@ mfaRoutes.post('/enroll/confirm', requireAuth, async (c) => {
     resource: 'auth', action: 'POST /api/mfa/enroll/confirm',
     outcome: 'SUCCESS', ip: clientIp(c), userAgent: c.req.header('User-Agent') ?? 'unknown',
     detail: 'MFA enrollment confirmed and activated',
-  })
+  }, c.env.DB)
 
   return c.json({ success: true, data: { message: 'MFA enabled successfully' } })
 })
@@ -110,7 +111,7 @@ mfaRoutes.post('/verify', async (c) => {
       userId, resource: 'auth', action: 'POST /api/mfa/verify',
       outcome: 'FAILURE', ip: clientIp(c), userAgent: c.req.header('User-Agent') ?? 'unknown',
       detail: `MFA verification failed: ${result.error}`,
-    })
+    }, c.env.DB)
     return c.json({ success: false, error: result.error }, 401)
   }
 
@@ -133,7 +134,7 @@ mfaRoutes.post('/verify', async (c) => {
     resource: 'auth', action: 'POST /api/mfa/verify',
     outcome: 'SUCCESS', ip, userAgent: ua,
     detail: 'Login completed after MFA',
-  })
+  }, c.env.DB)
 
   // Optionally register trusted device
   let trustedDeviceId: string | undefined
@@ -203,7 +204,7 @@ mfaRoutes.delete('/disable', requireAuth, async (c) => {
     resource: 'auth', action: 'DELETE /api/mfa/disable',
     outcome: 'SUCCESS', ip: clientIp(c), userAgent: c.req.header('User-Agent') ?? 'unknown',
     detail: `MFA disabled for user ${targetId}`,
-  })
+  }, c.env.DB)
 
   return c.json({ success: true, data: { message: 'MFA disabled' } })
 })

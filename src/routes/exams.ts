@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// OculoFlow — Exam Record Routes (Phase 1D)
+// OculoFlow — Exam Record Routes (Phase D1-5)
 //
 // GET  /api/exams                       — recent exams list
 // GET  /api/exams/patient/:pid          — all exams for a patient
@@ -33,6 +33,7 @@ import { requireRole } from '../middleware/auth'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
+  DB: D1Database
   DEMO_MODE: string
 }
 type Variables = { auth: import('../types/auth').AuthContext }
@@ -43,8 +44,8 @@ const examRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 examRoutes.get('/', async (c) => {
   const limit = parseInt(c.req.query('limit') || '20', 10)
   try {
-    await ensureExamSeed(c.env.OCULOFLOW_KV)
-    const exams = await listRecentExams(c.env.OCULOFLOW_KV, limit)
+    await ensureExamSeed(c.env.OCULOFLOW_KV, c.env.DB)
+    const exams = await listRecentExams(c.env.OCULOFLOW_KV, limit, c.env.DB)
     return c.json<ApiResponse>({ success: true, data: { exams, total: exams.length } })
   } catch (err) {
     console.error('List exams error:', err)
@@ -68,8 +69,7 @@ examRoutes.get('/icd10/search', (c) => {
 examRoutes.get('/patient/:pid', async (c) => {
   const patientId = c.req.param('pid')
   try {
-    await ensureExamSeed(c.env.OCULOFLOW_KV)
-    const exams = await listExamsForPatient(c.env.OCULOFLOW_KV, patientId)
+    const exams = await listExamsForPatient(c.env.OCULOFLOW_KV, patientId, c.env.DB)
     return c.json<ApiResponse>({ success: true, data: { exams, patientId } })
   } catch (err) {
     return c.json<ApiResponse>({ success: false, error: 'Could not load patient exams' }, 500)
@@ -80,8 +80,7 @@ examRoutes.get('/patient/:pid', async (c) => {
 examRoutes.get('/:id', async (c) => {
   const id = c.req.param('id')
   try {
-    await ensureExamSeed(c.env.OCULOFLOW_KV)
-    const exam = await getExam(c.env.OCULOFLOW_KV, id)
+    const exam = await getExam(c.env.OCULOFLOW_KV, id, c.env.DB)
     if (!exam) return c.json<ApiResponse>({ success: false, error: 'Exam not found' }, 404)
     return c.json<ApiResponse>({ success: true, data: exam })
   } catch (err) {
@@ -109,7 +108,7 @@ examRoutes.post('/', requireRole('ADMIN', 'PROVIDER', 'NURSE'), async (c) => {
   }
 
   try {
-    const exam = await createExam(c.env.OCULOFLOW_KV, body)
+    const exam = await createExam(c.env.OCULOFLOW_KV, body, c.env.DB)
     return c.json<ApiResponse>({ success: true, data: exam, message: `Exam created — ${exam.id}` }, 201)
   } catch (err) {
     console.error('Create exam error:', err)
@@ -124,7 +123,7 @@ examRoutes.put('/:id/section/:section', requireRole('ADMIN', 'PROVIDER', 'NURSE'
   const data    = await c.req.json()
 
   try {
-    const exam = await updateExamSection(c.env.OCULOFLOW_KV, id, section, data)
+    const exam = await updateExamSection(c.env.OCULOFLOW_KV, id, section, data, c.env.DB)
     if (!exam) {
       return c.json<ApiResponse>({
         success: false,
@@ -152,7 +151,7 @@ examRoutes.put('/:id/meta', requireRole('ADMIN', 'PROVIDER', 'NURSE'), async (c)
   safe.forEach(k => { if (body[k] !== undefined) updates[k] = body[k] })
 
   try {
-    const exam = await updateExamMeta(c.env.OCULOFLOW_KV, id, updates as never)
+    const exam = await updateExamMeta(c.env.OCULOFLOW_KV, id, updates as never, c.env.DB)
     if (!exam) return c.json<ApiResponse>({ success: false, error: 'Exam not found or locked' }, 404)
     return c.json<ApiResponse>({ success: true, data: exam, message: 'Exam metadata updated' })
   } catch (err) {
@@ -170,7 +169,7 @@ examRoutes.post('/:id/sign', requireRole('PROVIDER', 'ADMIN'), async (c) => {
   }
 
   try {
-    const exam = await signExam(c.env.OCULOFLOW_KV, id, body.providerName)
+    const exam = await signExam(c.env.OCULOFLOW_KV, id, body.providerName, c.env.DB)
     if (!exam) return c.json<ApiResponse>({ success: false, error: 'Exam not found' }, 404)
     return c.json<ApiResponse>({
       success: true,
@@ -192,7 +191,7 @@ examRoutes.post('/:id/amend', requireRole('PROVIDER', 'ADMIN'), async (c) => {
   }
 
   try {
-    const exam = await amendExam(c.env.OCULOFLOW_KV, id, body.note)
+    const exam = await amendExam(c.env.OCULOFLOW_KV, id, body.note, c.env.DB)
     if (!exam) return c.json<ApiResponse>({ success: false, error: 'Exam not found' }, 404)
     return c.json<ApiResponse>({ success: true, data: exam, message: 'Exam amended' })
   } catch (err) {
@@ -204,7 +203,7 @@ examRoutes.post('/:id/amend', requireRole('PROVIDER', 'ADMIN'), async (c) => {
 examRoutes.delete('/:id', requireRole('ADMIN', 'PROVIDER'), async (c) => {
   const id = c.req.param('id')
   try {
-    const ok = await deleteExam(c.env.OCULOFLOW_KV, id)
+    const ok = await deleteExam(c.env.OCULOFLOW_KV, id, c.env.DB)
     if (!ok) return c.json<ApiResponse>({ success: false, error: 'Exam not found or is signed (cannot delete)' }, 400)
     return c.json<ApiResponse>({ success: true, message: 'Exam deleted' })
   } catch (err) {

@@ -21,6 +21,7 @@ import { writeAudit } from '../lib/audit'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
+  DB: D1Database
   JWT_SECRET?: string
   DEMO_MODE?: string
 }
@@ -47,7 +48,7 @@ analyticsRoutes.get('/dashboard', requireAuth, requireRole('BILLING', 'ADMIN'), 
       outcome: 'SUCCESS',
       ip: c.req.header('CF-Connecting-IP') ?? 'unknown',
       userAgent: c.req.header('User-Agent') ?? '',
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data: dashboard })
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)

@@ -29,6 +29,7 @@ import type { StaffRole } from '../types/auth'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
+  DB: D1Database
   JWT_SECRET?: string
   DEMO_MODE?: string
 }
@@ -63,7 +64,7 @@ authRoutes.post('/login', async (c) => {
       resource: 'auth', action: 'POST /api/auth/login',
       outcome: 'DENIED', ip: clientIp, userAgent,
       detail: `Account locked for ${lockCheck.remainingSeconds}s`,
-    })
+    }, c.env.DB)
     return c.json({
       success: false,
       error: `Account temporarily locked. Try again in ${lockCheck.remainingSeconds} seconds.`,
@@ -71,7 +72,7 @@ authRoutes.post('/login', async (c) => {
   }
 
   const secret = getJwtSecret(c.env)
-  const result = await login(c.env.OCULOFLOW_KV, email, password, secret, { userAgent, ipAddress: clientIp })
+  const result = await login(c.env.OCULOFLOW_KV, email, password, secret, { userAgent, ipAddress: clientIp }, c.env.DB)
 
   if (!result) {
     // Record failed attempt
@@ -81,7 +82,7 @@ authRoutes.post('/login', async (c) => {
       resource: 'auth', action: 'POST /api/auth/login',
       outcome: 'FAILURE', ip: clientIp, userAgent,
       detail: lockResult.locked ? 'Account now locked after max failures' : 'Invalid credentials',
-    })
+    }, c.env.DB)
     if (lockResult.locked) {
       return c.json({
         success: false,
@@ -112,7 +113,7 @@ authRoutes.post('/login', async (c) => {
         resource: 'auth', action: 'POST /api/auth/login',
         outcome: 'SUCCESS', ip: clientIp, userAgent,
         detail: 'MFA challenge issued',
-      })
+      }, c.env.DB)
       return c.json({
         success: true,
         data: {
@@ -131,7 +132,7 @@ authRoutes.post('/login', async (c) => {
     resource: 'auth', action: 'POST /api/auth/login',
     outcome: 'SUCCESS', ip: clientIp, userAgent,
     detail: mfaEnabled ? 'Login via trusted device' : 'Login (MFA not enrolled)',
-  })
+  }, c.env.DB)
 
   return c.json({ success: true, data: { ...result, mfaRequired: false } }, 200)
 })
@@ -148,13 +149,13 @@ authRoutes.post('/logout', async (c) => {
   const secret = getJwtSecret(c.env)
   const payload = await verifyJWT(token, secret)
   if (payload) {
-    await invalidateSession(c.env.OCULOFLOW_KV, payload.sub)
+    await invalidateSession(c.env.OCULOFLOW_KV, payload.sub, c.env.DB)
     await writeAudit(c.env.OCULOFLOW_KV, {
       event: 'AUTH_LOGOUT',
       userId: payload.sub, userEmail: payload.email, userRole: payload.role,
       resource: 'auth', action: 'POST /api/auth/logout',
       outcome: 'SUCCESS', ip: clientIp, userAgent,
-    })
+    }, c.env.DB)
   }
 
   return c.json({ success: true, data: { message: 'Logged out successfully' } }, 200)
@@ -171,7 +172,7 @@ authRoutes.post('/refresh', async (c) => {
   if (!refreshToken) return c.json({ success: false, error: 'refreshToken is required' }, 400)
 
   const secret = getJwtSecret(c.env)
-  const result = await refreshAccessToken(c.env.OCULOFLOW_KV, refreshToken, secret)
+  const result = await refreshAccessToken(c.env.OCULOFLOW_KV, refreshToken, secret, c.env.DB)
   if (!result) {
     await writeAudit(c.env.OCULOFLOW_KV, {
       event: 'AUTH_TOKEN_INVALID', resource: 'auth',
@@ -179,7 +180,7 @@ authRoutes.post('/refresh', async (c) => {
       ip: c.req.header('CF-Connecting-IP') ?? 'unknown',
       userAgent: c.req.header('User-Agent') ?? 'unknown',
       detail: 'Invalid or expired refresh token',
-    })
+    }, c.env.DB)
     return c.json({ success: false, error: 'Invalid or expired refresh token' }, 401)
   }
 
@@ -188,7 +189,7 @@ authRoutes.post('/refresh', async (c) => {
     action: 'POST /api/auth/refresh', outcome: 'SUCCESS',
     ip: c.req.header('CF-Connecting-IP') ?? 'unknown',
     userAgent: c.req.header('User-Agent') ?? 'unknown',
-  })
+  }, c.env.DB)
 
   return c.json({ success: true, data: result }, 200)
 })
@@ -196,14 +197,14 @@ authRoutes.post('/refresh', async (c) => {
 // ── GET /api/auth/me ───────────────────────────────────────────────────────────
 authRoutes.get('/me', requireAuth, async (c) => {
   const auth = c.var.auth
-  const user = await getUserById(c.env.OCULOFLOW_KV, auth.userId)
+  const user = await getUserById(c.env.OCULOFLOW_KV, auth.userId, c.env.DB)
   if (!user) return c.json({ success: false, error: 'User not found' }, 404)
   return c.json({ success: true, data: toPublic(user) }, 200)
 })
 
 // ── GET /api/auth/users  (ADMIN only) ─────────────────────────────────────────
 authRoutes.get('/users', requireAuth, requireRole('ADMIN'), async (c) => {
-  const users = await listUsers(c.env.OCULOFLOW_KV)
+  const users = await listUsers(c.env.OCULOFLOW_KV, c.env.DB)
   return c.json({ success: true, data: users }, 200)
 })
 
@@ -227,7 +228,7 @@ authRoutes.post('/users', requireAuth, requireRole('ADMIN'), async (c) => {
   try {
     const user = await createUser(c.env.OCULOFLOW_KV, {
       email, password, firstName, lastName, role: role as StaffRole, providerId,
-    })
+    }, c.env.DB)
     await writeAudit(c.env.OCULOFLOW_KV, {
       event: 'AUTH_USER_CREATED',
       userId: c.var.auth.userId, userEmail: c.var.auth.email, userRole: c.var.auth.role,
@@ -236,7 +237,7 @@ authRoutes.post('/users', requireAuth, requireRole('ADMIN'), async (c) => {
       ip: c.req.header('CF-Connecting-IP') ?? 'unknown',
       userAgent: c.req.header('User-Agent') ?? 'unknown',
       detail: `Created ${role} user ${email}`,
-    })
+    }, c.env.DB)
     return c.json({ success: true, data: toPublic(user) }, 201)
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to create user'
@@ -262,7 +263,7 @@ authRoutes.patch('/users/:id/password', requireAuth, async (c) => {
     return c.json({ success: false, error: 'Password must be at least 8 characters' }, 400)
   }
 
-  const ok = await updateUserPassword(c.env.OCULOFLOW_KV, id, password)
+  const ok = await updateUserPassword(c.env.OCULOFLOW_KV, id, password, c.env.DB)
   if (!ok) return c.json({ success: false, error: 'User not found' }, 404)
 
   await writeAudit(c.env.OCULOFLOW_KV, {
@@ -273,7 +274,7 @@ authRoutes.patch('/users/:id/password', requireAuth, async (c) => {
     ip: c.req.header('CF-Connecting-IP') ?? 'unknown',
     userAgent: c.req.header('User-Agent') ?? 'unknown',
     detail: auth.userId === id ? 'Self password change' : 'Admin password reset',
-  })
+  }, c.env.DB)
 
   return c.json({ success: true, data: { updated: true } }, 200)
 })
@@ -290,7 +291,7 @@ authRoutes.patch('/users/:id/active', requireAuth, requireRole('ADMIN'), async (
     return c.json({ success: false, error: 'isActive (boolean) is required' }, 400)
   }
 
-  const ok = await setUserActive(c.env.OCULOFLOW_KV, id, body.isActive)
+  const ok = await setUserActive(c.env.OCULOFLOW_KV, id, body.isActive, c.env.DB)
   if (!ok) return c.json({ success: false, error: 'User not found' }, 404)
 
   await writeAudit(c.env.OCULOFLOW_KV, {
@@ -301,7 +302,7 @@ authRoutes.patch('/users/:id/active', requireAuth, requireRole('ADMIN'), async (
     ip: c.req.header('CF-Connecting-IP') ?? 'unknown',
     userAgent: c.req.header('User-Agent') ?? 'unknown',
     detail: `isActive set to ${body.isActive}`,
-  })
+  }, c.env.DB)
 
   return c.json({ success: true, data: { isActive: body.isActive } }, 200)
 })
@@ -320,14 +321,14 @@ authRoutes.get('/audit', requireAuth, requireRole('ADMIN'), async (c) => {
 
   const { records, total } = await queryAuditLog(c.env.OCULOFLOW_KV, {
     limit: Math.min(limit, 500), offset, userId, event, resource, outcome, risk, since, highRiskOnly: highRisk,
-  })
+  }, c.env.DB)
 
   return c.json({ success: true, data: records, count: records.length, total }, 200)
 })
 
 // ── GET /api/auth/audit/hipaa-report  (ADMIN only) ────────────────────────────
 authRoutes.get('/audit/hipaa-report', requireAuth, requireRole('ADMIN'), async (c) => {
-  const report = await getHipaaComplianceReport(c.env.OCULOFLOW_KV)
+  const report = await getHipaaComplianceReport(c.env.OCULOFLOW_KV, c.env.DB)
   return c.json({ success: true, data: report }, 200)
 })
 
@@ -336,13 +337,13 @@ authRoutes.get('/demo-credentials', async (c) => {
   if (c.env.DEMO_MODE !== 'true') {
     return c.json({ success: false, error: 'Not available' }, 404)
   }
-  await seedStaffUsers(c.env.OCULOFLOW_KV)
+  await seedStaffUsers(c.env.OCULOFLOW_KV, c.env.DB)
   return c.json({ success: true, data: DEMO_CREDENTIALS }, 200)
 })
 
 // ── GET /api/auth/seed ─────────────────────────────────────────────────────────
 authRoutes.get('/seed', async (c) => {
-  await seedStaffUsers(c.env.OCULOFLOW_KV)
+  await seedStaffUsers(c.env.OCULOFLOW_KV, c.env.DB)
   return c.json({ success: true, data: { seeded: true } }, 200)
 })
 
