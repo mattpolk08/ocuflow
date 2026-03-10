@@ -67,23 +67,23 @@ Return format: { "memberId": "...", "groupNumber": "...", "payerName": "...", "s
            63.5,'PROGRESSIVE',1,'Patient adapted well to progressive design',
            '${t}','${t}')`,[]),a.rx=!0}catch{a.rx=!1}}const r=await Ne(e,"SELECT COUNT(*) as n FROM optical_orders WHERE patient_id = 'pt-001'");if(r&&r.n>0)a.order=!0;else try{await D(e,`INSERT OR IGNORE INTO optical_orders
         (id, organization_id, patient_id, patient_name, rx_id,
-         order_number, order_type, status, lab,
+         order_number, order_type, status,
          frame_id, frame_sku, frame_brand, frame_model, frame_color,
          lens_id, lens_sku, lens_name, lens_type,
          od_sphere, od_cylinder, od_axis, od_add, od_pd,
          os_sphere, os_cylinder, os_axis, os_add, os_pd,
-         binocular_pd, coating,
+         binocular_pd, coating, lab,
          subtotal, discount, insurance_benefit, tax_amount,
          total_charge, deposit_paid, balance_due,
          special_instructions, created_at, updated_at)
         VALUES
         ('ord-001','org-001','pt-001','Margaret Sullivan','rx-001',
-         'OPT-260310-0001','EYEGLASSES','READY_FOR_PICKUP','Vision One Labs',
+         'OPT-260310-0001','EYEGLASSES','READY_FOR_PICKUP',
          'frm-001','MJ-WESTSIDE-MB','Maui Jim','Westside','Matte Black 52-18',
          'len-001','HI-IDX-167-AR','Progressive Hi-Index 1.67 AR Premium','PROGRESSIVE',
          -2.25,-0.50,180,2.00,31.5,
          -1.75,-0.75,175,2.00,32.0,
-         63.5,'AR Premium',
+         63.5,'AR Premium','Vision One Labs',
          247.00,0.00,0.00,0.00,
          315.00,150.00,165.00,
          'Rush order','${t}','${t}')`,[]),a.order=!0}catch{a.order=!1}const n=await Ne(e,"SELECT COUNT(*) as n FROM superbills WHERE patient_id = 'pt-001'");if(n&&n.n>0)a.superbill=!0;else try{await D(e,`INSERT OR IGNORE INTO superbills
