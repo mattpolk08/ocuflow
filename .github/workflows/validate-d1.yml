@@ -99,17 +99,57 @@ jobs:
 
       - name: Seed local SQLite for validation
         run: |
-          DB=./oculoflow-ci.sqlite
-          sqlite3 $DB "
-            INSERT OR IGNORE INTO organizations (id, name) VALUES ('org-001','Advanced Eye Care of Miami');
-            INSERT OR IGNORE INTO patients (id, mrn, organization_id, first_name, last_name, date_of_birth, gender, email, phone, is_active, is_new_patient)
-              VALUES ('pt-001','MRN-001','org-001','Margaret','Sullivan','1965-03-15','F','margaret.sullivan@email.com','305-555-0101',1,0);
-            INSERT OR IGNORE INTO patients (id, mrn, organization_id, first_name, last_name, date_of_birth, gender, email, phone, is_active, is_new_patient)
-              VALUES ('pt-002','MRN-002','org-001','Robert','Chen','1978-07-22','M','robert.chen@email.com','305-555-0102',1,0);
-            INSERT OR IGNORE INTO patients (id, mrn, organization_id, first_name, last_name, date_of_birth, gender, email, phone, is_active, is_new_patient)
-              VALUES ('pt-003','MRN-003','org-001','Elena','Rodriguez','1990-11-08','F','elena.rodriguez@email.com','305-555-0103',1,1);
-          "
-          echo "Seed complete. Patient count: $(sqlite3 $DB 'SELECT COUNT(*) FROM patients')"
+          python3 - << 'EOF'
+          import sqlite3, datetime
+
+          DB = "./oculoflow-ci.sqlite"
+          conn = sqlite3.connect(DB)
+          today = datetime.date.today().isoformat()
+
+          stmts = [
+            # Organization
+            "INSERT OR IGNORE INTO organizations (id, name) VALUES ('org-001','Advanced Eye Care of Miami')",
+            # Providers (no display_name col in base schema — use first_name/last_name/credentials)
+            "INSERT OR IGNORE INTO providers (id, organization_id, first_name, last_name, credentials, specialty, npi, color, is_active) VALUES ('dr-chen','org-001','Sarah','Chen','OD','Optometry','1234567890','#4A90D9',1)",
+            "INSERT OR IGNORE INTO providers (id, organization_id, first_name, last_name, credentials, specialty, npi, color, is_active) VALUES ('dr-patel','org-001','Raj','Patel','OD','Optometry','2345678901','#50C878',1)",
+            "INSERT OR IGNORE INTO providers (id, organization_id, first_name, last_name, credentials, specialty, npi, color, is_active) VALUES ('dr-okonkwo','org-001','Adaeze','Okonkwo','MD','Ophthalmology','3456789012','#FF6B6B',1)",
+            # Patients
+            "INSERT OR IGNORE INTO patients (id, mrn, organization_id, first_name, last_name, date_of_birth, gender, email, phone, is_active, is_new_patient) VALUES ('pt-001','MRN-001','org-001','Margaret','Sullivan','1965-03-15','F','margaret.sullivan@email.com','305-555-0101',1,0)",
+            "INSERT OR IGNORE INTO patients (id, mrn, organization_id, first_name, last_name, date_of_birth, gender, email, phone, is_active, is_new_patient) VALUES ('pt-002','MRN-002','org-001','Robert','Chen','1978-07-22','M','robert.chen@email.com','305-555-0102',1,0)",
+            "INSERT OR IGNORE INTO patients (id, mrn, organization_id, first_name, last_name, date_of_birth, gender, email, phone, is_active, is_new_patient) VALUES ('pt-003','MRN-003','org-001','Elena','Rodriguez','1990-11-08','F','elena.rodriguez@email.com','305-555-0103',1,1)",
+            # Rooms (col is 'type' not 'room_type')
+            "INSERT OR IGNORE INTO rooms (id, organization_id, name, type, is_active) VALUES ('room-1','org-001','Exam Room 1','EXAM',1)",
+            # Appointments (no appt_date/duration/type_label/room cols in base schema)
+            f"INSERT OR IGNORE INTO appointments (id, organization_id, patient_id, patient_name, provider_id, provider_name, appointment_date, start_time, end_time, appointment_type, status, confirmation_code, room_id, created_at, updated_at) VALUES ('appt-001','org-001','pt-001','Margaret Sullivan','dr-chen','Dr. Sarah Chen','{today}','09:00','09:30','COMPREHENSIVE_EYE_EXAM','SCHEDULED','CONF-001','room-1',datetime('now'),datetime('now'))",
+            # Superbill
+            f"INSERT OR IGNORE INTO superbills (id, organization_id, patient_id, patient_name, service_date, provider_id, provider_name, total_charge, copay_amount, copay_collected, insurance_billed, patient_balance, adjustments, status, created_at, updated_at) VALUES ('sb-001','org-001','pt-001','Margaret Sullivan','{today}','dr-chen','Dr. Sarah Chen',350.00,30.00,30.00,252.00,0.00,68.00,'REVIEWED',datetime('now'),datetime('now'))",
+            # Frames (no frame_type/price cols; use retail, category)
+            "INSERT OR IGNORE INTO frames (id, organization_id, sku, brand, model, color, size, material, category, retail, quantity, status) VALUES ('frm-001','org-001','SKU-001','Ray-Ban','RB2140','Black','52','Acetate','EYEGLASSES',195.00,5,'IN_STOCK')",
+            "INSERT OR IGNORE INTO frames (id, organization_id, sku, brand, model, color, size, material, category, retail, quantity, status) VALUES ('frm-002','org-001','SKU-002','Oakley','OX8046','Gunmetal','54','Metal','EYEGLASSES',185.00,3,'IN_STOCK')",
+            "INSERT OR IGNORE INTO frames (id, organization_id, sku, brand, model, color, size, material, category, retail, quantity, status) VALUES ('frm-003','org-001','SKU-003','Warby Parker','Haskell','Whiskey Tortoise','49','Acetate','EYEGLASSES',145.00,7,'IN_STOCK')",
+            # Lenses (col is 'type' not 'lens_type'; no price col; use retail)
+            "INSERT OR IGNORE INTO lenses (id, organization_id, sku, name, type, material, coating, retail, status) VALUES ('lens-001','org-001','LENS-001','Single Vision Polycarbonate','SINGLE_VISION','POLYCARBONATE','AR',89.00,'IN_STOCK')",
+            "INSERT OR IGNORE INTO lenses (id, organization_id, sku, name, type, material, coating, retail, status) VALUES ('lens-002','org-001','LENS-002','Progressive Polycarbonate','PROGRESSIVE','POLYCARBONATE','AR',189.00,'IN_STOCK')",
+          ]
+
+          for stmt in stmts:
+            try:
+              conn.execute(stmt)
+              conn.commit()
+            except Exception as e:
+              print(f"  WARN seed: {e} ({stmt[:60]})")
+
+          counts = {
+            'providers': conn.execute("SELECT COUNT(*) FROM providers").fetchone()[0],
+            'patients':  conn.execute("SELECT COUNT(*) FROM patients").fetchone()[0],
+            'appointments': conn.execute("SELECT COUNT(*) FROM appointments").fetchone()[0],
+            'superbills': conn.execute("SELECT COUNT(*) FROM superbills").fetchone()[0],
+            'frames':    conn.execute("SELECT COUNT(*) FROM frames").fetchone()[0],
+            'lenses':    conn.execute("SELECT COUNT(*) FROM lenses").fetchone()[0],
+          }
+          print("Seed complete:", counts)
+          conn.close()
+          EOF
 
       - name: Run D1 validation script
         env:
