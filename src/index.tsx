@@ -55,7 +55,6 @@ import docRoutes         from './routes/documents'
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
   DB: D1Database
-  ASSETS: Fetcher
   OCULOFLOW_R2?: R2Bucket
   JWT_SECRET?: string
   OPENAI_API_KEY: string
@@ -86,67 +85,42 @@ app.use('/api/*', rateLimitMiddleware)
 app.use('/static/*', serveStatic({ root: './' }))
 
 // 25002500 Page routes via ASSETS binding 2500 resolves clean-URL 308/302 loop 2500250025002500250025002500250025002500250025002500250025002500
-const servePage = (file: string) => (c: any) => c.env.ASSETS.fetch(new Request(`https://assets.local/${file}`, c.req.raw))
 
 // ── Patient Intake Page ───────────────────────────────────────────────────────
-app.get('/intake', servePage('intake.html'))
 
 // ── Command Center Dashboard ──────────────────────────────────────────────────
-app.get('/dashboard', servePage('dashboard.html'))
 
 // ── Patient Registration & Insurance Verification ─────────────────────────────
-app.get('/patients', servePage('patients.html'))
 
 // ── Scheduling Engine ─────────────────────────────────────────────────────────
-app.get('/schedule', servePage('schedule.html'))
 
 // ── Exam Record ───────────────────────────────────────────────────────────────
-app.get('/exam', servePage('exam.html'))
-app.get('/exam/:id', servePage('exam.html'))
 
 // ── Billing & Claims ─────────────────────────────────────────────────────────
-app.get('/billing', servePage('billing.html'))
 
 // ── Reports & Analytics ───────────────────────────────────────────────────
-app.get('/reports', servePage('reports.html'))
 
 // ── Optical Dispensary ───────────────────────────────────────────────────────
-app.get('/optical', servePage('optical.html'))
 
 // ── Patient Portal ────────────────────────────────────────────────────────────
-app.get('/portal', servePage('portal.html'))
 
 // ── Clinical Messaging & Task Board ──────────────────────────────────────────
-app.get('/messaging', servePage('messaging.html'))
 
 // ── Reminders & Communications ────────────────────────────────────────────────
-app.get('/reminders', servePage('reminders.html'))
 
 // ── Provider Scorecards & Benchmarking ───────────────────────────────────────
-app.get('/scorecards', servePage('scorecards.html'))
 
 // ── Telehealth / Async Video Visit ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── ───────────────────────────────────────────
-app.get('/telehealth', servePage('telehealth.html'))
 
 // ── E-Prescribing & PDMP ─────────────────────────────────────────────────────
-app.get('/erx', servePage('erx.html'))
 
 // ── AI Clinical Decision Support ─────────────────────────────────────────────
-app.get('/ai', servePage('ai.html'))
 
 // ── Prior Authorization ───────────────────────────────────────────────────────
-app.get('/priorauth', servePage('priorauth.html'))
 
 // ── Revenue Cycle Management ─────────────────────────────────────────────────
-app.get('/rcm', servePage('rcm.html'))
 
 // ── Staff Login ───────────────────────────────────────────────────────────────
-app.get('/login',      servePage('login.html'))
-app.get('/mfa-verify', servePage('mfa-verify.html'))
-app.get('/mfa-setup',  servePage('mfa-setup.html'))
-app.get('/engagement', servePage('engagement.html'))
-app.get('/analytics',  servePage('analytics.html'))
-app.get('/audit',      servePage('audit.html'))
 
 // ── API Routes ────────────────────────────────────────────────────────────────
 // Auth routes — public (login/logout/refresh) + self-protected (/me, /users)

@@ -1,1 +1,31 @@
-{"version":1,"include":["/*"],"exclude":["/ai.html","/analytics.html","/audit.html","/billing.html","/dashboard.html","/engagement.html","/erx.html","/exam.html","/intake.html","/login.html","/messaging.html","/mfa-setup.html","/mfa-verify.html","/optical.html","/patients.html","/portal.html","/priorauth.html","/rcm.html","/reminders.html","/reports.html","/schedule.html","/scorecards.html","/static/*","/telehealth.html"]}
+{
+  "version": 1,
+  "include": ["/*"],
+  "exclude": [
+    "/",
+    "/ai", "/ai.html",
+    "/analytics", "/analytics.html",
+    "/audit", "/audit.html",
+    "/billing", "/billing.html",
+    "/dashboard", "/dashboard.html",
+    "/engagement", "/engagement.html",
+    "/erx", "/erx.html",
+    "/exam", "/exam.html",
+    "/intake", "/intake.html",
+    "/login", "/login.html",
+    "/messaging", "/messaging.html",
+    "/mfa-setup", "/mfa-setup.html",
+    "/mfa-verify", "/mfa-verify.html",
+    "/optical", "/optical.html",
+    "/patients", "/patients.html",
+    "/portal", "/portal.html",
+    "/priorauth", "/priorauth.html",
+    "/rcm", "/rcm.html",
+    "/reminders", "/reminders.html",
+    "/reports", "/reports.html",
+    "/schedule", "/schedule.html",
+    "/scorecards", "/scorecards.html",
+    "/static/*",
+    "/telehealth", "/telehealth.html"
+  ]
+}
