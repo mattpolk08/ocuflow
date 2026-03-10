@@ -55,6 +55,7 @@ import docRoutes         from './routes/documents'
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
   DB: D1Database
+  ASSETS: Fetcher
   OCULOFLOW_R2?: R2Bucket
   JWT_SECRET?: string
   OPENAI_API_KEY: string
@@ -84,65 +85,68 @@ app.use('/api/*', rateLimitMiddleware)
 // ── Static Assets ─────────────────────────────────────────────────────────────
 app.use('/static/*', serveStatic({ root: './' }))
 
+// 25002500 Page routes via ASSETS binding 2500 resolves clean-URL 308/302 loop 2500250025002500250025002500250025002500250025002500250025002500
+const servePage = (file: string) => (c: any) => c.env.ASSETS.fetch(new Request(`https://assets.local/${file}`, c.req.raw))
+
 // ── Patient Intake Page ───────────────────────────────────────────────────────
-app.get('/intake', (c) => c.redirect("/intake.html"))
+app.get('/intake', servePage('intake.html'))
 
 // ── Command Center Dashboard ──────────────────────────────────────────────────
-app.get('/dashboard', (c) => c.redirect("/dashboard.html"))
+app.get('/dashboard', servePage('dashboard.html'))
 
 // ── Patient Registration & Insurance Verification ─────────────────────────────
-app.get('/patients', (c) => c.redirect("/patients.html"))
+app.get('/patients', servePage('patients.html'))
 
 // ── Scheduling Engine ─────────────────────────────────────────────────────────
-app.get('/schedule', (c) => c.redirect("/schedule.html"))
+app.get('/schedule', servePage('schedule.html'))
 
 // ── Exam Record ───────────────────────────────────────────────────────────────
-app.get('/exam', (c) => c.redirect("/exam.html"))
-app.get('/exam/:id', (c) => c.redirect("/exam.html"))
+app.get('/exam', servePage('exam.html'))
+app.get('/exam/:id', servePage('exam.html'))
 
 // ── Billing & Claims ─────────────────────────────────────────────────────────
-app.get('/billing', (c) => c.redirect("/billing.html"))
+app.get('/billing', servePage('billing.html'))
 
 // ── Reports & Analytics ───────────────────────────────────────────────────
-app.get('/reports', (c) => c.redirect("/reports.html"))
+app.get('/reports', servePage('reports.html'))
 
 // ── Optical Dispensary ───────────────────────────────────────────────────────
-app.get('/optical', (c) => c.redirect("/optical.html"))
+app.get('/optical', servePage('optical.html'))
 
 // ── Patient Portal ────────────────────────────────────────────────────────────
-app.get('/portal', (c) => c.redirect("/portal.html"))
+app.get('/portal', servePage('portal.html'))
 
 // ── Clinical Messaging & Task Board ──────────────────────────────────────────
-app.get('/messaging', (c) => c.redirect("/messaging.html"))
+app.get('/messaging', servePage('messaging.html'))
 
 // ── Reminders & Communications ────────────────────────────────────────────────
-app.get('/reminders', (c) => c.redirect("/reminders.html"))
+app.get('/reminders', servePage('reminders.html'))
 
 // ── Provider Scorecards & Benchmarking ───────────────────────────────────────
-app.get('/scorecards', (c) => c.redirect("/scorecards.html"))
+app.get('/scorecards', servePage('scorecards.html'))
 
 // ── Telehealth / Async Video Visit ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── ───────────────────────────────────────────
-app.get('/telehealth', (c) => c.redirect("/telehealth.html"))
+app.get('/telehealth', servePage('telehealth.html'))
 
 // ── E-Prescribing & PDMP ─────────────────────────────────────────────────────
-app.get('/erx', (c) => c.redirect("/erx.html"))
+app.get('/erx', servePage('erx.html'))
 
 // ── AI Clinical Decision Support ─────────────────────────────────────────────
-app.get('/ai', (c) => c.redirect("/ai.html"))
+app.get('/ai', servePage('ai.html'))
 
 // ── Prior Authorization ───────────────────────────────────────────────────────
-app.get('/priorauth', (c) => c.redirect("/priorauth.html"))
+app.get('/priorauth', servePage('priorauth.html'))
 
 // ── Revenue Cycle Management ─────────────────────────────────────────────────
-app.get('/rcm', (c) => c.redirect("/rcm.html"))
+app.get('/rcm', servePage('rcm.html'))
 
 // ── Staff Login ───────────────────────────────────────────────────────────────
-app.get('/login',      (c) => c.redirect("/login.html"))
-app.get('/mfa-verify', (c) => c.redirect("/mfa-verify.html"))
-app.get('/mfa-setup',  (c) => c.redirect("/mfa-setup.html"))
-app.get('/engagement', (c) => c.redirect("/engagement.html"))
-app.get('/analytics',  (c) => c.redirect("/analytics.html"))
-app.get('/audit',      (c) => c.redirect("/audit.html"))
+app.get('/login',      servePage('login.html'))
+app.get('/mfa-verify', servePage('mfa-verify.html'))
+app.get('/mfa-setup',  servePage('mfa-setup.html'))
+app.get('/engagement', servePage('engagement.html'))
+app.get('/analytics',  servePage('analytics.html'))
+app.get('/audit',      servePage('audit.html'))
 
 // ── API Routes ────────────────────────────────────────────────────────────────
 // Auth routes — public (login/logout/refresh) + self-protected (/me, /users)
