@@ -31,7 +31,7 @@ INSERT OR IGNORE INTO optical_orders
    subtotal, discount, insurance_benefit, tax_amount,
    total_charge, deposit_paid, balance_due,
    special_instructions, internal_notes,
-   estimated_ready, received_at,
+   estimated_ready,
    created_at, updated_at)
 VALUES
   ('ord-001', 'org-001', 'pt-001', 'Margaret Sullivan', 'rx-001',
@@ -44,7 +44,7 @@ VALUES
    247.00, 0.00, 0.00, 0.00,
    315.00, 150.00, 165.00,
    'Rush order', NULL,
-   '2026-02-16', '2026-02-15T14:00:00Z',
+   '2026-02-16',
    datetime('now'), datetime('now'));
 
 -- ── Superbill for pt-001 ──────────────────────────────────────────────────────

@@ -185,13 +185,17 @@ export async function seedClinicalDemoData(db: D1Database): Promise<{ rx: boolea
   }
 
   // Optical order for pt-001
+  // Self-heal: ensure provider_id / provider_name columns exist (added post-migration)
+  try { await dbRun(db, 'ALTER TABLE optical_orders ADD COLUMN provider_id TEXT', []) } catch (_) {}
+  try { await dbRun(db, 'ALTER TABLE optical_orders ADD COLUMN provider_name TEXT', []) } catch (_) {}
+
   const ordExists = await dbGet<{ n: number }>(db, "SELECT COUNT(*) as n FROM optical_orders WHERE patient_id = 'pt-001'")
   if (ordExists && ordExists.n > 0) {
     results.order = true
   } else {
     try {
       await dbRun(db, `INSERT OR IGNORE INTO optical_orders
-        (id, organization_id, patient_id, patient_name, provider_id, rx_id,
+        (id, organization_id, patient_id, patient_name, provider_id, provider_name, rx_id,
          order_number, order_type, status,
          frame_id, frame_sku, frame_brand, frame_model, frame_color,
          lens_id, lens_sku, lens_name, lens_type,
@@ -202,7 +206,7 @@ export async function seedClinicalDemoData(db: D1Database): Promise<{ rx: boolea
          total_charge, deposit_paid, balance_due,
          special_instructions, created_at, updated_at)
         VALUES
-        ('ord-001','org-001','pt-001','Margaret Sullivan','dr-chen','rx-001',
+        ('ord-001','org-001','pt-001','Margaret Sullivan','dr-chen','Dr. Emily Chen','rx-001',
          'OPT-260310-0001','EYEGLASSES','READY_FOR_PICKUP',
          'frm-001','MJ-WESTSIDE-MB','Maui Jim','Westside','Matte Black 52-18',
          'len-001','HI-IDX-167-AR','Progressive Hi-Index 1.67 AR Premium','PROGRESSIVE',
@@ -214,7 +218,11 @@ export async function seedClinicalDemoData(db: D1Database): Promise<{ rx: boolea
          'Rush order','${ts}','${ts}')`,
         [])
       results.order = true
-    } catch (_) { results.order = false }
+    } catch (e: any) {
+      // Surface the real error so it shows in the seed response
+      results.order = false
+      console.error('[seedClinicalDemoData] optical_orders INSERT failed:', e?.message || e)
+    }
   }
 
   // Superbill for pt-001
@@ -395,9 +403,9 @@ export async function createOrder(kv: KVNamespace, input: OrderCreateInput, db?:
     internalNotes: input.internalNotes, createdAt: ts, updatedAt: ts,
   }
   if (db) {
-    await dbRun(db, `INSERT INTO optical_orders (id, organization_id, patient_id, patient_name, rx_id, order_number, order_type, status, frame_id, frame_sku, frame_brand, frame_model, frame_color, lens_id, lens_sku, lens_name, lens_type, od_sphere, od_cylinder, od_axis, od_add, od_pd, os_sphere, os_cylinder, os_axis, os_add, os_pd, binocular_pd, coating, tint, subtotal, discount, insurance_benefit, tax_amount, total_charge, deposit_paid, balance_due, special_instructions, internal_notes, created_at, updated_at)
-      VALUES (?, 'org-001', ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, input.patientId, input.patientName || '', input.rxId || null, oNum,
+    await dbRun(db, `INSERT INTO optical_orders (id, organization_id, patient_id, patient_name, provider_id, rx_id, order_number, order_type, status, frame_id, frame_sku, frame_brand, frame_model, frame_color, lens_id, lens_sku, lens_name, lens_type, od_sphere, od_cylinder, od_axis, od_add, od_pd, os_sphere, os_cylinder, os_axis, os_add, os_pd, binocular_pd, coating, tint, subtotal, discount, insurance_benefit, tax_amount, total_charge, deposit_paid, balance_due, special_instructions, internal_notes, created_at, updated_at)
+      VALUES (?, 'org-001', ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, input.patientId, input.patientName || '', (input as any).providerId || null, input.rxId || null, oNum,
        input.orderType || 'GLASSES', input.frameId || null,
        input.frame?.sku || null, input.frame?.brand || null, input.frame?.model || null, input.frame?.color || null,
        input.lensId || null, input.lens?.sku || null, input.lens?.name || null, input.lens?.type || null,
