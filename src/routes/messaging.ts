@@ -15,7 +15,8 @@ import {
 import type { MessageCategory, MessagePriority, StaffRole, TaskCategory, TaskStatus, TaskPriority, RecallReason, RecallStatus } from '../types/messaging'
 import { requireRole } from '../middleware/auth'
 
-type Bindings = { OCULOFLOW_KV: KVNamespace }
+type Bindings = { OCULOFLOW_KV: KVNamespace
+  DB: D1Database }
 type Variables = { auth: import('../types/auth').AuthContext }
 type Resp     = { success: boolean; data?: unknown; message?: string; error?: string }
 
@@ -24,7 +25,7 @@ const messagingRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 // ── Health / seed ──────────────────────────────────────────────────────────────
 
 messagingRoutes.get('/ping', async (c) => {
-  await ensureMessagingSeed(c.env.OCULOFLOW_KV)
+  await ensureMessagingSeed(c.env.OCULOFLOW_KV, c.env.DB)
   return c.json<Resp>({ success: true, data: { status: 'ok', module: 'messaging' } })
 })
 
@@ -33,7 +34,7 @@ messagingRoutes.get('/ping', async (c) => {
 messagingRoutes.get('/dashboard', async (c) => {
   try {
     const staffId = c.req.query('staffId')
-    const data = await getMessagingDashboard(c.env.OCULOFLOW_KV, staffId)
+    const data = await getMessagingDashboard(c.env.OCULOFLOW_KV, staffId, c.env.DB)
     return c.json<Resp>({ success: true, data })
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
@@ -44,7 +45,7 @@ messagingRoutes.get('/dashboard', async (c) => {
 
 messagingRoutes.get('/staff', async (c) => {
   try {
-    const staff = await listStaff(c.env.OCULOFLOW_KV)
+    const staff = await listStaff(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<Resp>({ success: true, data: staff })
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
@@ -53,7 +54,7 @@ messagingRoutes.get('/staff', async (c) => {
 
 messagingRoutes.get('/staff/:id', async (c) => {
   try {
-    const member = await getStaffMember(c.env.OCULOFLOW_KV, c.req.param('id'))
+    const member = await getStaffMember(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
     if (!member) return c.json<Resp>({ success: false, error: 'Staff member not found' }, 404)
     return c.json<Resp>({ success: true, data: member })
   } catch (err) {
@@ -71,7 +72,7 @@ messagingRoutes.get('/threads', async (c) => {
       category,
       priority,
       archived: archived === 'true' ? true : archived === 'false' ? false : undefined,
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data: threads })
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
@@ -80,7 +81,7 @@ messagingRoutes.get('/threads', async (c) => {
 
 messagingRoutes.get('/threads/:id', async (c) => {
   try {
-    const thread = await getThread(c.env.OCULOFLOW_KV, c.req.param('id'))
+    const thread = await getThread(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
     if (!thread) return c.json<Resp>({ success: false, error: 'Thread not found' }, 404)
     return c.json<Resp>({ success: true, data: thread })
   } catch (err) {
@@ -90,7 +91,7 @@ messagingRoutes.get('/threads/:id', async (c) => {
 
 messagingRoutes.get('/threads/:id/messages', async (c) => {
   try {
-    const messages = await getThreadMessages(c.env.OCULOFLOW_KV, c.req.param('id'))
+    const messages = await getThreadMessages(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
     return c.json<Resp>({ success: true, data: messages })
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
@@ -104,7 +105,7 @@ messagingRoutes.post('/threads', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRON
     const missing = required.filter(k => !body[k])
     if (missing.length) return c.json<Resp>({ success: false, error: `Missing: ${missing.join(', ')}` }, 400)
 
-    const thread = await createThread(c.env.OCULOFLOW_KV, body)
+    const thread = await createThread(c.env.OCULOFLOW_KV, body, c.env.DB)
     return c.json<Resp>({ success: true, data: thread, message: 'Thread created' }, 201)
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
@@ -117,7 +118,7 @@ messagingRoutes.post('/threads/:id/reply', async (c) => {
     if (!body.senderId || !body.senderName || !body.senderRole || !body.body) {
       return c.json<Resp>({ success: false, error: 'senderId, senderName, senderRole, body are required' }, 400)
     }
-    const message = await replyToThread(c.env.OCULOFLOW_KV, c.req.param('id'), body)
+    const message = await replyToThread(c.env.OCULOFLOW_KV, c.req.param('id'), body, c.env.DB)
     return c.json<Resp>({ success: true, data: message }, 201)
   } catch (err) {
     const msg = String(err)
@@ -130,7 +131,7 @@ messagingRoutes.post('/threads/:id/read', async (c) => {
   try {
     const body = await c.req.json()
     if (!body.staffId) return c.json<Resp>({ success: false, error: 'staffId required' }, 400)
-    await markThreadRead(c.env.OCULOFLOW_KV, c.req.param('id'), body.staffId)
+    await markThreadRead(c.env.OCULOFLOW_KV, c.req.param('id'), body.staffId, c.env.DB)
     return c.json<Resp>({ success: true, message: 'Marked as read' })
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
@@ -140,7 +141,7 @@ messagingRoutes.post('/threads/:id/read', async (c) => {
 messagingRoutes.patch('/threads/:id/archive', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRONT_DESK'), async (c) => {
   try {
     const body = await c.req.json()
-    await archiveThread(c.env.OCULOFLOW_KV, c.req.param('id'), body.archived ?? true)
+    await archiveThread(c.env.OCULOFLOW_KV, c.req.param('id'), body.archived ?? true, c.env.DB)
     return c.json<Resp>({ success: true, message: `Thread ${body.archived ? 'archived' : 'unarchived'}` })
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
@@ -150,7 +151,7 @@ messagingRoutes.patch('/threads/:id/archive', requireRole('ADMIN', 'PROVIDER', '
 messagingRoutes.patch('/threads/:id/pin', async (c) => {
   try {
     const body = await c.req.json()
-    await pinThread(c.env.OCULOFLOW_KV, c.req.param('id'), body.pinned ?? true)
+    await pinThread(c.env.OCULOFLOW_KV, c.req.param('id'), body.pinned ?? true, c.env.DB)
     return c.json<Resp>({ success: true, message: `Thread ${body.pinned ? 'pinned' : 'unpinned'}` })
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
@@ -162,7 +163,7 @@ messagingRoutes.patch('/threads/:id/pin', async (c) => {
 messagingRoutes.get('/tasks', async (c) => {
   try {
     const { assignedToId, status, priority, category, patientId } = c.req.query()
-    const tasks = await listTasks(c.env.OCULOFLOW_KV, { assignedToId, status, priority, category, patientId })
+    const tasks = await listTasks(c.env.OCULOFLOW_KV, { assignedToId, status, priority, category, patientId }, c.env.DB)
     return c.json<Resp>({ success: true, data: tasks })
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
@@ -171,7 +172,7 @@ messagingRoutes.get('/tasks', async (c) => {
 
 messagingRoutes.get('/tasks/:id', async (c) => {
   try {
-    const task = await getTask(c.env.OCULOFLOW_KV, c.req.param('id'))
+    const task = await getTask(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
     if (!task) return c.json<Resp>({ success: false, error: 'Task not found' }, 404)
     return c.json<Resp>({ success: true, data: task })
   } catch (err) {
@@ -196,7 +197,7 @@ messagingRoutes.post('/tasks', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRONT_
       patientId: body.patientId, patientName: body.patientName,
       dueDate: body.dueDate, dueTime: body.dueTime,
       tags: body.tags ?? [],
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data: task, message: 'Task created' }, 201)
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
@@ -206,7 +207,7 @@ messagingRoutes.post('/tasks', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRONT_
 messagingRoutes.patch('/tasks/:id', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRONT_DESK'), async (c) => {
   try {
     const body = await c.req.json()
-    const task = await updateTask(c.env.OCULOFLOW_KV, c.req.param('id'), body)
+    const task = await updateTask(c.env.OCULOFLOW_KV, c.req.param('id'), body, c.env.DB)
     if (!task) return c.json<Resp>({ success: false, error: 'Task not found' }, 404)
     return c.json<Resp>({ success: true, data: task, message: 'Task updated' })
   } catch (err) {
@@ -220,7 +221,7 @@ messagingRoutes.post('/tasks/:id/comments', async (c) => {
     if (!body.authorId || !body.authorName || !body.body) {
       return c.json<Resp>({ success: false, error: 'authorId, authorName, body required' }, 400)
     }
-    const comment = await addTaskComment(c.env.OCULOFLOW_KV, c.req.param('id'), body)
+    const comment = await addTaskComment(c.env.OCULOFLOW_KV, c.req.param('id'), body, c.env.DB)
     if (!comment) return c.json<Resp>({ success: false, error: 'Task not found' }, 404)
     return c.json<Resp>({ success: true, data: comment }, 201)
   } catch (err) {
@@ -235,7 +236,7 @@ messagingRoutes.get('/recalls', async (c) => {
     const { status, assignedToId, overdueOnly } = c.req.query()
     const recalls = await listRecalls(c.env.OCULOFLOW_KV, {
       status, assignedToId, overdueOnly: overdueOnly === 'true'
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data: recalls })
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
@@ -252,7 +253,7 @@ messagingRoutes.post('/recalls', requireRole('ADMIN', 'FRONT_DESK', 'NURSE'), as
       ...body,
       status: (body.status ?? 'PENDING') as RecallStatus,
       reason: body.reason as RecallReason,
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data: recall, message: 'Recall created' }, 201)
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
@@ -262,7 +263,7 @@ messagingRoutes.post('/recalls', requireRole('ADMIN', 'FRONT_DESK', 'NURSE'), as
 messagingRoutes.patch('/recalls/:id', requireRole('ADMIN', 'FRONT_DESK', 'NURSE'), async (c) => {
   try {
     const body = await c.req.json()
-    const recall = await updateRecall(c.env.OCULOFLOW_KV, c.req.param('id'), body)
+    const recall = await updateRecall(c.env.OCULOFLOW_KV, c.req.param('id'), body, c.env.DB)
     if (!recall) return c.json<Resp>({ success: false, error: 'Recall not found' }, 404)
     return c.json<Resp>({ success: true, data: recall, message: 'Recall updated' })
   } catch (err) {

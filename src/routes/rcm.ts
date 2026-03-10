@@ -13,7 +13,8 @@ import {
   VALID_CLAIM_STATUSES, DENIAL_REASONS, PAYER_TYPES, PAYMENT_METHODS,
 } from '../lib/rcm';
 
-type Bindings = { OCULOFLOW_KV: KVNamespace };
+type Bindings = { OCULOFLOW_KV: KVNamespace
+  DB: D1Database };
 type Variables = { auth: import('../types/auth').AuthContext };
 const rcmRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -22,7 +23,7 @@ rcmRoutes.get('/ping', (c) => c.json<RCMResp>({ success: true, data: { pong: tru
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 rcmRoutes.get('/dashboard', async (c) => {
-  const stats = await getRCMDashboard(c.env.OCULOFLOW_KV);
+  const stats = await getRCMDashboard(c.env.OCULOFLOW_KV, c.env.DB);
   return c.json<RCMResp>({ success: true, data: stats });
 });
 
@@ -33,7 +34,7 @@ rcmRoutes.get('/claims', async (c) => {
     status: status || undefined,
     patientId: patientId || undefined,
     payerId: payerId || undefined,
-  });
+  }, c.env.DB);
   return c.json<RCMResp>({ success: true, data: claims, total: claims.length });
 });
 
@@ -43,18 +44,18 @@ rcmRoutes.post('/claims', requireRole('ADMIN', 'BILLING', 'PROVIDER'), async (c)
   if (!patientId || !patientName || !payerId || !payerName || !serviceDate) {
     return c.json<RCMResp>({ success: false, error: 'patientId, patientName, payerId, payerName, serviceDate are required' }, 400);
   }
-  const claim = await createClaim(c.env.OCULOFLOW_KV, body);
+  const claim = await createClaim(c.env.OCULOFLOW_KV, body, c.env.DB);
   return c.json<RCMResp>({ success: true, data: claim }, 201);
 });
 
 rcmRoutes.get('/claims/:id', async (c) => {
-  const claim = await getClaim(c.env.OCULOFLOW_KV, c.req.param('id'));
+  const claim = await getClaim(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB);
   if (!claim) return c.json<RCMResp>({ success: false, error: 'Claim not found' }, 404);
   return c.json<RCMResp>({ success: true, data: claim });
 });
 
 rcmRoutes.delete('/claims/:id', requireRole('ADMIN', 'BILLING'), async (c) => {
-  const deleted = await deleteClaim(c.env.OCULOFLOW_KV, c.req.param('id'));
+  const deleted = await deleteClaim(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB);
   if (!deleted) return c.json<RCMResp>({ success: false, error: 'Claim not found' }, 404);
   return c.json<RCMResp>({ success: true, data: { deleted: true } });
 });
@@ -68,7 +69,7 @@ rcmRoutes.patch('/claims/:id/status', requireRole('ADMIN', 'BILLING'), async (c)
   if (!VALID_CLAIM_STATUSES.includes(status)) {
     return c.json<RCMResp>({ success: false, error: `Invalid status. Valid: ${VALID_CLAIM_STATUSES.join(', ')}` }, 400);
   }
-  const claim = await updateClaimStatus(c.env.OCULOFLOW_KV, c.req.param('id'), status, userId);
+  const claim = await updateClaimStatus(c.env.OCULOFLOW_KV, c.req.param('id'), status, userId, c.env.DB);
   if (!claim) return c.json<RCMResp>({ success: false, error: 'Claim not found' }, 404);
   return c.json<RCMResp>({ success: true, data: claim });
 });
@@ -93,7 +94,7 @@ rcmRoutes.post('/claims/:id/payments', requireRole('ADMIN', 'BILLING'), async (c
     eftTraceNumber: body.eftTraceNumber,
     notes: body.notes,
     claimLines: body.claimLines ?? [],
-  });
+  }, c.env.DB);
   if (!claim) return c.json<RCMResp>({ success: false, error: 'Claim not found' }, 404);
   return c.json<RCMResp>({ success: true, data: claim }, 201);
 });
@@ -114,7 +115,7 @@ rcmRoutes.post('/claims/:id/denials', async (c) => {
     deniedDate: deniedDate ?? new Date().toISOString().slice(0, 10),
     claimLineIds: body.claimLineIds,
     appealDeadline: body.appealDeadline,
-  });
+  }, c.env.DB);
   if (!claim) return c.json<RCMResp>({ success: false, error: 'Claim not found' }, 404);
   return c.json<RCMResp>({ success: true, data: claim }, 201);
 });
@@ -129,14 +130,14 @@ rcmRoutes.post('/claims/:id/notes', async (c) => {
   const claim = await addClaimNote(c.env.OCULOFLOW_KV, c.req.param('id'), {
     authorId, authorName, content,
     isInternal: body.isInternal ?? true,
-  });
+  }, c.env.DB);
   if (!claim) return c.json<RCMResp>({ success: false, error: 'Claim not found' }, 404);
   return c.json<RCMResp>({ success: true, data: claim }, 201);
 });
 
 // ─── ERAs / Remittance ────────────────────────────────────────────────────────
 rcmRoutes.get('/eras', async (c) => {
-  const eras = await listERAs(c.env.OCULOFLOW_KV);
+  const eras = await listERAs(c.env.OCULOFLOW_KV, c.env.DB);
   return c.json<RCMResp>({ success: true, data: eras, total: eras.length });
 });
 
@@ -146,12 +147,12 @@ rcmRoutes.post('/eras', requireRole('ADMIN', 'BILLING'), async (c) => {
   if (!payerId || !payerName || totalPayment === undefined) {
     return c.json<RCMResp>({ success: false, error: 'payerId, payerName, totalPayment are required' }, 400);
   }
-  const era = await createERA(c.env.OCULOFLOW_KV, { ...body, claimIds: claimIds ?? [] });
+  const era = await createERA(c.env.OCULOFLOW_KV, { ...body, claimIds: claimIds ?? [] }, c.env.DB);
   return c.json<RCMResp>({ success: true, data: era }, 201);
 });
 
 rcmRoutes.get('/eras/:id', async (c) => {
-  const era = await getERA(c.env.OCULOFLOW_KV, c.req.param('id'));
+  const era = await getERA(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB);
   if (!era) return c.json<RCMResp>({ success: false, error: 'ERA not found' }, 404);
   return c.json<RCMResp>({ success: true, data: era });
 });
@@ -159,7 +160,7 @@ rcmRoutes.get('/eras/:id', async (c) => {
 // ─── Patient Statements ───────────────────────────────────────────────────────
 rcmRoutes.get('/statements', async (c) => {
   const { patientId } = c.req.query() as Record<string, string>;
-  const stmts = await listStatements(c.env.OCULOFLOW_KV, patientId || undefined);
+  const stmts = await listStatements(c.env.OCULOFLOW_KV, patientId || undefined, c.env.DB);
   return c.json<RCMResp>({ success: true, data: stmts, total: stmts.length });
 });
 
@@ -169,12 +170,12 @@ rcmRoutes.post('/statements', requireRole('ADMIN', 'BILLING'), async (c) => {
   if (!patientId || !patientName || totalDue === undefined || !dueDate) {
     return c.json<RCMResp>({ success: false, error: 'patientId, patientName, totalDue, dueDate are required' }, 400);
   }
-  const stmt = await createStatement(c.env.OCULOFLOW_KV, body);
+  const stmt = await createStatement(c.env.OCULOFLOW_KV, body, c.env.DB);
   return c.json<RCMResp>({ success: true, data: stmt }, 201);
 });
 
 rcmRoutes.get('/statements/:id', async (c) => {
-  const stmt = await getStatement(c.env.OCULOFLOW_KV, c.req.param('id'));
+  const stmt = await getStatement(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB);
   if (!stmt) return c.json<RCMResp>({ success: false, error: 'Statement not found' }, 404);
   return c.json<RCMResp>({ success: true, data: stmt });
 });
@@ -182,7 +183,7 @@ rcmRoutes.get('/statements/:id', async (c) => {
 // ─── Payment Plans ────────────────────────────────────────────────────────────
 rcmRoutes.get('/payment-plans', async (c) => {
   const { patientId } = c.req.query() as Record<string, string>;
-  const plans = await listPaymentPlans(c.env.OCULOFLOW_KV, patientId || undefined);
+  const plans = await listPaymentPlans(c.env.OCULOFLOW_KV, patientId || undefined, c.env.DB);
   return c.json<RCMResp>({ success: true, data: plans, total: plans.length });
 });
 
@@ -192,12 +193,12 @@ rcmRoutes.post('/payment-plans', requireRole('ADMIN', 'BILLING', 'FRONT_DESK'), 
   if (!patientId || !patientName || totalBalance === undefined || !monthlyPayment) {
     return c.json<RCMResp>({ success: false, error: 'patientId, patientName, totalBalance, monthlyPayment are required' }, 400);
   }
-  const plan = await createPaymentPlan(c.env.OCULOFLOW_KV, body);
+  const plan = await createPaymentPlan(c.env.OCULOFLOW_KV, body, c.env.DB);
   return c.json<RCMResp>({ success: true, data: plan }, 201);
 });
 
 rcmRoutes.get('/payment-plans/:id', async (c) => {
-  const plan = await getPaymentPlan(c.env.OCULOFLOW_KV, c.req.param('id'));
+  const plan = await getPaymentPlan(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB);
   if (!plan) return c.json<RCMResp>({ success: false, error: 'Payment plan not found' }, 404);
   return c.json<RCMResp>({ success: true, data: plan });
 });
