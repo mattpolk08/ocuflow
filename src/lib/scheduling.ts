@@ -177,9 +177,9 @@ export async function ensureScheduleSeed(kv: KVNamespace, db?: D1Database): Prom
 
   // Seed providers
   for (const p of PROVIDERS) {
-    await dbRun(db, `INSERT OR IGNORE INTO providers (id, organization_id, first_name, last_name, credentials, specialty, color, npi, is_active, work_days, start_time, end_time, lunch_start, lunch_end, slot_duration, max_patients_per_day)
-      VALUES (?, 'org-001', ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
-      [p.id, p.firstName, p.lastName, p.credentials, p.specialty, p.color, p.npi,
+    await dbRun(db, `INSERT OR IGNORE INTO providers (id, organization_id, first_name, last_name, display_name, credentials, specialty, color, npi, is_active, work_days, start_time, end_time, lunch_start, lunch_end, slot_duration, max_patients_per_day)
+      VALUES (?, 'org-001', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
+      [p.id, p.firstName, p.lastName, p.name, p.credentials, p.specialty, p.color, p.npi,
        JSON.stringify(p.workDays), p.startTime, p.endTime, p.lunchStart || null, p.lunchEnd || null,
        p.slotDuration, p.maxPatientsPerDay])
   }
@@ -192,17 +192,17 @@ export async function ensureScheduleSeed(kv: KVNamespace, db?: D1Database): Prom
 
   const today = toDateStr(new Date())
   const appts = [
-    { id: 'appt-001', patientId: 'pt-001', patientName: 'Margaret Sullivan', providerId: 'dr-chen', type: 'COMPREHENSIVE_EXAM', time: '09:00', end: '09:20', room: 'exam-1' },
-    { id: 'appt-002', patientId: 'pt-002', patientName: 'James Rivera', providerId: 'dr-patel', type: 'FOLLOW_UP', time: '10:00', end: '10:20', room: 'exam-2' },
+    { id: 'appt-001', patientId: 'pt-001', patientName: 'Margaret Sullivan', providerId: 'dr-chen', type: 'COMPREHENSIVE_EYE_EXAM', typeLabel: 'Comprehensive Eye Exam', time: '09:00', end: '09:20', room: 'exam-1' },
+    { id: 'appt-002', patientId: 'pt-002', patientName: 'James Rivera', providerId: 'dr-patel', type: 'FOLLOWUP', typeLabel: 'Follow Up', time: '10:00', end: '10:20', room: 'exam-2' },
   ]
 
   for (const a of appts) {
     await dbRun(db, `INSERT OR IGNORE INTO appointments
-      (id, organization_id, patient_id, patient_name, provider_id, provider_name, appointment_date, start_time, end_time, appointment_type, status, room_id, confirmation_code, created_at, updated_at)
-      VALUES (?, 'org-001', ?, ?, ?, ?, ?, ?, ?, ?, 'SCHEDULED', ?, ?, ?, ?)`,
+      (id, organization_id, patient_id, patient_name, provider_id, provider_name, appointment_date, appt_date, start_time, end_time, appointment_type, type_label, status, room, confirmation_code, created_at, updated_at)
+      VALUES (?, 'org-001', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SCHEDULED', ?, ?, ?, ?)`,
       [a.id, a.patientId, a.patientName, a.providerId,
        PROVIDERS.find(p => p.id === a.providerId)?.name || '',
-       today, a.time, a.end, a.type, a.room, confirmationCode(), now(), now()])
+       today, today, a.time, a.end, a.type, a.typeLabel, a.room, confirmationCode(), now(), now()])
   }
 }
 
@@ -333,7 +333,7 @@ export async function getAvailableSlots(kv: KVNamespace, date: string, providerI
 // ── Waitlist ──────────────────────────────────────────────────────────────
 export async function getWaitlist(kv: KVNamespace, db?: D1Database): Promise<WaitlistEntry[]> {
   if (db) {
-    const rows = await dbAll<WaitlistEntry>(db, `SELECT * FROM waitlist WHERE organization_id = 'org-001' ORDER BY created_at DESC`)
+    const rows = await dbAll<WaitlistEntry>(db, `SELECT * FROM waitlist WHERE organization_id = 'org-001' ORDER BY COALESCE(created_at, added_at) DESC`)
     return rows
   }
   return []
@@ -344,12 +344,14 @@ export async function addToWaitlist(kv: KVNamespace, entry: Omit<WaitlistEntry, 
   const ts = now()
   const record: WaitlistEntry = { ...entry, id, createdAt: ts, updatedAt: ts }
   if (db) {
-    await dbRun(db, `INSERT INTO waitlist (id, organization_id, patient_id, patient_name, preferred_dates, preferred_times, preferred_provider_id, preferred_provider_name, urgency, status, notes, created_at, updated_at)
-      VALUES (?, 'org-001', ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)`,
+    const apptType = (entry as any).appointmentType || (entry as any).appointment_type || 'FOLLOWUP'
+    const typeLabel = (entry as any).typeLabel || (entry as any).type_label || apptType
+    await dbRun(db, `INSERT INTO waitlist (id, organization_id, patient_id, patient_name, appointment_type, type_label, preferred_dates, preferred_times, notes, priority, status, added_at)
+      VALUES (?, 'org-001', ?, ?, ?, ?, ?, ?, ?, ?, 'WAITING', ?)`,
       [id, entry.patientId, entry.patientName || null,
+       apptType, typeLabel,
        toJson(entry.preferredDates), toJson(entry.preferredTimes),
-       entry.preferredProviderId || null, entry.preferredProviderName || null,
-       entry.urgency || null, entry.notes || null, ts, ts])
+       entry.notes || null, (entry as any).priority || 'NORMAL', ts])
   }
   return record
 }

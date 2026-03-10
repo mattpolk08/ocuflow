@@ -75,7 +75,7 @@ scheduleRoutes.get('/week', async (c) => {
 
   try {
     await ensureScheduleSeed(c.env.OCULOFLOW_KV, c.env.DB)
-    const schedule = await getScheduleRange(c.env.OCULOFLOW_KV, c.env.DB, startDate, Math.min(days, 14))
+    const schedule = await getScheduleRange(c.env.OCULOFLOW_KV, startDate, Math.min(days, 14), c.env.DB)
     return c.json<ApiResponse>({ success: true, data: { schedule, startDate } })
   } catch (err) {
     console.error('Week schedule error:', err)
@@ -89,7 +89,7 @@ scheduleRoutes.get('/day', async (c) => {
 
   try {
     await ensureScheduleSeed(c.env.OCULOFLOW_KV, c.env.DB)
-    const appts = await getAppointmentsByDate(c.env.OCULOFLOW_KV, c.env.DB, date)
+    const appts = await getAppointmentsByDate(c.env.OCULOFLOW_KV, date, c.env.DB)
 
     // Compute KPIs for the day
     const total     = appts.filter(a => a.status !== 'CANCELLED').length
@@ -123,7 +123,7 @@ scheduleRoutes.get('/slots', async (c) => {
 
   try {
     await ensureScheduleSeed(c.env.OCULOFLOW_KV, c.env.DB)
-    const slots = await getAvailableSlots(c.env.OCULOFLOW_KV, c.env.DB, date, providerId)
+    const slots = await getAvailableSlots(c.env.OCULOFLOW_KV, date, providerId, c.env.DB)
     return c.json<ApiResponse>({
       success: true,
       data: {
@@ -143,7 +143,7 @@ scheduleRoutes.get('/appointment/:id', async (c) => {
   const id = c.req.param('id')
   try {
     await ensureScheduleSeed(c.env.OCULOFLOW_KV, c.env.DB)
-    const appt = await getAppointment(c.env.OCULOFLOW_KV, c.env.DB, id)
+    const appt = await getAppointment(c.env.OCULOFLOW_KV, id, c.env.DB)
     if (!appt) return c.json<ApiResponse>({ success: false, error: 'Appointment not found' }, 404)
     return c.json<ApiResponse>({ success: true, data: appt })
   } catch (err) {
@@ -166,13 +166,13 @@ scheduleRoutes.post('/appointment', requireRole('ADMIN', 'PROVIDER', 'FRONT_DESK
 
   // Verify slot is still available
   try {
-    const slots = await getAvailableSlots(c.env.OCULOFLOW_KV, c.env.DB, body.date, body.providerId)
+    const slots = await getAvailableSlots(c.env.OCULOFLOW_KV, body.date, body.providerId, c.env.DB)
     const slot  = slots.find(s => s.startTime === body.startTime)
     if (slot && !slot.isAvailable) {
       return c.json<ApiResponse>({ success: false, error: 'This slot is no longer available' }, 409)
     }
 
-    const appt = await createAppointment(c.env.OCULOFLOW_KV, c.env.DB, body)
+    const appt = await createAppointment(c.env.OCULOFLOW_KV, body, c.env.DB)
     return c.json<ApiResponse>({
       success: true,
       data: appt,
@@ -196,7 +196,7 @@ scheduleRoutes.put('/appointment/:id', requireRole('ADMIN', 'PROVIDER', 'FRONT_D
   delete updates.confirmationCode
 
   try {
-    const updated = await updateAppointment(c.env.OCULOFLOW_KV, c.env.DB, id, updates)
+    const updated = await updateAppointment(c.env.OCULOFLOW_KV, id, updates, c.env.DB)
     if (!updated) return c.json<ApiResponse>({ success: false, error: 'Appointment not found' }, 404)
     return c.json<ApiResponse>({ success: true, data: updated, message: 'Appointment updated' })
   } catch (err) {
@@ -221,7 +221,7 @@ scheduleRoutes.post('/appointment/:id/status', requireRole('ADMIN', 'PROVIDER', 
     const extras: any = {}
     if (body.room)  extras.room  = body.room
     if (body.notes) extras.notes = body.notes
-    const updated = await updateAppointmentStatus(c.env.OCULOFLOW_KV, c.env.DB, id, body.status, extras)
+    const updated = await updateAppointmentStatus(c.env.OCULOFLOW_KV, id, body.status, c.env.DB)
     if (!updated) return c.json<ApiResponse>({ success: false, error: 'Appointment not found' }, 404)
     return c.json<ApiResponse>({
       success: true,
@@ -239,7 +239,7 @@ scheduleRoutes.delete('/appointment/:id', requireRole('ADMIN', 'FRONT_DESK'), as
   const reason = c.req.query('reason')
 
   try {
-    const cancelled = await cancelAppointment(c.env.OCULOFLOW_KV, c.env.DB, id, reason)
+    const cancelled = await cancelAppointment(c.env.OCULOFLOW_KV, id, c.env.DB)
     if (!cancelled) return c.json<ApiResponse>({ success: false, error: 'Appointment not found' }, 404)
     return c.json<ApiResponse>({ success: true, data: cancelled, message: 'Appointment cancelled' })
   } catch (err) {
@@ -268,11 +268,11 @@ scheduleRoutes.post('/waitlist', requireRole('ADMIN', 'FRONT_DESK', 'PROVIDER'),
   if (!typeConf) return c.json<ApiResponse>({ success: false, error: 'Invalid appointment type' }, 400)
 
   try {
-    const entry = await addToWaitlist(c.env.OCULOFLOW_KV, c.env.DB, {
+    const entry = await addToWaitlist(c.env.OCULOFLOW_KV, {
       ...body,
       typeLabel: typeConf.label,
       priority:  body.priority || 'NORMAL',
-    })
+    }, c.env.DB)
     return c.json<ApiResponse>({ success: true, data: entry, message: 'Added to waitlist' }, 201)
   } catch (err) {
     return c.json<ApiResponse>({ success: false, error: 'Could not add to waitlist' }, 500)
@@ -283,7 +283,7 @@ scheduleRoutes.post('/waitlist', requireRole('ADMIN', 'FRONT_DESK', 'PROVIDER'),
 scheduleRoutes.delete('/waitlist/:id', requireRole('ADMIN', 'FRONT_DESK'), async (c) => {
   const id = c.req.param('id')
   try {
-    const ok = await removeFromWaitlist(c.env.OCULOFLOW_KV, c.env.DB, id)
+    const ok = await removeFromWaitlist(c.env.OCULOFLOW_KV, id, c.env.DB)
     if (!ok) return c.json<ApiResponse>({ success: false, error: 'Entry not found' }, 404)
     return c.json<ApiResponse>({ success: true, message: 'Removed from waitlist' })
   } catch (err) {

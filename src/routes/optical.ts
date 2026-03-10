@@ -72,7 +72,7 @@ opticalRoutes.get('/frames', async (c) => {
 })
 
 opticalRoutes.get('/frames/:id', async (c) => {
-  const frame = await getFrame(c.env.OCULOFLOW_KV, c.env.DB, c.req.param('id'))
+  const frame = await getFrame(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
   if (!frame) return c.json<ApiResp>({ success: false, error: 'Frame not found' }, 404)
   return c.json<ApiResp>({ success: true, data: frame })
 })
@@ -83,7 +83,7 @@ opticalRoutes.post('/frames', async (c) => {
     if (!body.brand || !body.model || !body.sku) {
       return c.json<ApiResp>({ success: false, error: 'brand, model, sku are required' }, 400)
     }
-    const frame = await createFrame(c.env.OCULOFLOW_KV, c.env.DB, body)
+    const frame = await createFrame(c.env.OCULOFLOW_KV, body, c.env.DB)
     return c.json<ApiResp>({ success: true, data: frame, message: 'Frame added to inventory' }, 201)
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
@@ -94,7 +94,7 @@ opticalRoutes.patch('/frames/:id', async (c) => {
   try {
     const id      = c.req.param('id')
     const updates = await c.req.json()
-    const frame   = await updateFrame(c.env.OCULOFLOW_KV, c.env.DB, id, updates)
+    const frame   = await updateFrame(c.env.OCULOFLOW_KV, id, updates, c.env.DB)
     if (!frame) return c.json<ApiResp>({ success: false, error: 'Frame not found' }, 404)
     return c.json<ApiResp>({ success: true, data: frame, message: 'Frame updated' })
   } catch (err) {
@@ -115,7 +115,7 @@ opticalRoutes.get('/lenses', async (c) => {
 })
 
 opticalRoutes.get('/lenses/:id', async (c) => {
-  const lens = await getLens(c.env.OCULOFLOW_KV, c.env.DB, c.req.param('id'))
+  const lens = await getLens(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
   if (!lens) return c.json<ApiResp>({ success: false, error: 'Lens not found' }, 404)
   return c.json<ApiResp>({ success: true, data: lens })
 })
@@ -135,7 +135,7 @@ opticalRoutes.get('/contact-lenses', async (c) => {
 // ── Prescriptions ─────────────────────────────────────────────────────────────
 opticalRoutes.get('/rx/patient/:pid', async (c) => {
   try {
-    const rxList = await listRxForPatient(c.env.OCULOFLOW_KV, c.env.DB, c.req.param('pid'))
+    const rxList = await listRxForPatient(c.env.OCULOFLOW_KV, c.req.param('pid'), c.env.DB)
     return c.json<ApiResp>({ success: true, data: rxList })
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
@@ -143,7 +143,7 @@ opticalRoutes.get('/rx/patient/:pid', async (c) => {
 })
 
 opticalRoutes.get('/rx/:id', async (c) => {
-  const rx = await getRx(c.env.OCULOFLOW_KV, c.env.DB, c.req.param('id'))
+  const rx = await getRx(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
   if (!rx) return c.json<ApiResp>({ success: false, error: 'Rx not found' }, 404)
   return c.json<ApiResp>({ success: true, data: rx })
 })
@@ -154,7 +154,7 @@ opticalRoutes.post('/rx', async (c) => {
     if (!body.patientId || !body.patientName || !body.providerId || !body.rxDate) {
       return c.json<ApiResp>({ success: false, error: 'patientId, patientName, providerId, rxDate required' }, 400)
     }
-    const rx = await createRx(c.env.OCULOFLOW_KV, c.env.DB, body)
+    const rx = await createRx(c.env.OCULOFLOW_KV, body, c.env.DB)
     return c.json<ApiResp>({ success: true, data: rx, message: 'Prescription saved' }, 201)
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
@@ -176,7 +176,7 @@ opticalRoutes.get('/orders', async (c) => {
 })
 
 opticalRoutes.get('/orders/:id', async (c) => {
-  const order = await getOrder(c.env.OCULOFLOW_KV, c.env.DB, c.req.param('id'))
+  const order = await getOrder(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
   if (!order) return c.json<ApiResp>({ success: false, error: 'Order not found' }, 404)
   return c.json<ApiResp>({ success: true, data: order })
 })
@@ -187,7 +187,7 @@ opticalRoutes.post('/orders', async (c) => {
     if (!body.patientId || !body.patientName || !body.providerId || !body.orderType || !body.lineItems?.length) {
       return c.json<ApiResp>({ success: false, error: 'patientId, patientName, providerId, orderType, lineItems required' }, 400)
     }
-    const order = await createOrder(c.env.OCULOFLOW_KV, c.env.DB, body)
+    const order = await createOrder(c.env.OCULOFLOW_KV, body, c.env.DB)
     return c.json<ApiResp>({ success: true, data: order, message: `Order ${order.orderNumber} created` }, 201)
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
@@ -200,7 +200,7 @@ opticalRoutes.post('/orders/:id/status', async (c) => {
     const { status, by, note } = await c.req.json<{ status: OrderStatus; by?: string; note?: string }>()
     if (!status) return c.json<ApiResp>({ success: false, error: 'status required' }, 400)
 
-    const result = await advanceOrderStatus(c.env.OCULOFLOW_KV, c.env.DB, id, status, by, note)
+    const result = await advanceOrderStatus(c.env.OCULOFLOW_KV, id, c.env.DB)
     if (!result.success) return c.json<ApiResp>(result, 400)
     return c.json<ApiResp>({ success: true, data: result.order, message: `Order advanced to ${status}` })
   } catch (err) {
@@ -212,7 +212,7 @@ opticalRoutes.patch('/orders/:id', async (c) => {
   try {
     const id      = c.req.param('id')
     const updates = await c.req.json()
-    const order   = await updateOrderNotes(c.env.OCULOFLOW_KV, c.env.DB, id, updates)
+    const order   = await updateOrderNotes(c.env.OCULOFLOW_KV, id, updates, c.env.DB)
     if (!order) return c.json<ApiResp>({ success: false, error: 'Order not found' }, 404)
     return c.json<ApiResp>({ success: true, data: order, message: 'Order updated' })
   } catch (err) {

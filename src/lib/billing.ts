@@ -105,7 +105,7 @@ export async function ensureBillingSeed(kv: KVNamespace, db?: D1Database): Promi
   const sb1Id = 'sb-001'
   await dbRun(db, `INSERT OR IGNORE INTO superbills
     (id, organization_id, patient_id, patient_name, exam_id, appointment_id, service_date, provider_id, provider_name, total_charge, copay_amount, copay_collected, insurance_billed, patient_balance, adjustments, status, created_at, updated_at)
-    VALUES (?, 'org-001', 'pt-001', 'Margaret Sullivan', 'exam-001', 'appt-001', ?, 'dr-chen', 'Dr. Sarah Chen, OD', 350.00, 30.00, 30.00, 252.00, 0.00, 98.00, 'REVIEWED', ?, ?)`,
+    VALUES (?, 'org-001', 'pt-001', 'Margaret Sullivan', NULL, NULL, ?, 'dr-chen', 'Dr. Sarah Chen, OD', 350.00, 30.00, 30.00, 252.00, 0.00, 98.00, 'REVIEWED', ?, ?)`,
     [sb1Id, sd, ts, ts])
 }
 

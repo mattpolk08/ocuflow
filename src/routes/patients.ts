@@ -43,7 +43,7 @@ patientRoutes.get('/', async (c) => {
     await ensureSeedData(c.env.OCULOFLOW_KV, c.env.DB)
 
     if (q && q.trim().length >= 2) {
-      const results = await searchPatients(c.env.OCULOFLOW_KV, c.env.DB, q, limit)
+      const results = await searchPatients(c.env.OCULOFLOW_KV, q, c.env.DB)
       return c.json<ApiResponse>({ success: true, data: { patients: results, total: results.length, query: q } })
     }
 
@@ -60,7 +60,7 @@ patientRoutes.get('/:id', async (c) => {
   const id = c.req.param('id')
   try {
     await ensureSeedData(c.env.OCULOFLOW_KV, c.env.DB)
-    const patient = await getPatient(c.env.OCULOFLOW_KV, c.env.DB, id)
+    const patient = await getPatient(c.env.OCULOFLOW_KV, id, c.env.DB)
     if (!patient) return c.json<ApiResponse>({ success: false, error: 'Patient not found' }, 404)
     return c.json<ApiResponse>({ success: true, data: patient })
   } catch (err) {
@@ -80,7 +80,7 @@ patientRoutes.post('/', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRONT_DESK'),
   }
 
   try {
-    const patient = await createPatient(c.env.OCULOFLOW_KV, c.env.DB, body)
+    const patient = await createPatient(c.env.OCULOFLOW_KV, body, c.env.DB)
     return c.json<ApiResponse>({ success: true, data: patient, message: `Patient ${patient.mrn} created` }, 201)
   } catch (err) {
     console.error('Create patient error:', err)
@@ -100,7 +100,7 @@ patientRoutes.put('/:id', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRONT_DESK'
   delete updates.createdAt
 
   try {
-    const updated = await updatePatient(c.env.OCULOFLOW_KV, c.env.DB, id, updates)
+    const updated = await updatePatient(c.env.OCULOFLOW_KV, id, updates, c.env.DB)
     if (!updated) return c.json<ApiResponse>({ success: false, error: 'Patient not found' }, 404)
     return c.json<ApiResponse>({ success: true, data: updated, message: 'Patient updated' })
   } catch (err) {
@@ -118,7 +118,7 @@ patientRoutes.post('/:id/insurance', requireRole('ADMIN', 'FRONT_DESK', 'BILLING
   }
 
   try {
-    const updated = await upsertInsurancePlan(c.env.OCULOFLOW_KV, c.env.DB, patientId, plan)
+    const updated = await upsertInsurancePlan(c.env.OCULOFLOW_KV, patientId, plan, c.env.DB)
     if (!updated) return c.json<ApiResponse>({ success: false, error: 'Patient not found' }, 404)
     return c.json<ApiResponse>({ success: true, data: updated, message: 'Insurance plan saved' })
   } catch (err) {
@@ -132,7 +132,7 @@ patientRoutes.post('/:id/verify-eligibility', requireRole('ADMIN', 'FRONT_DESK',
   const body      = await c.req.json<{ insurancePlanId: string; providerNpi?: string }>()
 
   try {
-    const patient = await getPatient(c.env.OCULOFLOW_KV, c.env.DB, patientId)
+    const patient = await getPatient(c.env.OCULOFLOW_KV, patientId, c.env.DB)
     if (!patient) return c.json<ApiResponse>({ success: false, error: 'Patient not found' }, 404)
 
     const plan = patient.insurancePlans.find(p => p.id === body.insurancePlanId)
@@ -166,7 +166,7 @@ patientRoutes.post('/:id/verify-eligibility', requireRole('ADMIN', 'FRONT_DESK',
         : p
     )
 
-    await updatePatient(c.env.OCULOFLOW_KV, c.env.DB, patientId, { insurancePlans: updatedPlans })
+    await updatePatient(c.env.OCULOFLOW_KV, patientId, { insurancePlans: updatedPlans }, c.env.DB)
 
     return c.json<ApiResponse>({
       success: true,

@@ -47,7 +47,7 @@ billing.get('/superbills', async (c) => {
 billing.get('/superbills/:id', async (c) => {
   try {
     await ensureBillingSeed(c.env.OCULOFLOW_KV, c.env.DB)
-    const sb = await getSuperbill(c.env.OCULOFLOW_KV, c.env.DB, c.req.param('id'))
+    const sb = await getSuperbill(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
     if (!sb) return c.json<ApiResponse<null>>({ success: false, error: 'Superbill not found' }, 404)
     return c.json<ApiResponse<typeof sb>>({ success: true, data: sb })
   } catch (e: any) {
@@ -58,7 +58,7 @@ billing.get('/superbills/:id', async (c) => {
 // ── GET /api/billing/patient/:patientId ──────────────────────────────────────
 billing.get('/patient/:patientId', async (c) => {
   try {
-    const sbs = await getPatientSuperbills(c.env.OCULOFLOW_KV, c.env.DB, c.req.param('patientId'))
+    const sbs = await getPatientSuperbills(c.env.OCULOFLOW_KV, c.req.param('patientId'), c.env.DB)
     return c.json<ApiResponse<typeof sbs>>({ success: true, data: sbs })
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
@@ -75,7 +75,7 @@ billing.post('/superbills', async (c) => {
         { success: false, error: 'patientId, serviceDate, and providerId are required' }, 400
       )
     }
-    const sb = await createSuperbill(c.env.OCULOFLOW_KV, c.env.DB, body)
+    const sb = await createSuperbill(c.env.OCULOFLOW_KV, body, c.env.DB)
     return c.json<ApiResponse<typeof sb>>({ success: true, data: sb }, 201)
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
@@ -91,7 +91,7 @@ billing.put('/superbills/:id/items', async (c) => {
     if (!lineItems || !diagnoses) {
       return c.json<ApiResponse<null>>({ success: false, error: 'lineItems and diagnoses required' }, 400)
     }
-    const sb = await updateSuperbillItems(c.env.OCULOFLOW_KV, c.env.DB, c.req.param('id'), lineItems, diagnoses)
+    const sb = await updateSuperbillItems(c.env.OCULOFLOW_KV, c.req.param('id'), lineItems, diagnoses, c.env.DB)
     if (!sb) {
       return c.json<ApiResponse<null>>({ success: false, error: 'Superbill not found or locked' }, 404)
     }
@@ -107,7 +107,7 @@ billing.post('/superbills/:id/status', async (c) => {
   try {
     const body   = await c.req.json().catch(() => ({}))
     const status = body.status as SuperbillStatus | undefined
-    const sb     = await advanceSuperbillStatus(c.env.OCULOFLOW_KV, c.env.DB, c.req.param('id'), status)
+    const sb     = await advanceSuperbillStatus(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
     if (!sb) {
       return c.json<ApiResponse<null>>({ success: false, error: 'Cannot advance status' }, 400)
     }
