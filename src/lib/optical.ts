@@ -216,14 +216,22 @@ export async function createRx(kv: KVNamespace, rx: Omit<OpticalRx, 'id' | 'crea
   const ts = now()
   const record: OpticalRx = { ...rx, id, createdAt: ts }
   if (db) {
-    await dbRun(db, `INSERT INTO optical_rx (id, patient_id, exam_id, provider_id, rx_date, od_sphere, od_cylinder, od_axis, od_add, od_prism, od_base, od_pd, od_va, os_sphere, os_cylinder, os_axis, os_add, os_prism, os_base, os_pd, os_va, binocular_pd, lens_type, notes, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, rx.patientId, rx.examId || null, rx.providerId || null, rx.rxDate,
+    await dbRun(db, `INSERT INTO optical_rx
+        (id, patient_id, patient_name, exam_id, provider_id, provider_name,
+         rx_date, expires_date,
+         od_sphere, od_cylinder, od_axis, od_add, od_prism, od_base, od_pd, od_va,
+         os_sphere, os_cylinder, os_axis, os_add, os_prism, os_base, os_pd, os_va,
+         binocular_pd, lens_type, is_signed, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, rx.patientId, (rx as any).patientName || null,
+       rx.examId || null, rx.providerId || null, (rx as any).providerName || null,
+       rx.rxDate, (rx as any).expiresDate || null,
        rx.od?.sphere || null, rx.od?.cylinder || null, rx.od?.axis || null, rx.od?.add || null,
        rx.od?.prism || null, rx.od?.base || null, rx.od?.pd || null, rx.od?.va || null,
        rx.os?.sphere || null, rx.os?.cylinder || null, rx.os?.axis || null, rx.os?.add || null,
        rx.os?.prism || null, rx.os?.base || null, rx.os?.pd || null, rx.os?.va || null,
-       rx.binocularPd || null, rx.lensType || null, rx.notes || null, ts])
+       rx.binocularPd || null, rx.lensType || null, (rx as any).isSigned ?? 1,
+       rx.notes || null, ts, ts])
   }
   return record
 }
