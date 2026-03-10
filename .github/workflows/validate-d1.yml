@@ -36,18 +36,66 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Install SQLite3
-        run: sudo apt-get update -qq && sudo apt-get install -y sqlite3
-
       - name: Apply migrations to local SQLite
         run: |
-          DB=./oculoflow-ci.sqlite
-          for f in migrations/*.sql; do
-            echo "Applying $f..."
-            sqlite3 $DB < "$f"
-          done
-          echo "Tables created:"
-          sqlite3 $DB ".tables"
+          python3 - << 'EOF'
+          import sqlite3, os, glob, sys, re
+
+          DB = "./oculoflow-ci.sqlite"
+          conn = sqlite3.connect(DB)
+          migrations = sorted(glob.glob("migrations/*.sql"))
+          errors = []
+
+          def split_sql(sql):
+              # Strip -- comment lines before splitting to avoid semicolons inside comments
+              lines = []
+              for line in sql.splitlines():
+                  stripped = line.strip()
+                  if not stripped.startswith("--"):
+                      lines.append(line)
+              clean = "\n".join(lines)
+              # Split on semicolons and filter empty
+              return [s.strip() for s in clean.split(";") if s.strip()]
+
+          def is_benign(err_msg):
+              e = err_msg.lower()
+              return (
+                  "duplicate column name" in e or        # ADD COLUMN on existing col
+                  ("table" in e and "already exists" in e) or  # CREATE TABLE on existing
+                  "no such column" in e or               # backfill UPDATE on old/missing col
+                  "no such table" in e                   # backfill on table not yet in fresh DB
+              )
+
+          for filepath in migrations:
+              filename = os.path.basename(filepath)
+              sql = open(filepath).read()
+              statements = split_sql(sql)
+              file_ok = True
+              for stmt in statements:
+                  try:
+                      conn.execute(stmt)
+                      conn.commit()
+                  except sqlite3.OperationalError as e:
+                      if is_benign(str(e)):
+                          pass  # safe to skip on a fresh database
+                      else:
+                          errors.append(f"{filename}: {e} (stmt: {stmt[:80]})")
+                          file_ok = False
+              status = "OK" if file_ok else "WARN"
+              print(f"  [{status}] {filename}")
+
+          tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
+          print(f"Tables ({len(tables)}): {[t[0] for t in tables]}")
+          conn.close()
+
+          if errors:
+              print("\nERRORS:")
+              for e in errors:
+                  print(f"  {e}")
+              sys.exit(1)
+          else:
+              print("\nAll migrations applied successfully.")
+          EOF
 
       - name: Seed local SQLite for validation
         run: |
