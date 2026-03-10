@@ -86,7 +86,7 @@ Return format: { "memberId": "...", "groupNumber": "...", "payerName": "...", "s
          63.5,'AR Premium','Vision One Labs',
          247.00,0.00,0.00,0.00,
          315.00,150.00,165.00,
-         'Rush order','${t}','${t}')`,[]),a.order=!0}catch(i){a.order=!1,console.error("[seedClinicalDemoData] optical_orders INSERT failed:",(i==null?void 0:i.message)||i)}const n=await Ne(e,"SELECT COUNT(*) as n FROM superbills WHERE patient_id = 'pt-001'");if(n&&n.n>0)a.superbill=!0;else try{await D(e,`INSERT OR IGNORE INTO superbills
+         'Rush order','${t}','${t}')`,[]),a.order=!0}catch(i){a.order=!1,a.orderError=String((i==null?void 0:i.message)||i),console.error("[seedClinicalDemoData] optical_orders INSERT failed:",a.orderError)}const n=await Ne(e,"SELECT COUNT(*) as n FROM superbills WHERE patient_id = 'pt-001'");if(n&&n.n>0)a.superbill=!0;else try{await D(e,`INSERT OR IGNORE INTO superbills
         (id, organization_id, patient_id, patient_name, service_date,
          provider_id, provider_name,
          total_charge, copay_amount, copay_collected,

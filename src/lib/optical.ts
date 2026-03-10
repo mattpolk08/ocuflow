@@ -131,9 +131,9 @@ export async function ensureOpticalSeed(kv: KVNamespace, db?: D1Database): Promi
 }
 
 // ── Clinical Demo Seed (Rx + Order + Superbill for pt-001) ──────────────────
-export async function seedClinicalDemoData(db: D1Database): Promise<{ rx: boolean; order: boolean; superbill: boolean }> {
+export async function seedClinicalDemoData(db: D1Database): Promise<{ rx: boolean; order: boolean; superbill: boolean; orderError?: string }> {
   const ts = now()
-  const results = { rx: false, order: false, superbill: false }
+  const results: { rx: boolean; order: boolean; superbill: boolean; orderError?: string } = { rx: false, order: false, superbill: false }
 
   // Check if already seeded
   const rxExists = await dbGet<{ n: number }>(db, "SELECT COUNT(*) as n FROM optical_rx WHERE id = 'rx-001'")
@@ -223,7 +223,8 @@ export async function seedClinicalDemoData(db: D1Database): Promise<{ rx: boolea
     } catch (e: any) {
       // Surface the real error so it shows in the seed response
       results.order = false
-      console.error('[seedClinicalDemoData] optical_orders INSERT failed:', e?.message || e)
+      results.orderError = String(e?.message || e)
+      console.error('[seedClinicalDemoData] optical_orders INSERT failed:', results.orderError)
     }
   }
 
