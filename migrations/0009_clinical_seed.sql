@@ -35,7 +35,7 @@ INSERT OR IGNORE INTO optical_orders
    created_at, updated_at)
 VALUES
   ('ord-001', 'org-001', 'pt-001', 'Margaret Sullivan', 'rx-001',
-   'OPT-260310-0001', 'EYEGLASSES', 'READY_FOR_PICKUP', 'Vision One Labs',
+   'OPT-260310-0001', 'NEW_RX', 'READY_FOR_PICKUP', 'Vision One Labs',
    'frm-001', 'MJ-WESTSIDE-MB', 'Maui Jim', 'Westside', 'Matte Black 52-18',
    'len-001', 'HI-IDX-167-AR', 'Progressive Hi-Index 1.67 AR Premium', 'PROGRESSIVE',
    -2.25, -0.50, 180, 2.00, 31.5,
