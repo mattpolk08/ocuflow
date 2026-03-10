@@ -243,7 +243,7 @@ app.get('/api/health', (c) => {
     service: 'OculoFlow',
     phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx', '8a-ai-cds', '8b-prior-auth', '9a-rcm', '9b-engagement', 'a1-auth', 'a2-audit-hipaa', 'a3-live-deploy', 'a4-mfa', '10a-analytics', 'b1-notifications', 'b2-documents', 'b3-portal-auth'],
     timestamp: new Date().toISOString(),
-    version: '3.1.0',
+    version: '3.1.0', build: '64a1f74-1773157664',
   })
 })
 
