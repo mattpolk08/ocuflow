@@ -75,9 +75,11 @@ import mfaSetupHtml    from '../public/mfa-setup.html?raw'
 import engagementHtml  from '../public/engagement.html?raw'
 import analyticsHtml   from '../public/analytics.html?raw'
 import auditHtml       from '../public/audit.html?raw'
+import migrateRoutes   from './routes/migrate'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
+  DB: D1Database
   OCULOFLOW_R2?: R2Bucket
   JWT_SECRET?: string
   OPENAI_API_KEY: string
@@ -258,6 +260,9 @@ app.route('/api/notifications', notificationsRoutes)
 // ── Phase B2 — Documents & PDF Generation ────────────────────────────────────
 app.use('/api/documents/*',  requireAuth, requireRole('ADMIN','PROVIDER','NURSE','FRONT_DESK','BILLING'), auditMiddleware)
 app.route('/api/documents',  docRoutes)
+
+// ── One-shot migration runner (temporary — remove after 0009 is confirmed) ───
+app.route('/api/migrate', migrateRoutes)
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (c) => {
