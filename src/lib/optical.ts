@@ -136,7 +136,7 @@ export async function seedClinicalDemoData(db: D1Database): Promise<{ rx: boolea
   const results = { rx: false, order: false, superbill: false }
 
   // Check if already seeded
-  const rxExists = await dbGet<{ n: number }>(db, "SELECT COUNT(*) as n FROM optical_rx WHERE patient_id = 'pt-001'")
+  const rxExists = await dbGet<{ n: number }>(db, "SELECT COUNT(*) as n FROM optical_rx WHERE id = 'rx-001'")
   if (rxExists && rxExists.n > 0) {
     results.rx = true // already present
   } else {
@@ -189,12 +189,14 @@ export async function seedClinicalDemoData(db: D1Database): Promise<{ rx: boolea
   try { await dbRun(db, 'ALTER TABLE optical_orders ADD COLUMN provider_id TEXT', []) } catch (_) {}
   try { await dbRun(db, 'ALTER TABLE optical_orders ADD COLUMN provider_name TEXT', []) } catch (_) {}
 
-  const ordExists = await dbGet<{ n: number }>(db, "SELECT COUNT(*) as n FROM optical_orders WHERE patient_id = 'pt-001'")
+  // Check by specific ID (not patient_id) to avoid false-positive from a stale row
+  const ordExists = await dbGet<{ n: number }>(db, "SELECT COUNT(*) as n FROM optical_orders WHERE id = 'ord-001'")
   if (ordExists && ordExists.n > 0) {
     results.order = true
   } else {
     try {
-      await dbRun(db, `INSERT OR IGNORE INTO optical_orders
+      // INSERT OR REPLACE so a stale partial row (wrong org_id, wrong cols) is overwritten
+      await dbRun(db, `INSERT OR REPLACE INTO optical_orders
         (id, organization_id, patient_id, patient_name, provider_id, provider_name, rx_id,
          order_number, order_type, status,
          frame_id, frame_sku, frame_brand, frame_model, frame_color,
