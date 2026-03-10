@@ -191,7 +191,7 @@ export async function seedClinicalDemoData(db: D1Database): Promise<{ rx: boolea
   } else {
     try {
       await dbRun(db, `INSERT OR IGNORE INTO optical_orders
-        (id, organization_id, patient_id, patient_name, rx_id,
+        (id, organization_id, patient_id, patient_name, provider_id, rx_id,
          order_number, order_type, status,
          frame_id, frame_sku, frame_brand, frame_model, frame_color,
          lens_id, lens_sku, lens_name, lens_type,
@@ -202,7 +202,7 @@ export async function seedClinicalDemoData(db: D1Database): Promise<{ rx: boolea
          total_charge, deposit_paid, balance_due,
          special_instructions, created_at, updated_at)
         VALUES
-        ('ord-001','org-001','pt-001','Margaret Sullivan','rx-001',
+        ('ord-001','org-001','pt-001','Margaret Sullivan','dr-chen','rx-001',
          'OPT-260310-0001','EYEGLASSES','READY_FOR_PICKUP',
          'frm-001','MJ-WESTSIDE-MB','Maui Jim','Westside','Matte Black 52-18',
          'len-001','HI-IDX-167-AR','Progressive Hi-Index 1.67 AR Premium','PROGRESSIVE',
