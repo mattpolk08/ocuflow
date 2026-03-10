@@ -11,6 +11,7 @@ import {
   listOrders, getOrder, createOrder, advanceOrderStatus, updateOrderNotes,
   getInventorySummary, getOrdersSummary,
   ensureOpticalSeed,
+  seedClinicalDemoData,
 } from '../lib/optical'
 import type { OrderStatus } from '../types/optical'
 
@@ -27,7 +28,8 @@ const opticalRoutes = new Hono<{ Bindings: Bindings }>()
 opticalRoutes.post('/seed', async (c) => {
   try {
     await ensureOpticalSeed(c.env.OCULOFLOW_KV, c.env.DB)
-    return c.json<ApiResp>({ success: true, message: 'Optical seed complete' })
+    const clinical = c.env.DB ? await seedClinicalDemoData(c.env.DB) : { rx: false, order: false, superbill: false }
+    return c.json<ApiResp>({ success: true, message: 'Optical seed complete', data: { clinical } } as any)
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
   }

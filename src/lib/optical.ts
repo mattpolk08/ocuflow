@@ -130,6 +130,119 @@ export async function ensureOpticalSeed(kv: KVNamespace, db?: D1Database): Promi
   }
 }
 
+// ── Clinical Demo Seed (Rx + Order + Superbill for pt-001) ──────────────────
+export async function seedClinicalDemoData(db: D1Database): Promise<{ rx: boolean; order: boolean; superbill: boolean }> {
+  const ts = now()
+  const results = { rx: false, order: false, superbill: false }
+
+  // Check if already seeded
+  const rxExists = await dbGet<{ n: number }>(db, "SELECT COUNT(*) as n FROM optical_rx WHERE patient_id = 'pt-001'")
+  if (rxExists && rxExists.n > 0) {
+    results.rx = true // already present
+  } else {
+    try {
+      await dbRun(db, `INSERT OR IGNORE INTO optical_rx
+        (id, patient_id, patient_name, exam_id, provider_id, provider_name,
+         rx_date, expires_date,
+         od_sphere, od_cylinder, od_axis, od_add, od_pd, od_va,
+         os_sphere, os_cylinder, os_axis, os_add, os_pd, os_va,
+         binocular_pd, lens_type, is_signed, notes, created_at, updated_at)
+        VALUES
+        ('rx-001','pt-001','Margaret Sullivan',NULL,'dr-chen','Dr. Emily Chen',
+         '2026-02-10','2028-02-10',
+         -2.25,-0.50,180,2.00,31.5,'20/20',
+         -1.75,-0.75,175,2.00,32.0,'20/20',
+         63.5,'PROGRESSIVE',1,'Patient adapted well to progressive design',
+         '${ts}','${ts}')`,
+        [])
+      results.rx = true
+    } catch (e: any) {
+      // May fail if patient_name column doesn't exist — add it and retry
+      try {
+        await dbRun(db, 'ALTER TABLE optical_rx ADD COLUMN patient_name TEXT', [])
+        await dbRun(db, 'ALTER TABLE optical_rx ADD COLUMN provider_name TEXT', [])
+        await dbRun(db, 'ALTER TABLE optical_rx ADD COLUMN expires_date TEXT', [])
+        await dbRun(db, 'ALTER TABLE optical_rx ADD COLUMN is_signed INTEGER DEFAULT 1', [])
+      } catch (_) { /* columns may already exist */ }
+      try {
+        await dbRun(db, `INSERT OR IGNORE INTO optical_rx
+          (id, patient_id, patient_name, exam_id, provider_id, provider_name,
+           rx_date, expires_date,
+           od_sphere, od_cylinder, od_axis, od_add, od_pd, od_va,
+           os_sphere, os_cylinder, os_axis, os_add, os_pd, os_va,
+           binocular_pd, lens_type, is_signed, notes, created_at, updated_at)
+          VALUES
+          ('rx-001','pt-001','Margaret Sullivan',NULL,'dr-chen','Dr. Emily Chen',
+           '2026-02-10','2028-02-10',
+           -2.25,-0.50,180,2.00,31.5,'20/20',
+           -1.75,-0.75,175,2.00,32.0,'20/20',
+           63.5,'PROGRESSIVE',1,'Patient adapted well to progressive design',
+           '${ts}','${ts}')`,
+          [])
+        results.rx = true
+      } catch (_) { results.rx = false }
+    }
+  }
+
+  // Optical order for pt-001
+  const ordExists = await dbGet<{ n: number }>(db, "SELECT COUNT(*) as n FROM optical_orders WHERE patient_id = 'pt-001'")
+  if (ordExists && ordExists.n > 0) {
+    results.order = true
+  } else {
+    try {
+      await dbRun(db, `INSERT OR IGNORE INTO optical_orders
+        (id, organization_id, patient_id, patient_name, rx_id,
+         order_number, order_type, status, lab,
+         frame_id, frame_sku, frame_brand, frame_model, frame_color,
+         lens_id, lens_sku, lens_name, lens_type,
+         od_sphere, od_cylinder, od_axis, od_add, od_pd,
+         os_sphere, os_cylinder, os_axis, os_add, os_pd,
+         binocular_pd, coating,
+         subtotal, discount, insurance_benefit, tax_amount,
+         total_charge, deposit_paid, balance_due,
+         special_instructions, created_at, updated_at)
+        VALUES
+        ('ord-001','org-001','pt-001','Margaret Sullivan','rx-001',
+         'OPT-260310-0001','EYEGLASSES','READY_FOR_PICKUP','Vision One Labs',
+         'frm-001','MJ-WESTSIDE-MB','Maui Jim','Westside','Matte Black 52-18',
+         'len-001','HI-IDX-167-AR','Progressive Hi-Index 1.67 AR Premium','PROGRESSIVE',
+         -2.25,-0.50,180,2.00,31.5,
+         -1.75,-0.75,175,2.00,32.0,
+         63.5,'AR Premium',
+         247.00,0.00,0.00,0.00,
+         315.00,150.00,165.00,
+         'Rush order','${ts}','${ts}')`,
+        [])
+      results.order = true
+    } catch (_) { results.order = false }
+  }
+
+  // Superbill for pt-001
+  const sbExists = await dbGet<{ n: number }>(db, "SELECT COUNT(*) as n FROM superbills WHERE patient_id = 'pt-001'")
+  if (sbExists && sbExists.n > 0) {
+    results.superbill = true
+  } else {
+    try {
+      await dbRun(db, `INSERT OR IGNORE INTO superbills
+        (id, organization_id, patient_id, patient_name, service_date,
+         provider_id, provider_name,
+         total_charge, copay_amount, copay_collected,
+         insurance_billed, insurance_paid, patient_balance, adjustments,
+         status, created_at, updated_at)
+        VALUES
+        ('sb-001','org-001','pt-001','Margaret Sullivan','2026-02-10',
+         'dr-chen','Dr. Emily Chen',
+         350.00,30.00,30.00,
+         252.00,0.00,68.00,98.00,
+         'SUBMITTED','${ts}','${ts}')`,
+        [])
+      results.superbill = true
+    } catch (_) { results.superbill = false }
+  }
+
+  return results
+}
+
 // ── Frame CRUD ────────────────────────────────────────────────────────────────
 export async function listFrames(kv: KVNamespace, db?: D1Database): Promise<Frame[]> {
   await ensureOpticalSeed(kv, db)
