@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OculoFlow — Optical Dispensary</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" />
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    .nav-item { @apply flex items-center gap-2 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 text-sm transition-colors; }
+    .nav-item.active { @apply text-white bg-slate-800; }
+    .sec-item { @apply flex items-center gap-2 px-3 py-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 text-xs transition-colors; }
+    .tab-btn { @apply px-4 py-2 text-sm font-medium rounded-lg transition-colors; }
+    .tab-btn.active { @apply bg-blue-600 text-white; }
+    .tab-btn:not(.active) { @apply text-slate-400 hover:text-white hover:bg-slate-800; }
+    .card { @apply bg-slate-800/50 border border-slate-700/50 rounded-xl p-4; }
+    .badge { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium; }
+    .badge-green  { @apply bg-emerald-500/15 text-emerald-400 border border-emerald-500/30; }
+    .badge-yellow { @apply bg-amber-500/15   text-amber-400   border border-amber-500/30; }
+    .badge-red    { @apply bg-red-500/15     text-red-400     border border-red-500/30; }
+    .badge-blue   { @apply bg-blue-500/15   text-blue-400    border border-blue-500/30; }
+    .badge-purple { @apply bg-purple-500/15 text-purple-400  border border-purple-500/30; }
+    .badge-slate  { @apply bg-slate-700/50  text-slate-400   border border-slate-600/50; }
+    .status-dot   { @apply w-2 h-2 rounded-full; }
+    .tbl { @apply w-full text-sm; }
+    .tbl th { @apply text-left text-xs font-semibold text-slate-500 uppercase tracking-wider py-2 px-3 bg-slate-900/60 first:rounded-tl-lg last:rounded-tr-lg; }
+    .tbl td { @apply py-3 px-3 border-t border-slate-700/40; }
+    .tbl tbody tr { @apply hover:bg-slate-800/40 cursor-pointer transition-colors; }
+    .btn-primary   { @apply px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2; }
+    .btn-secondary { @apply px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center gap-2; }
+    .btn-ghost     { @apply px-3 py-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg text-xs transition-colors; }
+    .input-field   { @apply w-full bg-slate-900 border border-slate-600 text-white placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/40; }
+    .select-field  { @apply w-full bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500; }
+    .modal-overlay { @apply fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4; }
+    .modal-box     { @apply bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto; }
+    .modal-box-lg  { @apply bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto; }
+    .stat-card     { @apply bg-slate-900/70 border border-slate-700/60 rounded-xl p-4 flex flex-col gap-1; }
+    .kpi-val       { @apply text-2xl font-bold text-white; }
+    .kpi-lbl       { @apply text-xs text-slate-500 uppercase tracking-wider; }
+    .drawer        { @apply fixed top-0 right-0 h-full w-full sm:w-[520px] bg-slate-900 border-l border-slate-700 shadow-2xl z-40 flex flex-col transition-transform duration-300; }
+    .step-dot      { @apply w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold shrink-0; }
+  </style>
+  <script src="/static/auth-nav.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+
+<!-- ── Top Bar ─────────────────────────────────────────────────────────────── -->
+<header class="sticky top-0 z-30 h-12 bg-slate-900/80 border-b border-slate-800 backdrop-blur-md flex items-center px-4 gap-3">
+  <a href="/" class="flex items-center gap-2 mr-2 shrink-0">
+    <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center">
+      <i class="fas fa-eye text-white text-xs"></i>
+    </div>
+    <span class="text-sm font-semibold text-white hidden sm:block">OculoFlow</span>
+  </a>
+
+  <!-- Page nav -->
+  <nav class="flex items-center gap-1 flex-1 overflow-x-auto">
+    <a href="/dashboard" class="sec-item whitespace-nowrap"><i class="fas fa-gauge-high w-4 text-center"></i><span class="hidden sm:block">Dashboard</span></a>
+    <a href="/patients"  class="sec-item whitespace-nowrap"><i class="fas fa-users w-4 text-center"></i><span class="hidden sm:block">Patients</span></a>
+    <a href="/schedule"  class="sec-item whitespace-nowrap"><i class="fas fa-calendar-days w-4 text-center"></i><span class="hidden sm:block">Schedule</span></a>
+    <a href="/exam"      class="sec-item whitespace-nowrap"><i class="fas fa-file-medical w-4 text-center"></i><span class="hidden sm:block">Exams</span></a>
+    <a href="/billing"   class="sec-item whitespace-nowrap"><i class="fas fa-file-invoice-dollar w-4 text-center"></i><span class="hidden sm:block">Billing</span></a>
+    <a href="/optical"   class="sec-item active whitespace-nowrap"><i class="fas fa-glasses w-4 text-center"></i><span class="hidden sm:block">Optical</span></a>
+    <a href="/reports"   class="sec-item whitespace-nowrap"><i class="fas fa-chart-line w-4 text-center"></i><span class="hidden sm:block">Reports</span></a>
+    <a href="/portal"    class="sec-item whitespace-nowrap"><i class="fas fa-user-circle w-4 text-center"></i><span class="hidden sm:block">Portal</span></a>
+    <a href="/messaging"  class="sec-item whitespace-nowrap"><i class="fas fa-comment-medical w-4 text-center"></i><span class="hidden sm:block">Messaging</span></a>
+    <a href="/reminders" class="sec-item whitespace-nowrap"><i class="fas fa-bell w-4 text-center"></i><span class="hidden sm:block">Reminders</span></a>
+    <a href="/scorecards" class="sec-item whitespace-nowrap"><i class="fas fa-chart-bar w-4 text-center"></i><span class="hidden sm:block">Scorecards</span></a>
+    <a href="/telehealth" class="sec-item whitespace-nowrap"><i class="fas fa-video w-4 text-center"></i><span class="hidden sm:block">Telehealth</span></a>
+    <a href="/erx" class="sec-item whitespace-nowrap"><i class="fas fa-prescription-bottle w-4 text-center"></i><span class="hidden sm:block">eRx</span></a>
+    <a href="/ai" class="sec-item whitespace-nowrap"><i class="fas fa-brain w-4 text-center"></i><span class="hidden sm:block">AI CDS</span></a>
+    <a href="/priorauth" class="sec-item whitespace-nowrap"><i class="fas fa-clipboard-check w-4 text-center"></i><span class="hidden sm:block">Prior Auth</span></a><a href="/rcm" class="sec-item whitespace-nowrap"><i class="fas fa-dollar-sign w-4 text-center"></i><span class="hidden sm:block">RCM</span></a>
+  </nav>
+
+  <div class="flex items-center gap-2 shrink-0">
+    <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+    <span class="text-xs text-slate-500 hidden md:block">Optical v1.7.0</span>
+  </div>
+</header>
+
+<!-- ── Layout ──────────────────────────────────────────────────────────────── -->
+<div class="flex flex-1 min-h-0 overflow-hidden">
+
+  <!-- Sidebar -->
+  <aside class="hidden md:flex flex-col w-52 bg-slate-900/60 border-r border-slate-800 p-3 gap-1 shrink-0 overflow-y-auto">
+    <p class="text-xs font-semibold text-slate-600 uppercase tracking-wider px-2 mb-1 mt-1">Dispensary</p>
+    <a href="#" id="nav-orders"    class="nav-item active"  onclick="showTab('orders',this)"><i class="fas fa-clipboard-list w-4 text-center"></i>Orders</a>
+    <a href="#" id="nav-frames"    class="nav-item"         onclick="showTab('frames',this)"><i class="fas fa-glasses w-4 text-center"></i>Frames</a>
+    <a href="#" id="nav-lenses"    class="nav-item"         onclick="showTab('lenses',this)"><i class="fas fa-circle-dot w-4 text-center"></i>Lenses</a>
+    <a href="#" id="nav-cl"        class="nav-item"         onclick="showTab('cl',this)"><i class="fas fa-eye w-4 text-center"></i>Contact Lenses</a>
+    <a href="#" id="nav-rx"        class="nav-item"         onclick="showTab('rx',this)"><i class="fas fa-prescription w-4 text-center"></i>Prescriptions</a>
+
+    <div class="h-px bg-slate-800 my-2"></div>
+    <p class="text-xs font-semibold text-slate-600 uppercase tracking-wider px-2 mb-1">Quick Links</p>
+    <a href="/patients" class="sec-item"><i class="fas fa-users w-4 text-center"></i>Patients</a>
+    <a href="/exam"     class="sec-item"><i class="fas fa-file-medical w-4 text-center"></i>Exam Record</a>
+    <a href="/billing"  class="sec-item"><i class="fas fa-file-invoice-dollar w-4 text-center"></i>Billing</a>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="flex-1 overflow-y-auto p-4 md:p-6">
+
+    <!-- ── KPI Bar ────────────────────────────────────────────────────────── -->
+    <div id="kpi-bar" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+      <div class="stat-card"><div class="kpi-lbl">Total Orders</div><div class="kpi-val" id="kpi-total">—</div></div>
+      <div class="stat-card"><div class="kpi-lbl">In Progress</div><div class="kpi-val text-blue-400" id="kpi-inprog">—</div></div>
+      <div class="stat-card"><div class="kpi-lbl">Ready Pickup</div><div class="kpi-val text-emerald-400" id="kpi-ready">—</div></div>
+      <div class="stat-card"><div class="kpi-lbl">Overdue</div><div class="kpi-val text-red-400" id="kpi-overdue">—</div></div>
+      <div class="stat-card"><div class="kpi-lbl">Frames</div><div class="kpi-val" id="kpi-frames">—</div></div>
+      <div class="stat-card"><div class="kpi-lbl">Inv. Value</div><div class="kpi-val text-amber-400" id="kpi-inv">—</div></div>
+    </div>
+
+    <!-- ── ORDERS TAB ─────────────────────────────────────────────────────── -->
+    <div id="tab-orders" class="tab-panel">
+      <div class="flex flex-wrap items-center gap-3 mb-4">
+        <h2 class="text-lg font-semibold flex-1">Optical Orders</h2>
+        <select id="orders-filter" class="select-field w-44" onchange="filterOrders()">
+          <option value="">All Statuses</option>
+          <option value="DRAFT">Draft</option>
+          <option value="APPROVED">Approved</option>
+          <option value="SENT_TO_LAB">Sent to Lab</option>
+          <option value="IN_PRODUCTION">In Production</option>
+          <option value="READY_FOR_PICKUP">Ready for Pickup</option>
+          <option value="DISPENSED">Dispensed</option>
+          <option value="CANCELLED">Cancelled</option>
+        </select>
+        <button class="btn-primary" onclick="openNewOrderModal()"><i class="fas fa-plus"></i>New Order</button>
+      </div>
+      <div class="overflow-x-auto rounded-xl border border-slate-700/50">
+        <table class="tbl">
+          <thead><tr>
+            <th>Order #</th><th>Patient</th><th>Type</th><th>Status</th><th>Lab</th><th>Est. Ready</th><th>Total</th><th>Balance</th><th></th>
+          </tr></thead>
+          <tbody id="orders-body"><tr><td colspan="9" class="text-center py-8 text-slate-500"><i class="fas fa-spinner fa-spin mr-2"></i>Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── FRAMES TAB ─────────────────────────────────────────────────────── -->
+    <div id="tab-frames" class="tab-panel hidden">
+      <div class="flex flex-wrap items-center gap-3 mb-4">
+        <h2 class="text-lg font-semibold flex-1">Frame Inventory</h2>
+        <input id="frames-search" class="input-field w-56" placeholder="Search brand, model, SKU…" oninput="filterFrames()" />
+        <select id="frames-cat" class="select-field w-40" onchange="filterFrames()">
+          <option value="">All Categories</option>
+          <option value="FULL_RIM">Full Rim</option>
+          <option value="SEMI_RIM">Semi Rim</option>
+          <option value="RIMLESS">Rimless</option>
+          <option value="SUNGLASSES">Sunglasses</option>
+          <option value="SPORTS">Sports</option>
+          <option value="PEDIATRIC">Pediatric</option>
+        </select>
+      </div>
+      <div id="frames-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="card text-center text-slate-500 py-8 col-span-full"><i class="fas fa-spinner fa-spin text-2xl"></i></div>
+      </div>
+    </div>
+
+    <!-- ── LENSES TAB ─────────────────────────────────────────────────────── -->
+    <div id="tab-lenses" class="tab-panel hidden">
+      <div class="flex flex-wrap items-center gap-3 mb-4">
+        <h2 class="text-lg font-semibold flex-1">Lens Catalog</h2>
+        <input id="lenses-search" class="input-field w-56" placeholder="Search lenses…" oninput="filterLenses()" />
+      </div>
+      <div class="overflow-x-auto rounded-xl border border-slate-700/50">
+        <table class="tbl">
+          <thead><tr><th>Name</th><th>Type</th><th>Material</th><th>Coating</th><th>Retail</th><th>Insurance</th><th>Stock</th><th>Lab Days</th></tr></thead>
+          <tbody id="lenses-body"><tr><td colspan="8" class="text-center py-8 text-slate-500"><i class="fas fa-spinner fa-spin mr-2"></i>Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── CONTACT LENS TAB ───────────────────────────────────────────────── -->
+    <div id="tab-cl" class="tab-panel hidden">
+      <div class="flex flex-wrap items-center gap-3 mb-4">
+        <h2 class="text-lg font-semibold flex-1">Contact Lens Inventory</h2>
+        <input id="cl-search" class="input-field w-56" placeholder="Search brand, product…" oninput="filterCL()" />
+      </div>
+      <div class="overflow-x-auto rounded-xl border border-slate-700/50">
+        <table class="tbl">
+          <thead><tr><th>Brand</th><th>Product</th><th>Type</th><th>Sphere</th><th>Box Qty</th><th>Stock</th><th>Retail/Box</th><th>Insurance</th></tr></thead>
+          <tbody id="cl-body"><tr><td colspan="8" class="text-center py-8 text-slate-500"><i class="fas fa-spinner fa-spin mr-2"></i>Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── RX TAB ─────────────────────────────────────────────────────────── -->
+    <div id="tab-rx" class="tab-panel hidden">
+      <div class="flex flex-wrap items-center gap-3 mb-4">
+        <h2 class="text-lg font-semibold flex-1">Prescriptions</h2>
+        <div class="flex items-center gap-2">
+          <input id="rx-patient-id" class="input-field w-44" placeholder="Patient ID (e.g. pat-001)" />
+          <button class="btn-secondary" onclick="loadRx()"><i class="fas fa-search"></i>Search</button>
+        </div>
+      </div>
+      <div id="rx-list" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="card text-center text-slate-500 py-8 col-span-full">Enter a Patient ID above to load prescriptions.</div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ── Order Detail Drawer ─────────────────────────────────────────────── -->
+  <div id="order-drawer" class="drawer translate-x-full" onclick="closeDrawerOutside(event)">
+    <div class="flex items-center justify-between p-4 border-b border-slate-800">
+      <div>
+        <h3 class="font-semibold text-white" id="drawer-title">Order Detail</h3>
+        <p class="text-xs text-slate-500" id="drawer-subtitle">—</p>
+      </div>
+      <button onclick="closeDrawer()" class="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-800"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-4" id="drawer-content"><!-- filled by JS --></div>
+    <div class="p-4 border-t border-slate-800 flex gap-2 flex-wrap" id="drawer-actions"><!-- filled by JS --></div>
+  </div>
+</div>
+
+<!-- ── NEW ORDER MODAL ──────────────────────────────────────────────────────── -->
+<div id="modal-new-order" class="modal-overlay hidden">
+  <div class="modal-box-lg">
+    <div class="flex items-center justify-between p-5 border-b border-slate-800">
+      <h3 class="font-semibold text-white text-lg">New Optical Order</h3>
+      <button onclick="closeModal('modal-new-order')" class="text-slate-400 hover:text-white"><i class="fas fa-xmark text-xl"></i></button>
+    </div>
+    <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Patient ID <span class="text-red-400">*</span></label>
+        <input id="no-pid" class="input-field" placeholder="pat-001" />
+      </div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Patient Name <span class="text-red-400">*</span></label>
+        <input id="no-pname" class="input-field" placeholder="Full name" />
+      </div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Patient Phone</label>
+        <input id="no-phone" class="input-field" placeholder="555-0100" />
+      </div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Order Type <span class="text-red-400">*</span></label>
+        <select id="no-type" class="select-field">
+          <option value="NEW_RX">New Rx</option>
+          <option value="REMAKE">Remake</option>
+          <option value="DUPLICATE">Duplicate</option>
+          <option value="CONTACT_LENS">Contact Lens</option>
+          <option value="REPAIR">Repair</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Provider ID</label>
+        <select id="no-provider" class="select-field">
+          <option value="dr-chen">Dr. Emily Chen</option>
+          <option value="dr-patel">Dr. Raj Patel</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Lab</label>
+        <input id="no-lab" class="input-field" placeholder="Vision One Labs" />
+      </div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Estimated Ready Date</label>
+        <input id="no-ready" type="date" class="input-field" />
+      </div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Insurance Benefit ($)</label>
+        <input id="no-ins" type="number" class="input-field" placeholder="0" />
+      </div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Deposit Paid ($)</label>
+        <input id="no-deposit" type="number" class="input-field" placeholder="0" />
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-xs text-slate-400 mb-1">Special Instructions</label>
+        <textarea id="no-notes" class="input-field h-20 resize-none" placeholder="e.g. UV coating, anti-scratch…"></textarea>
+      </div>
+
+      <!-- Line Items -->
+      <div class="md:col-span-2">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-sm font-medium text-slate-300">Line Items</p>
+          <button class="btn-ghost" onclick="addLineItem()"><i class="fas fa-plus mr-1"></i>Add Item</button>
+        </div>
+        <div id="line-items-container" class="space-y-2"></div>
+      </div>
+    </div>
+    <div class="p-5 border-t border-slate-800 flex gap-3 justify-end">
+      <button class="btn-secondary" onclick="closeModal('modal-new-order')">Cancel</button>
+      <button class="btn-primary" onclick="submitNewOrder()"><i class="fas fa-check"></i>Create Order</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── FRAME DETAIL MODAL ───────────────────────────────────────────────────── -->
+<div id="modal-frame" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="flex items-center justify-between p-5 border-b border-slate-800">
+      <h3 class="font-semibold text-white text-lg">Frame Detail</h3>
+      <button onclick="closeModal('modal-frame')" class="text-slate-400 hover:text-white"><i class="fas fa-xmark text-xl"></i></button>
+    </div>
+    <div class="p-5" id="frame-detail-content"><!-- filled by JS --></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-5 right-5 z-50 hidden">
+  <div class="bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 flex items-center gap-3 shadow-2xl text-sm max-w-sm">
+    <i id="toast-icon" class="fas fa-check-circle text-emerald-400 text-lg"></i>
+    <span id="toast-msg" class="text-white"></span>
+  </div>
+</div>
+
+<script src="/static/optical.js"></script>
+</body>
+</html>

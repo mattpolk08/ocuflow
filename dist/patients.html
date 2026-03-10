@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Patients — OculoFlow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" />
+  <style>
+    /* ── Typography ─────────────────────────────── */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    * { box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+
+    /* ── Scrollbars ─────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+    /* ── Status chips ───────────────────────────── */
+    .chip { display: inline-flex; align-items: center; gap: 4px;
+            padding: 2px 8px; border-radius: 9999px; font-size: 11px;
+            font-weight: 600; letter-spacing: .02em; white-space: nowrap; }
+    .chip-active   { background: #052e16; color: #4ade80; border: 1px solid #166534; }
+    .chip-new      { background: #1e1b4b; color: #a5b4fc; border: 1px solid #3730a3; }
+    .chip-inactive { background: #1c1917; color: #a8a29e; border: 1px solid #44403c; }
+
+    /* ── Eligibility badges ─────────────────────── */
+    .elig-active   { background: #052e16; color: #4ade80; border: 1px solid #15803d; }
+    .elig-inactive { background: #450a0a; color: #f87171; border: 1px solid #991b1b; }
+    .elig-unknown  { background: #1c1917; color: #a8a29e; border: 1px solid #57534e; }
+    .elig-pending  { background: #1c1400; color: #fbbf24; border: 1px solid #92400e; }
+
+    /* ── Table rows ─────────────────────────────── */
+    .pt-row { transition: background .12s; cursor: pointer; }
+    .pt-row:hover { background: rgba(148,163,184,.06); }
+    .pt-row:active { background: rgba(148,163,184,.1); }
+
+    /* ── Modal backdrop ─────────────────────────── */
+    .modal-bg {
+      position: fixed; inset: 0; background: rgba(2,6,23,.8);
+      backdrop-filter: blur(4px); z-index: 50;
+      display: flex; align-items: flex-start; justify-content: center;
+      padding: 24px 16px; overflow-y: auto;
+      opacity: 0; pointer-events: none; transition: opacity .2s;
+    }
+    .modal-bg.open { opacity: 1; pointer-events: all; }
+    .modal-card {
+      width: 100%; max-width: 760px;
+      transform: translateY(16px); transition: transform .2s;
+    }
+    .modal-bg.open .modal-card { transform: translateY(0); }
+
+    /* ── New-patient wizard ─────────────────────── */
+    .wizard-step { display: none; }
+    .wizard-step.active { display: block; }
+
+    /* ── Form inputs ────────────────────────────── */
+    .form-input {
+      width: 100%; background: #0f172a; border: 1px solid #334155;
+      color: #e2e8f0; border-radius: 8px; padding: 9px 12px;
+      font-size: 14px; outline: none; transition: border-color .15s;
+    }
+    .form-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.2); }
+    .form-input::placeholder { color: #475569; }
+    .form-label { display: block; font-size: 12px; font-weight: 600;
+                  color: #94a3b8; text-transform: uppercase;
+                  letter-spacing: .04em; margin-bottom: 5px; }
+    select.form-input option { background: #1e293b; }
+
+    /* ── Payer autocomplete ─────────────────────── */
+    #payer-dropdown {
+      position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; right: 0;
+      background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+      max-height: 180px; overflow-y: auto; display: none;
+    }
+    #payer-dropdown.open { display: block; }
+    .payer-opt { padding: 8px 12px; font-size: 13px; color: #cbd5e1;
+                 cursor: pointer; transition: background .1s; }
+    .payer-opt:hover { background: #0f172a; }
+
+    /* ── Tabs ───────────────────────────────────── */
+    .profile-tab {
+      padding: 8px 16px; font-size: 13px; font-weight: 500;
+      color: #64748b; border-bottom: 2px solid transparent;
+      cursor: pointer; white-space: nowrap; transition: color .15s, border-color .15s;
+    }
+    .profile-tab.active { color: #3b82f6; border-bottom-color: #3b82f6; }
+    .profile-tab:hover:not(.active) { color: #94a3b8; }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Eligibility result panel ───────────────── */
+    .elig-panel { border-radius: 12px; padding: 16px; margin-top: 12px; }
+    .elig-panel-active   { background: #052e16; border: 1px solid #166534; }
+    .elig-panel-inactive { background: #450a0a; border: 1px solid #991b1b; }
+    .elig-panel-unknown  { background: #0f172a; border: 1px solid #334155; }
+    .elig-panel-pending  { background: #1c0f00; border: 1px solid #92400e; }
+
+    /* ── Spinner ────────────────────────────────── */
+    .spinner {
+      width: 18px; height: 18px; border-radius: 50%;
+      border: 2px solid rgba(59,130,246,.3); border-top-color: #3b82f6;
+      animation: spin .7s linear infinite; display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Shimmer ────────────────────────────────── */
+    .shimmer {
+      background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+      background-size: 200% 100%; animation: shimmer 1.2s infinite;
+      border-radius: 6px;
+    }
+    @keyframes shimmer { to { background-position: -200% 0; } }
+
+    /* ── Toast ──────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 24px; right: 24px; z-index: 100;
+      background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+      padding: 12px 18px; font-size: 13px; color: #e2e8f0;
+      display: flex; align-items: center; gap: 10px; min-width: 260px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.5);
+      transform: translateY(80px) scale(.95); opacity: 0;
+      transition: transform .25s cubic-bezier(.34,1.56,.64,1), opacity .25s;
+      pointer-events: none;
+    }
+    #toast.show { transform: translateY(0) scale(1); opacity: 1; pointer-events: all; }
+
+    /* ── Search highlight ───────────────────────── */
+    mark { background: rgba(59,130,246,.25); color: #93c5fd;
+           border-radius: 2px; padding: 0 1px; }
+
+    /* ── Sidebar nav ────────────────────────────── */
+    .nav-item { display: flex; align-items: center; gap: 10px;
+                padding: 9px 12px; border-radius: 8px; font-size: 13px;
+                font-weight: 500; color: #64748b; cursor: pointer;
+                transition: background .12s, color .12s; white-space: nowrap; }
+    .nav-item:hover  { background: rgba(148,163,184,.06); color: #94a3b8; }
+    .nav-item.active { background: rgba(59,130,246,.12); color: #60a5fa; }
+    .nav-item .badge {
+      margin-left: auto; font-size: 10px; font-weight: 700;
+      background: #1e3a5f; color: #60a5fa; padding: 1px 6px;
+      border-radius: 9999px;
+    }
+
+    /* ── Progress steps (wizard header) ────────── */
+    .wiz-step-dot {
+      width: 28px; height: 28px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; transition: all .2s;
+    }
+    .wiz-step-dot.done    { background: #1d4ed8; color: #fff; }
+    .wiz-step-dot.current { background: #3b82f6; color: #fff; box-shadow: 0 0 0 3px rgba(59,130,246,.3); }
+    .wiz-step-dot.todo    { background: #1e293b; color: #475569; border: 1px solid #334155; }
+    .wiz-step-line { flex: 1; height: 1px; background: #1e293b; }
+    .wiz-step-line.done { background: #1d4ed8; }
+
+    /* ── Stat cards ─────────────────────────────── */
+    .stat-card {
+      background: #0f172a; border: 1px solid #1e293b;
+      border-radius: 12px; padding: 14px 16px;
+    }
+
+    /* ── Responsive ─────────────────────────────── */
+    @media (max-width: 768px) {
+      #sidebar { display: none; }
+      #main-content { padding: 12px; }
+    }
+  </style>
+  <script src="/static/auth-nav.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- TOP NAVIGATION BAR                                                        -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<header class="bg-slate-900 border-b border-slate-800 px-4 h-14 flex items-center gap-3 flex-shrink-0 sticky top-0 z-30">
+
+  <!-- Logo -->
+  <a href="/" class="flex items-center gap-2 mr-4 flex-shrink-0">
+    <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg">
+      <i class="fas fa-eye text-white text-sm"></i>
+    </div>
+    <span class="font-bold text-white tracking-tight hidden sm:block">OculoFlow</span>
+  </a>
+
+  <!-- Nav links -->
+  <nav class="flex items-center gap-1 text-sm">
+    <a href="/dashboard" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors font-medium flex items-center gap-2">
+      <i class="fas fa-gauge-high text-xs"></i>
+      <span class="hidden sm:block">Dashboard</span>
+    </a>
+    <a href="/patients" class="px-3 py-1.5 rounded-lg bg-blue-500/15 text-blue-400 font-semibold flex items-center gap-2">
+      <i class="fas fa-users text-xs"></i>
+      <span class="hidden sm:block">Patients</span>
+    </a>
+    <a href="/schedule" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors font-medium flex items-center gap-2">
+      <i class="fas fa-calendar-days text-xs"></i>
+      <span class="hidden sm:block">Schedule</span>
+    </a>
+    <a href="/exam" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors font-medium flex items-center gap-2">
+      <i class="fas fa-file-medical text-xs"></i>
+      <span class="hidden sm:block">Exams</span>
+    </a>
+    <a href="/billing" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors font-medium flex items-center gap-2">
+      <i class="fas fa-file-invoice-dollar text-xs"></i>
+      <span class="hidden sm:block">Billing</span>
+    </a>
+    <a href="/reports" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors font-medium flex items-center gap-2">
+      <i class="fas fa-chart-line text-xs"></i>
+      <span class="hidden sm:block">Reports</span>
+    </a>
+    <a href="/optical" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors font-medium flex items-center gap-2">
+      <i class="fas fa-glasses text-xs"></i>
+      <span class="hidden sm:block">Optical</span>
+    </a>
+    <a href="/portal" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors font-medium flex items-center gap-2">
+      <i class="fas fa-user-circle text-xs"></i>
+      <span class="hidden sm:block">Portal</span>
+    </a>
+    <a href="/messaging" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors font-medium flex items-center gap-2">
+      <i class="fas fa-comment-medical text-xs"></i>
+      <span class="hidden sm:block">Messaging</span>
+    </a>
+  </nav>
+
+  <!-- Global search -->
+  <div class="flex-1 max-w-md mx-auto relative">
+    <div class="relative">
+      <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs pointer-events-none"></i>
+      <input id="global-search" type="text" placeholder="Search by name, MRN, DOB, phone…"
+             class="w-full bg-slate-800 border border-slate-700 rounded-lg pl-8 pr-10 py-1.5 text-sm text-slate-200
+                    placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-all" />
+      <kbd class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-600 bg-slate-700 px-1.5 py-0.5 rounded hidden sm:block">⌘K</kbd>
+    </div>
+  </div>
+
+  <!-- Right actions -->
+  <div class="flex items-center gap-2 flex-shrink-0">
+    <button id="btn-new-patient"
+            class="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg
+                   text-sm font-semibold transition-colors shadow-lg shadow-blue-900/30">
+      <i class="fas fa-user-plus text-xs"></i>
+      <span class="hidden sm:block">New Patient</span>
+    </button>
+    <a href="/intake?demo=true"
+       class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors text-sm font-medium"
+       title="Patient Intake Wizard">
+      <i class="fas fa-mobile-screen"></i>
+    </a>
+  </div>
+</header>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- BODY: SIDEBAR + MAIN                                                      -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="flex flex-1 overflow-hidden">
+
+  <!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
+  <aside id="sidebar" class="w-52 bg-slate-900/60 border-r border-slate-800 flex-shrink-0 p-3 flex flex-col gap-1 overflow-y-auto">
+
+    <p class="text-xs font-semibold text-slate-600 uppercase tracking-wider px-2 mb-2 mt-1">Patients</p>
+
+    <div class="nav-item active" data-filter="all">
+      <i class="fas fa-users w-4 text-center"></i>
+      All Patients
+      <span class="badge" id="count-all">—</span>
+    </div>
+    <div class="nav-item" data-filter="new">
+      <i class="fas fa-star w-4 text-center text-indigo-400"></i>
+      New Patients
+      <span class="badge" id="count-new">—</span>
+    </div>
+    <div class="nav-item" data-filter="unverified">
+      <i class="fas fa-shield-halved w-4 text-center text-yellow-500"></i>
+      Unverified Ins.
+      <span class="badge" id="count-unverified">—</span>
+    </div>
+    <div class="nav-item" data-filter="active">
+      <i class="fas fa-circle-check w-4 text-center text-emerald-500"></i>
+      Active
+    </div>
+
+    <div class="border-t border-slate-800 my-2"></div>
+
+    <p class="text-xs font-semibold text-slate-600 uppercase tracking-wider px-2 mb-1">Quick Links</p>
+
+    <a href="/dashboard" class="nav-item">
+      <i class="fas fa-gauge-high w-4 text-center"></i>
+      Dashboard
+    </a>
+    <a href="/schedule" class="nav-item">
+      <i class="fas fa-calendar-days w-4 text-center"></i>
+      Schedule
+    </a>
+    <a href="/exam" class="nav-item">
+      <i class="fas fa-file-medical w-4 text-center"></i>
+      Exams
+    </a>
+    <a href="/billing" class="nav-item">
+      <i class="fas fa-file-invoice-dollar w-4 text-center"></i>
+      Billing
+    </a>
+    <a href="/reports" class="nav-item">
+      <i class="fas fa-chart-line w-4 text-center"></i>
+      Reports
+    </a>
+    <a href="/optical" class="nav-item">
+      <i class="fas fa-glasses w-4 text-center"></i>
+      Optical
+    </a>
+    <a href="/portal" class="nav-item">
+      <i class="fas fa-user-circle w-4 text-center"></i>
+      Patient Portal
+    </a>
+    <a href="/messaging" class="nav-item">
+      <i class="fas fa-comment-medical w-4 text-center"></i>
+      Messaging
+    </a>
+    <a href="/reminders" class="nav-item">
+    <a href="/scorecards" class="nav-item"><i class="fas fa-chart-bar"></i> Scorecards</a>
+    <a href="/telehealth" class="nav-item"><i class="fas fa-video"></i> Telehealth</a>
+    <a href="/erx" class="nav-item"><i class="fas fa-prescription-bottle"></i> eRx</a>
+    <a href="/ai" class="nav-item"><i class="fas fa-brain"></i> AI CDS</a>
+    <a href="/priorauth" class="nav-item"><i class="fas fa-clipboard-check"></i> Prior Auth</a><a href="/rcm" class="nav-item"><i class="fas fa-dollar-sign"></i> RCM</a>
+      <i class="fas fa-bell w-4 text-center"></i>
+      Reminders
+    </a>
+    <a href="/intake?demo=true" class="nav-item">
+      <i class="fas fa-mobile-screen w-4 text-center"></i>
+      Patient Intake
+    </a>
+
+    <div class="flex-1"></div>
+
+    <div class="p-2 rounded-lg bg-slate-800/50 border border-slate-700/50">
+      <p class="text-xs text-slate-500 leading-relaxed">
+        <i class="fas fa-circle-info text-blue-500 mr-1"></i>
+        <span id="practice-name" class="text-slate-400 font-medium">Advanced Eye Care</span>
+      </p>
+      <p class="text-xs text-slate-600 mt-1">Phase 1B — Patient Module</p>
+    </div>
+  </aside>
+
+  <!-- ── Main Content ────────────────────────────────────────────────────── -->
+  <main id="main-content" class="flex-1 flex flex-col overflow-hidden p-4 gap-4">
+
+    <!-- Stats Bar -->
+    <div id="stats-bar" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div class="stat-card">
+        <p class="text-xs text-slate-500 font-medium uppercase tracking-wider mb-1">Total Patients</p>
+        <p class="text-2xl font-bold text-white" id="stat-total">—</p>
+      </div>
+      <div class="stat-card">
+        <p class="text-xs text-slate-500 font-medium uppercase tracking-wider mb-1">New This Month</p>
+        <p class="text-2xl font-bold text-indigo-400" id="stat-new">—</p>
+      </div>
+      <div class="stat-card">
+        <p class="text-xs text-slate-500 font-medium uppercase tracking-wider mb-1">Verified Insurance</p>
+        <p class="text-2xl font-bold text-emerald-400" id="stat-verified">—</p>
+      </div>
+      <div class="stat-card">
+        <p class="text-xs text-slate-500 font-medium uppercase tracking-wider mb-1">Needs Verification</p>
+        <p class="text-2xl font-bold text-yellow-400" id="stat-unverified">—</p>
+      </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="flex items-center gap-2 flex-wrap">
+      <div class="relative flex-1 min-w-48">
+        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs pointer-events-none"></i>
+        <input id="table-search" type="text" placeholder="Filter table…"
+               class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-2 text-sm text-slate-200
+                      placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-all" />
+      </div>
+      <select id="filter-insurance" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-blue-500">
+        <option value="">All Insurance</option>
+        <option value="ACTIVE">Active</option>
+        <option value="UNKNOWN">Unverified</option>
+        <option value="PENDING">Pending</option>
+        <option value="INACTIVE">Inactive</option>
+      </select>
+      <button id="btn-refresh" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-sm transition-colors" title="Refresh">
+        <i class="fas fa-rotate-right"></i>
+      </button>
+    </div>
+
+    <!-- Patient Table -->
+    <div class="flex-1 overflow-auto rounded-xl border border-slate-800 bg-slate-900/60">
+      <table class="w-full text-sm min-w-[700px]">
+        <thead>
+          <tr class="border-b border-slate-800">
+            <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Patient</th>
+            <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">MRN</th>
+            <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">DOB / Age</th>
+            <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Contact</th>
+            <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Insurance</th>
+            <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Last Visit</th>
+            <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+          </tr>
+        </thead>
+        <tbody id="patient-table-body">
+          <!-- Shimmer skeleton rows -->
+          <tr><td colspan="7" class="px-4 py-8 text-center text-slate-600" id="table-loading">
+            <div class="flex flex-col items-center gap-3">
+              <div class="spinner w-6 h-6"></div>
+              <span class="text-xs">Loading patients…</span>
+            </div>
+          </td></tr>
+        </tbody>
+      </table>
+
+      <!-- Pagination -->
+      <div class="border-t border-slate-800 px-4 py-3 flex items-center justify-between gap-4">
+        <p class="text-xs text-slate-500" id="pagination-info">—</p>
+        <div class="flex items-center gap-2">
+          <button id="btn-prev" class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs transition-colors disabled:opacity-40 disabled:pointer-events-none" disabled>
+            <i class="fas fa-chevron-left"></i> Prev
+          </button>
+          <button id="btn-next" class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs transition-colors disabled:opacity-40 disabled:pointer-events-none" disabled>
+            Next <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- NEW PATIENT MODAL (Multi-step Registration Wizard)                        -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div id="modal-new-patient" class="modal-bg" role="dialog" aria-modal="true" aria-label="New Patient Registration">
+  <div class="modal-card">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl">
+
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+            <i class="fas fa-user-plus text-blue-400 text-sm"></i>
+          </div>
+          <div>
+            <h2 class="font-semibold text-white text-base">New Patient Registration</h2>
+            <p class="text-xs text-slate-500" id="wizard-step-label">Step 1 of 3 — Demographics</p>
+          </div>
+        </div>
+        <button id="btn-close-new-patient" class="w-8 h-8 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-200 transition-colors flex items-center justify-center">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <!-- Wizard Progress -->
+      <div class="px-6 py-4 border-b border-slate-800">
+        <div class="flex items-center gap-1">
+          <div class="wiz-step-dot done" id="wdot-1">1</div>
+          <div class="wiz-step-line" id="wline-1"></div>
+          <div class="wiz-step-dot todo" id="wdot-2">2</div>
+          <div class="wiz-step-line" id="wline-2"></div>
+          <div class="wiz-step-dot todo" id="wdot-3">3</div>
+        </div>
+        <div class="flex justify-between mt-1.5">
+          <span class="text-xs text-slate-400 font-medium">Demographics</span>
+          <span class="text-xs text-slate-600">Insurance</span>
+          <span class="text-xs text-slate-600">Confirm</span>
+        </div>
+      </div>
+
+      <!-- Wizard Body -->
+      <div class="p-6">
+
+        <!-- ── Step 1: Demographics ───────────────────────────────────────── -->
+        <div id="wiz-step-1" class="wizard-step active">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+            <div>
+              <label class="form-label">First Name <span class="text-red-400">*</span></label>
+              <input id="p-first-name" type="text" class="form-input" placeholder="First name" autocomplete="given-name" />
+            </div>
+            <div>
+              <label class="form-label">Last Name <span class="text-red-400">*</span></label>
+              <input id="p-last-name" type="text" class="form-input" placeholder="Last name" autocomplete="family-name" />
+            </div>
+            <div>
+              <label class="form-label">Middle Name</label>
+              <input id="p-middle-name" type="text" class="form-input" placeholder="Optional" />
+            </div>
+            <div>
+              <label class="form-label">Date of Birth <span class="text-red-400">*</span></label>
+              <input id="p-dob" type="date" class="form-input" />
+            </div>
+            <div>
+              <label class="form-label">Gender <span class="text-red-400">*</span></label>
+              <select id="p-gender" class="form-input">
+                <option value="">Select…</option>
+                <option value="FEMALE">Female</option>
+                <option value="MALE">Male</option>
+                <option value="OTHER">Other / Non-binary</option>
+                <option value="UNKNOWN">Prefer not to say</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Preferred Language</label>
+              <select id="p-language" class="form-input">
+                <option value="en">English</option>
+                <option value="es">Spanish / Español</option>
+                <option value="pt">Portuguese / Português</option>
+                <option value="ht">Haitian Creole</option>
+                <option value="zh">Chinese / 中文</option>
+                <option value="fr">French / Français</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Cell Phone</label>
+              <input id="p-cell" type="tel" class="form-input" placeholder="(305) 555-0100" autocomplete="tel" />
+            </div>
+            <div>
+              <label class="form-label">Email</label>
+              <input id="p-email" type="email" class="form-input" placeholder="patient@email.com" autocomplete="email" />
+            </div>
+
+            <!-- Address (full width) -->
+            <div class="sm:col-span-2">
+              <label class="form-label">Street Address</label>
+              <input id="p-street" type="text" class="form-input" placeholder="1234 Main St" autocomplete="street-address" />
+            </div>
+            <div>
+              <label class="form-label">City</label>
+              <input id="p-city" type="text" class="form-input" placeholder="Miami" autocomplete="address-level2" />
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="form-label">State</label>
+                <select id="p-state" class="form-input">
+                  <option value="">—</option>
+                  <option value="AL">AL</option><option value="AK">AK</option>
+                  <option value="AZ">AZ</option><option value="AR">AR</option>
+                  <option value="CA">CA</option><option value="CO">CO</option>
+                  <option value="CT">CT</option><option value="DE">DE</option>
+                  <option value="FL" selected>FL</option><option value="GA">GA</option>
+                  <option value="HI">HI</option><option value="ID">ID</option>
+                  <option value="IL">IL</option><option value="IN">IN</option>
+                  <option value="IA">IA</option><option value="KS">KS</option>
+                  <option value="KY">KY</option><option value="LA">LA</option>
+                  <option value="ME">ME</option><option value="MD">MD</option>
+                  <option value="MA">MA</option><option value="MI">MI</option>
+                  <option value="MN">MN</option><option value="MS">MS</option>
+                  <option value="MO">MO</option><option value="MT">MT</option>
+                  <option value="NE">NE</option><option value="NV">NV</option>
+                  <option value="NH">NH</option><option value="NJ">NJ</option>
+                  <option value="NM">NM</option><option value="NY">NY</option>
+                  <option value="NC">NC</option><option value="ND">ND</option>
+                  <option value="OH">OH</option><option value="OK">OK</option>
+                  <option value="OR">OR</option><option value="PA">PA</option>
+                  <option value="RI">RI</option><option value="SC">SC</option>
+                  <option value="SD">SD</option><option value="TN">TN</option>
+                  <option value="TX">TX</option><option value="UT">UT</option>
+                  <option value="VT">VT</option><option value="VA">VA</option>
+                  <option value="WA">WA</option><option value="WV">WV</option>
+                  <option value="WI">WI</option><option value="WY">WY</option>
+                  <option value="DC">DC</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label">ZIP</label>
+                <input id="p-zip" type="text" class="form-input" placeholder="33139" maxlength="10" />
+              </div>
+            </div>
+
+            <!-- Emergency contact -->
+            <div class="sm:col-span-2 border-t border-slate-800 pt-4 mt-1">
+              <p class="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+                <i class="fas fa-heart-pulse text-rose-400 text-xs"></i> Emergency Contact
+              </p>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label class="form-label">Name</label>
+                  <input id="p-ec-name" type="text" class="form-input" placeholder="Full name" />
+                </div>
+                <div>
+                  <label class="form-label">Relationship</label>
+                  <select id="p-ec-rel" class="form-input">
+                    <option value="">Select…</option>
+                    <option>Spouse</option><option>Partner</option>
+                    <option>Parent</option><option>Sibling</option>
+                    <option>Child</option><option>Friend</option><option>Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label">Phone</label>
+                  <input id="p-ec-phone" type="tel" class="form-input" placeholder="(305) 555-0100" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Referral source -->
+            <div class="sm:col-span-2">
+              <label class="form-label">Referral Source</label>
+              <input id="p-referral" type="text" class="form-input" placeholder="e.g., Dr. Smith, Google, Patient referral…" />
+            </div>
+
+          </div>
+
+          <p id="step1-error" class="text-red-400 text-xs mt-3 hidden"><i class="fas fa-circle-exclamation mr-1"></i><span></span></p>
+        </div>
+
+        <!-- ── Step 2: Insurance ──────────────────────────────────────────── -->
+        <div id="wiz-step-2" class="wizard-step">
+          <p class="text-sm text-slate-400 mb-4">Add the patient's primary insurance. You can add additional plans from the patient profile later.</p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+            <!-- Payer name (with autocomplete) -->
+            <div class="sm:col-span-2 relative" id="payer-wrap">
+              <label class="form-label">Insurance Company</label>
+              <input id="p-ins-payer" type="text" class="form-input" placeholder="Start typing payer name…" autocomplete="off" />
+              <input id="p-ins-payer-id" type="hidden" />
+              <div id="payer-dropdown" role="listbox"></div>
+            </div>
+
+            <div>
+              <label class="form-label">Plan Name</label>
+              <input id="p-ins-plan" type="text" class="form-input" placeholder="e.g., Gold Plus HMO" />
+            </div>
+            <div>
+              <label class="form-label">Member ID <span class="text-red-400">*</span></label>
+              <input id="p-ins-member-id" type="text" class="form-input" placeholder="e.g., W234567890" />
+            </div>
+            <div>
+              <label class="form-label">Group Number</label>
+              <input id="p-ins-group" type="text" class="form-input" placeholder="e.g., 0123456" />
+            </div>
+            <div>
+              <label class="form-label">Subscriber Relationship</label>
+              <select id="p-ins-rel" class="form-input">
+                <option value="SELF">Self</option>
+                <option value="SPOUSE">Spouse</option>
+                <option value="CHILD">Child</option>
+                <option value="OTHER">Other</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Subscriber Name</label>
+              <input id="p-ins-sub-name" type="text" class="form-input" placeholder="As shown on card" />
+            </div>
+            <div>
+              <label class="form-label">Subscriber DOB</label>
+              <input id="p-ins-sub-dob" type="date" class="form-input" />
+            </div>
+            <div>
+              <label class="form-label">Effective Date</label>
+              <input id="p-ins-eff-date" type="date" class="form-input" />
+            </div>
+            <div>
+              <label class="form-label">Copay ($)</label>
+              <input id="p-ins-copay" type="number" min="0" class="form-input" placeholder="0" />
+            </div>
+
+          </div>
+
+          <div class="mt-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300 flex items-start gap-2">
+            <i class="fas fa-circle-info mt-0.5 flex-shrink-0"></i>
+            <span>You can run eligibility verification from the patient profile after saving. Insurance is optional — click "Skip" to continue without adding insurance.</span>
+          </div>
+
+          <p id="step2-error" class="text-red-400 text-xs mt-3 hidden"><i class="fas fa-circle-exclamation mr-1"></i><span></span></p>
+        </div>
+
+        <!-- ── Step 3: Confirm ────────────────────────────────────────────── -->
+        <div id="wiz-step-3" class="wizard-step">
+          <div id="confirm-summary" class="space-y-3 text-sm">
+            <!-- Populated by JS -->
+          </div>
+          <div class="mt-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-start gap-2">
+            <i class="fas fa-shield-check mt-0.5 flex-shrink-0"></i>
+            <span>Patient record will be created. You can run insurance eligibility verification from the patient profile.</span>
+          </div>
+          <p id="step3-error" class="text-red-400 text-xs mt-3 hidden"><i class="fas fa-circle-exclamation mr-1"></i><span></span></p>
+        </div>
+
+      </div>
+
+      <!-- Wizard Footer -->
+      <div class="px-6 py-4 border-t border-slate-800 flex items-center justify-between gap-3">
+        <button id="btn-wiz-back" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium transition-colors hidden">
+          <i class="fas fa-arrow-left mr-1.5"></i>Back
+        </button>
+        <div class="flex items-center gap-3 ml-auto">
+          <button id="btn-wiz-skip" class="px-4 py-2 rounded-lg text-slate-500 hover:text-slate-300 text-sm font-medium transition-colors hidden">
+            Skip Insurance
+          </button>
+          <button id="btn-wiz-next" class="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors flex items-center gap-2 shadow-lg shadow-blue-900/30">
+            Next <i class="fas fa-arrow-right text-xs"></i>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- PATIENT PROFILE MODAL                                                     -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div id="modal-profile" class="modal-bg" role="dialog" aria-modal="true" aria-label="Patient Profile">
+  <div class="modal-card" style="max-width: 820px;">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl">
+
+      <!-- Profile Header -->
+      <div class="px-6 py-5 border-b border-slate-800 flex items-start gap-4">
+        <!-- Avatar -->
+        <div id="profile-avatar" class="w-14 h-14 rounded-xl flex-shrink-0 flex items-center justify-center text-xl font-bold shadow-lg">
+          — 
+        </div>
+        <!-- Info -->
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h2 id="profile-name" class="text-lg font-bold text-white">—</h2>
+            <span id="profile-status-chip" class="chip chip-active">Active</span>
+            <span id="profile-new-chip" class="chip chip-new hidden">New Patient</span>
+          </div>
+          <div class="flex items-center gap-4 mt-1 flex-wrap">
+            <span class="text-xs text-slate-500"><i class="fas fa-id-card mr-1 text-slate-600"></i><span id="profile-mrn">—</span></span>
+            <span class="text-xs text-slate-500"><i class="fas fa-calendar mr-1 text-slate-600"></i><span id="profile-dob">—</span></span>
+            <span class="text-xs text-slate-500"><i class="fas fa-venus-mars mr-1 text-slate-600"></i><span id="profile-gender">—</span></span>
+          </div>
+        </div>
+        <!-- Actions -->
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <button id="btn-intake-link" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors flex items-center gap-1.5" title="Send intake link">
+            <i class="fas fa-mobile-screen text-blue-400"></i>
+            <span class="hidden sm:block">Send Intake</span>
+          </button>
+          <button id="btn-close-profile" class="w-8 h-8 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-200 transition-colors flex items-center justify-center">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Stats -->
+      <div class="grid grid-cols-3 border-b border-slate-800 divide-x divide-slate-800">
+        <div class="px-4 py-3 text-center">
+          <p class="text-xs text-slate-500 mb-0.5">Last Visit</p>
+          <p class="text-sm font-semibold text-white" id="profile-last-visit">—</p>
+        </div>
+        <div class="px-4 py-3 text-center">
+          <p class="text-xs text-slate-500 mb-0.5">Primary Insurance</p>
+          <p class="text-sm font-semibold text-white truncate" id="profile-primary-ins">—</p>
+        </div>
+        <div class="px-4 py-3 text-center">
+          <p class="text-xs text-slate-500 mb-0.5">Eligibility</p>
+          <p class="text-sm font-semibold" id="profile-elig-status">—</p>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="flex border-b border-slate-800 overflow-x-auto px-4 gap-1 bg-slate-900/80 flex-shrink-0">
+        <div class="profile-tab active" data-tab="overview">Overview</div>
+        <div class="profile-tab" data-tab="insurance">Insurance</div>
+        <div class="profile-tab" data-tab="clinical">Clinical</div>
+        <div class="profile-tab" data-tab="contacts">Contacts</div>
+      </div>
+
+      <!-- Tab Panels (scrollable) -->
+      <div class="overflow-y-auto" style="max-height: 420px;">
+
+        <!-- Overview Tab -->
+        <div id="tab-overview" class="tab-panel active p-5">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+              <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Contact</p>
+              <div class="space-y-2 text-sm">
+                <div class="flex gap-2"><i class="fas fa-phone w-4 text-slate-500 mt-0.5 text-xs"></i><span id="ov-phone" class="text-slate-300">—</span></div>
+                <div class="flex gap-2"><i class="fas fa-envelope w-4 text-slate-500 mt-0.5 text-xs"></i><span id="ov-email" class="text-slate-300 break-all">—</span></div>
+                <div class="flex gap-2"><i class="fas fa-location-dot w-4 text-slate-500 mt-0.5 text-xs"></i><span id="ov-address" class="text-slate-300">—</span></div>
+              </div>
+            </div>
+            <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+              <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Demographics</p>
+              <div class="space-y-2 text-sm">
+                <div class="flex justify-between"><span class="text-slate-500">Language</span><span id="ov-language" class="text-slate-300">—</span></div>
+                <div class="flex justify-between"><span class="text-slate-500">Portal Access</span><span id="ov-portal" class="text-slate-300">—</span></div>
+                <div class="flex justify-between"><span class="text-slate-500">Referral</span><span id="ov-referral" class="text-slate-300">—</span></div>
+                <div class="flex justify-between"><span class="text-slate-500">Patient Since</span><span id="ov-since" class="text-slate-300">—</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Insurance Tab -->
+        <div id="tab-insurance" class="tab-panel p-5">
+          <div id="insurance-plans-container" class="space-y-4">
+            <!-- Plans rendered by JS -->
+          </div>
+        </div>
+
+        <!-- Clinical Tab -->
+        <div id="tab-clinical" class="tab-panel p-5">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+              <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <i class="fas fa-triangle-exclamation text-amber-400"></i> Allergies
+              </p>
+              <p id="clin-allergies" class="text-sm text-slate-300 leading-relaxed">—</p>
+            </div>
+            <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+              <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <i class="fas fa-pills text-blue-400"></i> Current Medications
+              </p>
+              <p id="clin-meds" class="text-sm text-slate-300 leading-relaxed">—</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Contacts Tab -->
+        <div id="tab-contacts" class="tab-panel p-5">
+          <div id="contacts-container" class="space-y-3">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+
+      </div><!-- /scrollable -->
+
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- TOAST                                                                     -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div id="toast" role="alert">
+  <i id="toast-icon" class="fas fa-circle-check text-emerald-400"></i>
+  <span id="toast-msg">—</span>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- SCRIPTS                                                                   -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<script src="/static/patients.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OculoFlow – Revenue Cycle Management</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+  <style>
+    body { background:#0f172a; color:#e2e8f0; font-family:'Inter',sans-serif; }
+    .card { background:#1e293b; border:1px solid #334155; border-radius:12px; }
+    .tab-btn { transition:all .2s; }
+    .tab-btn.active { background:#0ea5e9; color:#fff; }
+    .tab-btn:not(.active) { background:#1e293b; color:#94a3b8; }
+    .tab-btn:not(.active):hover { background:#334155; color:#e2e8f0; }
+    .badge { padding:2px 10px; border-radius:99px; font-size:11px; font-weight:600; }
+    .badge-paid { background:#166534; color:#bbf7d0; }
+    .badge-pending { background:#854d0e; color:#fef08a; }
+    .badge-denied { background:#7f1d1d; color:#fecaca; }
+    .badge-draft { background:#1e3a5f; color:#93c5fd; }
+    .badge-submitted { background:#1d4ed8; color:#bfdbfe; }
+    .badge-appealed { background:#6b21a8; color:#e9d5ff; }
+    .badge-partial { background:#713f12; color:#fed7aa; }
+    .badge-ready { background:#065f46; color:#a7f3d0; }
+    .badge-written { background:#374151; color:#9ca3af; }
+    .badge-voided { background:#4b5563; color:#d1d5db; }
+    .tbl-row:hover { background:#1e293b; }
+    .modal-bg { background:rgba(0,0,0,.7); }
+    input,select,textarea { background:#0f172a; border:1px solid #334155; color:#e2e8f0; border-radius:8px; padding:8px 12px; width:100%; outline:none; }
+    input:focus,select:focus,textarea:focus { border-color:#0ea5e9; }
+    .btn-primary { background:#0ea5e9; color:#fff; border-radius:8px; padding:8px 18px; font-weight:600; transition:.2s; }
+    .btn-primary:hover { background:#0284c7; }
+    .btn-danger { background:#dc2626; color:#fff; border-radius:8px; padding:6px 14px; font-weight:600; transition:.2s; }
+    .btn-danger:hover { background:#b91c1c; }
+    .stat-card { background:linear-gradient(135deg,#1e293b,#0f172a); border:1px solid #334155; border-radius:12px; padding:20px; }
+    .progress-bar { height:6px; border-radius:3px; background:#1e3a5f; }
+    .progress-fill { height:6px; border-radius:3px; background:#0ea5e9; }
+    nav a { padding:6px 12px; border-radius:6px; font-size:13px; color:#94a3b8; transition:.15s; white-space:nowrap; }
+    nav a:hover { background:#334155; color:#e2e8f0; }
+    nav a.active { background:#0ea5e9; color:#fff; }
+  </style>
+  <script src="/static/auth-nav.js"></script>
+</head>
+<body>
+
+<!-- Top Nav -->
+<div class="border-b border-slate-700 bg-slate-900 px-4 py-2 flex items-center gap-1 overflow-x-auto">
+  <span class="text-sky-400 font-bold mr-3 text-sm whitespace-nowrap"><i class="fas fa-eye mr-1"></i>OculoFlow</span>
+  <nav class="flex gap-1 flex-wrap">
+    <a href="/">Home</a><a href="/dashboard">Dashboard</a><a href="/patients">Patients</a>
+    <a href="/schedule">Schedule</a><a href="/exam">Exam</a><a href="/billing">Billing</a>
+    <a href="/reports">Reports</a><a href="/optical">Optical</a><a href="/portal">Portal</a>
+    <a href="/messaging">Messaging</a><a href="/reminders">Reminders</a>
+    <a href="/scorecards">Scorecards</a><a href="/telehealth">Telehealth</a>
+    <a href="/erx">eRx</a><a href="/ai">AI CDS</a><a href="/priorauth">Prior Auth</a>
+    <a href="/rcm" class="active">RCM</a>
+  </nav>
+</div>
+
+<!-- Header -->
+<div class="px-6 py-5 border-b border-slate-700 flex items-center justify-between">
+  <div>
+    <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+      <i class="fas fa-dollar-sign text-sky-400"></i> Revenue Cycle Management
+    </h1>
+    <p class="text-slate-400 text-sm mt-1">Claims, payments, remittance &amp; patient billing</p>
+  </div>
+  <button onclick="openNewClaimModal()" class="btn-primary flex items-center gap-2">
+    <i class="fas fa-plus"></i> New Claim
+  </button>
+</div>
+
+<!-- Tabs -->
+<div class="px-6 pt-4 flex gap-2 border-b border-slate-700 pb-0">
+  <button class="tab-btn active px-4 py-2 rounded-t-lg text-sm font-semibold" onclick="switchTab('overview',this)">
+    <i class="fas fa-chart-pie mr-1"></i>Overview
+  </button>
+  <button class="tab-btn px-4 py-2 rounded-t-lg text-sm font-semibold" onclick="switchTab('claims',this)">
+    <i class="fas fa-file-invoice-dollar mr-1"></i>Claims
+  </button>
+  <button class="tab-btn px-4 py-2 rounded-t-lg text-sm font-semibold" onclick="switchTab('remittance',this)">
+    <i class="fas fa-file-alt mr-1"></i>Remittance (ERA)
+  </button>
+  <button class="tab-btn px-4 py-2 rounded-t-lg text-sm font-semibold" onclick="switchTab('statements',this)">
+    <i class="fas fa-envelope-open-dollar mr-1"></i>Statements
+  </button>
+  <button class="tab-btn px-4 py-2 rounded-t-lg text-sm font-semibold" onclick="switchTab('plans',this)">
+    <i class="fas fa-calendar-check mr-1"></i>Payment Plans
+  </button>
+</div>
+
+<div class="p-6">
+
+  <!-- ── Overview ──────────────────────────────────────────────── -->
+  <div id="tab-overview">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="kpi-cards">
+      <div class="stat-card"><div class="text-slate-400 text-xs mb-1">Total Charges</div><div class="text-2xl font-bold text-white" id="kpi-charges">—</div></div>
+      <div class="stat-card"><div class="text-slate-400 text-xs mb-1">Total Collected</div><div class="text-2xl font-bold text-green-400" id="kpi-collected">—</div></div>
+      <div class="stat-card"><div class="text-slate-400 text-xs mb-1">Outstanding Balance</div><div class="text-2xl font-bold text-yellow-400" id="kpi-outstanding">—</div></div>
+      <div class="stat-card"><div class="text-slate-400 text-xs mb-1">Collection Rate</div><div class="text-2xl font-bold text-sky-400" id="kpi-collection-rate">—</div></div>
+      <div class="stat-card"><div class="text-slate-400 text-xs mb-1">Clean Claim Rate</div><div class="text-2xl font-bold text-emerald-400" id="kpi-clean-rate">—</div></div>
+      <div class="stat-card"><div class="text-slate-400 text-xs mb-1">Denial Rate</div><div class="text-2xl font-bold text-red-400" id="kpi-denial-rate">—</div></div>
+      <div class="stat-card"><div class="text-slate-400 text-xs mb-1">Avg Days to Payment</div><div class="text-2xl font-bold text-purple-400" id="kpi-avg-days">—</div></div>
+      <div class="stat-card"><div class="text-slate-400 text-xs mb-1">Claims In-Flight</div><div class="text-2xl font-bold text-orange-400" id="kpi-inflight">—</div></div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+      <div class="card p-4">
+        <h3 class="font-semibold text-white mb-3"><i class="fas fa-layer-group text-sky-400 mr-2"></i>AR Aging Buckets</h3>
+        <div id="aging-buckets" class="space-y-3"></div>
+      </div>
+      <div class="card p-4">
+        <h3 class="font-semibold text-white mb-3"><i class="fas fa-ban text-red-400 mr-2"></i>Top Denial Reasons</h3>
+        <div id="denial-reasons" class="space-y-2"></div>
+      </div>
+    </div>
+    <div class="card p-4">
+      <h3 class="font-semibold text-white mb-3"><i class="fas fa-clock text-slate-400 mr-2"></i>Recent Activity</h3>
+      <table class="w-full text-sm">
+        <thead><tr class="text-slate-400 border-b border-slate-700">
+          <th class="text-left py-2">Claim #</th><th class="text-left py-2">Patient</th>
+          <th class="text-left py-2">Payer</th><th class="text-right py-2">Charged</th>
+          <th class="text-left py-2">Status</th>
+        </tr></thead>
+        <tbody id="recent-activity"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Claims ────────────────────────────────────────────────── -->
+  <div id="tab-claims" class="hidden">
+    <div class="flex gap-3 mb-4">
+      <input type="text" id="claim-search" placeholder="Search patient, claim #, payer…" class="flex-1" oninput="filterClaims()">
+      <select id="claim-status-filter" class="w-48" onchange="filterClaims()">
+        <option value="">All Statuses</option>
+      </select>
+    </div>
+    <div class="card overflow-hidden">
+      <table class="w-full text-sm">
+        <thead><tr class="text-slate-400 border-b border-slate-700 bg-slate-800">
+          <th class="text-left px-4 py-3">Claim #</th>
+          <th class="text-left px-4 py-3">Patient</th>
+          <th class="text-left px-4 py-3">Payer</th>
+          <th class="text-left px-4 py-3">Service Date</th>
+          <th class="text-right px-4 py-3">Charged</th>
+          <th class="text-right px-4 py-3">Paid</th>
+          <th class="text-right px-4 py-3">Balance</th>
+          <th class="text-left px-4 py-3">Status</th>
+          <th class="text-left px-4 py-3">Actions</th>
+        </tr></thead>
+        <tbody id="claims-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Remittance ────────────────────────────────────────────── -->
+  <div id="tab-remittance" class="hidden">
+    <div class="flex justify-between mb-4">
+      <h3 class="text-lg font-semibold text-white">Electronic Remittance Advice (ERA)</h3>
+      <button onclick="openNewERAModal()" class="btn-primary text-sm"><i class="fas fa-plus mr-1"></i>Record ERA</button>
+    </div>
+    <div class="card overflow-hidden">
+      <table class="w-full text-sm">
+        <thead><tr class="text-slate-400 border-b border-slate-700 bg-slate-800">
+          <th class="text-left px-4 py-3">ERA ID</th>
+          <th class="text-left px-4 py-3">Payer</th>
+          <th class="text-left px-4 py-3">Check Date</th>
+          <th class="text-left px-4 py-3">Trace #</th>
+          <th class="text-right px-4 py-3">Total Payment</th>
+          <th class="text-right px-4 py-3">Claims</th>
+          <th class="text-left px-4 py-3">Status</th>
+        </tr></thead>
+        <tbody id="era-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Statements ─────────────────────────────────────────────── -->
+  <div id="tab-statements" class="hidden">
+    <div class="flex justify-between mb-4">
+      <h3 class="text-lg font-semibold text-white">Patient Statements</h3>
+      <button onclick="openNewStatementModal()" class="btn-primary text-sm"><i class="fas fa-plus mr-1"></i>New Statement</button>
+    </div>
+    <div class="card overflow-hidden">
+      <table class="w-full text-sm">
+        <thead><tr class="text-slate-400 border-b border-slate-700 bg-slate-800">
+          <th class="text-left px-4 py-3">Stmt ID</th>
+          <th class="text-left px-4 py-3">Patient</th>
+          <th class="text-left px-4 py-3">Statement Date</th>
+          <th class="text-left px-4 py-3">Due Date</th>
+          <th class="text-right px-4 py-3">Amount Due</th>
+          <th class="text-left px-4 py-3">Status</th>
+        </tr></thead>
+        <tbody id="statements-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Payment Plans ──────────────────────────────────────────── -->
+  <div id="tab-plans" class="hidden">
+    <div class="flex justify-between mb-4">
+      <h3 class="text-lg font-semibold text-white">Patient Payment Plans</h3>
+      <button onclick="openNewPlanModal()" class="btn-primary text-sm"><i class="fas fa-plus mr-1"></i>New Plan</button>
+    </div>
+    <div id="plans-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+  </div>
+
+</div>
+
+<!-- ─── Claim Detail Modal ─────────────────────────────────────────── -->
+<div id="claim-modal" class="fixed inset-0 modal-bg z-50 hidden flex items-center justify-center p-4">
+  <div class="card w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xl font-bold text-white" id="claim-modal-title">Claim Detail</h2>
+      <button onclick="closeModal('claim-modal')" class="text-slate-400 hover:text-white text-xl"><i class="fas fa-times"></i></button>
+    </div>
+    <div id="claim-modal-body"></div>
+  </div>
+</div>
+
+<!-- ─── New Claim Modal ────────────────────────────────────────────── -->
+<div id="new-claim-modal" class="fixed inset-0 modal-bg z-50 hidden flex items-center justify-center p-4">
+  <div class="card w-full max-w-lg p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xl font-bold text-white">New Claim</h2>
+      <button onclick="closeModal('new-claim-modal')" class="text-slate-400 hover:text-white text-xl"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="space-y-3">
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-xs text-slate-400">Patient ID *</label><input id="nc-patientId" placeholder="pt-001"></div>
+        <div><label class="text-xs text-slate-400">Patient Name *</label><input id="nc-patientName" placeholder="Jane Doe"></div>
+        <div><label class="text-xs text-slate-400">Payer ID *</label><input id="nc-payerId" placeholder="pyr-001"></div>
+        <div><label class="text-xs text-slate-400">Payer Name *</label><input id="nc-payerName" placeholder="BlueCross"></div>
+        <div><label class="text-xs text-slate-400">Insurance Plan</label><input id="nc-insurancePlan" placeholder="PPO Gold"></div>
+        <div><label class="text-xs text-slate-400">Member ID</label><input id="nc-memberId" placeholder="BCB-123456"></div>
+        <div><label class="text-xs text-slate-400">Provider ID</label><input id="nc-providerId" placeholder="dr-chen"></div>
+        <div><label class="text-xs text-slate-400">Provider Name</label><input id="nc-providerName" placeholder="Dr. Emily Chen"></div>
+        <div><label class="text-xs text-slate-400">Service Date *</label><input id="nc-serviceDate" type="date"></div>
+        <div><label class="text-xs text-slate-400">Total Charged ($)</label><input id="nc-totalCharged" type="number" placeholder="220"></div>
+      </div>
+      <div id="nc-error" class="text-red-400 text-sm hidden"></div>
+      <button onclick="submitNewClaim()" class="btn-primary w-full mt-2">Create Claim</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── New ERA Modal ──────────────────────────────────────────────── -->
+<div id="new-era-modal" class="fixed inset-0 modal-bg z-50 hidden flex items-center justify-center p-4">
+  <div class="card w-full max-w-md p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xl font-bold text-white">Record ERA</h2>
+      <button onclick="closeModal('new-era-modal')" class="text-slate-400 hover:text-white text-xl"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="space-y-3">
+      <div><label class="text-xs text-slate-400">Payer ID *</label><input id="era-payerId" placeholder="pyr-001"></div>
+      <div><label class="text-xs text-slate-400">Payer Name *</label><input id="era-payerName" placeholder="BlueCross"></div>
+      <div><label class="text-xs text-slate-400">Check Date *</label><input id="era-checkDate" type="date"></div>
+      <div><label class="text-xs text-slate-400">EFT Trace #</label><input id="era-eft" placeholder="EFT-12345"></div>
+      <div><label class="text-xs text-slate-400">Total Payment ($) *</label><input id="era-total" type="number" placeholder="500"></div>
+      <div id="era-error" class="text-red-400 text-sm hidden"></div>
+      <button onclick="submitNewERA()" class="btn-primary w-full">Record ERA</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── New Statement Modal ────────────────────────────────────────── -->
+<div id="new-stmt-modal" class="fixed inset-0 modal-bg z-50 hidden flex items-center justify-center p-4">
+  <div class="card w-full max-w-md p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xl font-bold text-white">New Patient Statement</h2>
+      <button onclick="closeModal('new-stmt-modal')" class="text-slate-400 hover:text-white text-xl"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="space-y-3">
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-xs text-slate-400">Patient ID *</label><input id="stmt-patientId" placeholder="pt-001"></div>
+        <div><label class="text-xs text-slate-400">Patient Name *</label><input id="stmt-patientName" placeholder="Jane Doe"></div>
+        <div><label class="text-xs text-slate-400">Total Due ($) *</label><input id="stmt-totalDue" type="number" placeholder="33"></div>
+        <div><label class="text-xs text-slate-400">Due Date *</label><input id="stmt-dueDate" type="date"></div>
+      </div>
+      <div id="stmt-error" class="text-red-400 text-sm hidden"></div>
+      <button onclick="submitNewStatement()" class="btn-primary w-full">Create Statement</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── New Payment Plan Modal ─────────────────────────────────────── -->
+<div id="new-plan-modal" class="fixed inset-0 modal-bg z-50 hidden flex items-center justify-center p-4">
+  <div class="card w-full max-w-md p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xl font-bold text-white">New Payment Plan</h2>
+      <button onclick="closeModal('new-plan-modal')" class="text-slate-400 hover:text-white text-xl"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="space-y-3">
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-xs text-slate-400">Patient ID *</label><input id="pp-patientId" placeholder="pt-001"></div>
+        <div><label class="text-xs text-slate-400">Patient Name *</label><input id="pp-patientName" placeholder="Jane Doe"></div>
+        <div><label class="text-xs text-slate-400">Total Balance ($) *</label><input id="pp-balance" type="number" placeholder="180"></div>
+        <div><label class="text-xs text-slate-400">Monthly Payment ($) *</label><input id="pp-monthly" type="number" placeholder="60"></div>
+        <div><label class="text-xs text-slate-400">Start Date</label><input id="pp-start" type="date"></div>
+      </div>
+      <div id="plan-error" class="text-red-400 text-sm hidden"></div>
+      <button onclick="submitNewPlan()" class="btn-primary w-full">Create Plan</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/rcm.js"></script>
+</body>
+</html>

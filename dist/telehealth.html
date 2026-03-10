@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OculoFlow — Telehealth</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg-0:#0a0e1a;--bg-1:#0f1629;--bg-2:#141c35;--bg-3:#1a2340;
+      --border:rgba(99,102,241,.15);
+      --accent:#6366f1;--accent-h:#818cf8;
+      --green:#10b981;--yellow:#f59e0b;--red:#ef4444;--orange:#f97316;--cyan:#06b6d4;--purple:#a855f7;--teal:#14b8a6;
+      --text-1:#f1f5f9;--text-2:#94a3b8;--text-3:#475569;
+    }
+    *{box-sizing:border-box;}
+    body{background:var(--bg-0);color:var(--text-1);font-family:'Inter',system-ui,sans-serif;margin:0;min-height:100vh;display:flex;flex-direction:column;}
+    /* Topbar */
+    .topbar{background:var(--bg-1);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 16px;gap:10px;flex-shrink:0;z-index:50;}
+    .logo-pill{display:flex;align-items:center;gap:8px;background:rgba(20,184,166,.12);border:1px solid rgba(20,184,166,.25);border-radius:8px;padding:4px 10px;}
+    .nav-link{font-size:11px;font-weight:500;color:var(--text-2);text-decoration:none;padding:4px 8px;border-radius:6px;transition:all .15s;display:flex;align-items:center;gap:5px;white-space:nowrap;}
+    .nav-link:hover,.nav-link.active{background:rgba(99,102,241,.15);color:var(--text-1);}
+    /* Tab bar */
+    .tab-bar{background:var(--bg-1);border-bottom:1px solid var(--border);padding:0 20px;display:flex;gap:0;flex-shrink:0;overflow-x:auto;}
+    .tab-btn{padding:12px 20px;font-size:12px;font-weight:600;color:var(--text-2);border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;gap:7px;white-space:nowrap;}
+    .tab-btn:hover{color:var(--text-1);}
+    .tab-btn.active{color:#5eead4;border-bottom-color:#14b8a6;}
+    /* Layout */
+    .layout{display:flex;flex:1;overflow:hidden;}
+    .sidebar{width:300px;background:var(--bg-1);border-right:1px solid var(--border);flex-shrink:0;overflow-y:auto;display:flex;flex-direction:column;}
+    .main{flex:1;padding:20px;overflow-y:auto;}
+    /* Visit row */
+    .visit-row{padding:12px 14px;border-bottom:1px solid rgba(99,102,241,.06);cursor:pointer;transition:all .15s;}
+    .visit-row:hover{background:rgba(99,102,241,.05);}
+    .visit-row.active{background:rgba(20,184,166,.08);border-left:3px solid #14b8a6;}
+    .visit-row.active{padding-left:11px;}
+    /* Status chips */
+    .chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.06em;}
+    .ch-intake_pending{background:rgba(148,163,184,.12);color:#94a3b8;}
+    .ch-intake_complete{background:rgba(99,102,241,.15);color:#818cf8;}
+    .ch-under_review{background:rgba(6,182,212,.15);color:#22d3ee;}
+    .ch-awaiting_info{background:rgba(245,158,11,.15);color:#fbbf24;}
+    .ch-completed{background:rgba(16,185,129,.15);color:#34d399;}
+    .ch-cancelled{background:rgba(239,68,68,.12);color:#f87171;}
+    /* Urgency dots */
+    .urg-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+    .urg-routine{background:#475569;}
+    .urg-urgent{background:#f59e0b;box-shadow:0 0 6px rgba(245,158,11,.5);}
+    .urg-emergent{background:#ef4444;box-shadow:0 0 8px rgba(239,68,68,.6);animation:pulse .8s infinite;}
+    @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.5;}}
+    /* Cards */
+    .card{background:var(--bg-1);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;}
+    .card-title{font-size:13px;font-weight:700;color:var(--text-1);margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+    /* Stat cards */
+    .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:20px;}
+    .stat-card{background:var(--bg-1);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+    .stat-card .num{font-size:26px;font-weight:700;line-height:1;margin-bottom:4px;}
+    .stat-card .lbl{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.07em;}
+    .stat-card .sub{font-size:11px;color:var(--text-2);margin-top:4px;}
+    .c-teal .num{color:#5eead4;}.c-green .num{color:var(--green);}.c-yellow .num{color:var(--yellow);}.c-red .num{color:var(--red);}.c-indigo .num{color:var(--accent-h);}.c-cyan .num{color:var(--cyan);}
+    /* Visit detail */
+    .section-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:8px;}
+    .detail-row{display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid rgba(99,102,241,.06);}
+    .detail-row:last-child{border-bottom:none;}
+    .detail-key{font-size:11px;color:var(--text-3);width:140px;flex-shrink:0;}
+    .detail-val{font-size:12px;color:var(--text-1);flex:1;}
+    /* Message bubbles */
+    .msg-bubble{max-width:75%;padding:10px 14px;border-radius:12px;font-size:12px;line-height:1.5;margin-bottom:10px;}
+    .msg-patient{background:var(--bg-2);border:1px solid var(--border);align-self:flex-start;}
+    .msg-provider{background:rgba(20,184,166,.12);border:1px solid rgba(20,184,166,.2);align-self:flex-end;}
+    .msg-staff{background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.2);align-self:flex-end;}
+    .msg-meta{font-size:10px;color:var(--text-3);margin-bottom:3px;}
+    /* Info request */
+    .ir-card{background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:10px;padding:12px;margin-bottom:10px;}
+    .ir-card.resolved{background:rgba(16,185,129,.04);border-color:rgba(16,185,129,.15);}
+    /* Photos */
+    .photo-thumb{width:90px;height:70px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer;}
+    /* Prescription row */
+    .rx-row{background:var(--bg-2);border-radius:8px;padding:10px 12px;margin-bottom:6px;font-size:12px;}
+    /* Buttons */
+    .btn-primary{background:var(--teal);color:#fff;border:none;padding:8px 18px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .15s;}
+    .btn-primary:hover{background:#0d9488;}
+    .btn-indigo{background:var(--accent);color:#fff;border:none;padding:8px 18px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .15s;}
+    .btn-indigo:hover{background:var(--accent-h);}
+    .btn-sm{background:none;border:1px solid var(--border);color:var(--text-2);padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all .15s;}
+    .btn-sm:hover{border-color:var(--accent);color:var(--text-1);}
+    .btn-danger{background:none;border:1px solid rgba(239,68,68,.3);color:#f87171;padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;}
+    .btn-green{background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3);color:#34d399;padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;}
+    .btn-green:hover{background:rgba(16,185,129,.25);}
+    /* Form */
+    .form-group{margin-bottom:14px;}
+    .form-label{display:block;font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:5px;}
+    .form-input{width:100%;background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:13px;color:var(--text-1);outline:none;font-family:inherit;}
+    .form-input:focus{border-color:rgba(20,184,166,.5);}
+    .form-textarea{width:100%;background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:13px;color:var(--text-1);outline:none;font-family:inherit;resize:vertical;}
+    .form-textarea:focus{border-color:rgba(20,184,166,.5);}
+    select.form-input option{background:var(--bg-2);}
+    .g2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+    .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+    /* Modal */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,10,.85);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;}
+    .modal{background:var(--bg-1);border:1px solid var(--border);border-radius:16px;width:100%;max-width:640px;max-height:92vh;overflow-y:auto;}
+    .modal-header{padding:18px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg-1);z-index:1;}
+    .modal-title{font-size:15px;font-weight:700;}
+    .modal-body{padding:16px 20px 20px;}
+    /* Filter pills */
+    .filter-pill{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--border);color:var(--text-2);background:none;transition:all .15s;}
+    .filter-pill.active,.filter-pill:hover{background:rgba(20,184,166,.12);border-color:rgba(20,184,166,.35);color:#5eead4;}
+    /* Video room banner */
+    .video-banner{background:linear-gradient(135deg,rgba(20,184,166,.15),rgba(99,102,241,.15));border:1px solid rgba(20,184,166,.3);border-radius:12px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:14px;}
+    /* Scrollbar */
+    ::-webkit-scrollbar{width:4px;height:4px;}
+    ::-webkit-scrollbar-thumb{background:rgba(20,184,166,.3);border-radius:2px;}
+    ::-webkit-scrollbar-track{background:transparent;}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+    .fade-in{animation:fadeIn .2s ease;}
+    .hidden{display:none!important;}
+    /* Pain/severity scale */
+    .scale-bar{display:flex;gap:3px;align-items:center;}
+    .scale-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--bg-3);transition:all .15s;}
+    /* Queue filter toolbar */
+    .queue-toolbar{padding:10px 14px;border-bottom:1px solid rgba(99,102,241,.06);display:flex;gap:6px;flex-wrap:wrap;}
+    /* New visit wizard steps */
+    .step-indicator{display:flex;align-items:center;gap:0;margin-bottom:20px;}
+    .step-dot{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;}
+    .step-dot.done{background:var(--teal);color:#fff;}
+    .step-dot.active{background:rgba(20,184,166,.2);border:2px solid var(--teal);color:#5eead4;}
+    .step-dot.pending{background:var(--bg-2);border:2px solid var(--border);color:var(--text-3);}
+    .step-line{flex:1;height:2px;background:var(--border);}
+    .step-line.done{background:var(--teal);}
+    /* Review form section */
+    .rx-item{background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;position:relative;}
+  </style>
+  <script src="/static/auth-nav.js"></script>
+</head>
+<body>
+
+<!-- ── Top Bar ──────────────────────────────────────────────────────────────── -->
+<header class="topbar">
+  <div class="logo-pill">
+    <i class="fas fa-video text-teal-400 text-xs"></i>
+    <span class="text-xs font-bold text-teal-300 tracking-wide">Telehealth</span>
+    <span class="text-xs text-slate-500 ml-1">v2.1.0</span>
+  </div>
+  <nav class="hidden md:flex items-center gap-0.5 ml-2 overflow-x-auto">
+    <a href="/"           class="nav-link"><i class="fas fa-house w-3 text-center"></i>Home</a>
+    <a href="/dashboard"  class="nav-link"><i class="fas fa-gauge-high w-3 text-center"></i>Dashboard</a>
+    <a href="/patients"   class="nav-link"><i class="fas fa-users w-3 text-center"></i>Patients</a>
+    <a href="/schedule"   class="nav-link"><i class="fas fa-calendar-days w-3 text-center"></i>Schedule</a>
+    <a href="/exam"       class="nav-link"><i class="fas fa-file-medical w-3 text-center"></i>Exam</a>
+    <a href="/billing"    class="nav-link"><i class="fas fa-file-invoice-dollar w-3 text-center"></i>Billing</a>
+    <a href="/optical"    class="nav-link"><i class="fas fa-glasses w-3 text-center"></i>Optical</a>
+    <a href="/reports"    class="nav-link"><i class="fas fa-chart-line w-3 text-center"></i>Reports</a>
+    <a href="/portal"     class="nav-link"><i class="fas fa-user-circle w-3 text-center"></i>Portal</a>
+    <a href="/messaging"  class="nav-link"><i class="fas fa-comment-medical w-3 text-center"></i>Messaging</a>
+    <a href="/reminders"  class="nav-link"><i class="fas fa-bell w-3 text-center"></i>Reminders</a>
+    <a href="/scorecards" class="nav-link"><i class="fas fa-chart-bar w-3 text-center"></i>Scorecards</a>
+    <a href="/telehealth" class="nav-link active"><i class="fas fa-video w-3 text-center"></i>Telehealth</a>
+    <a href="/erx" class="nav-link"><i class="fas fa-prescription-bottle w-3 text-center"></i>eRx</a>
+    <a href="/ai" class="nav-link"><i class="fas fa-brain w-3 text-center"></i>AI CDS</a>
+    <a href="/priorauth" class="nav-link"><i class="fas fa-clipboard-check w-3 text-center"></i>Prior Auth</a><a href="/rcm" class="nav-link"><i class="fas fa-dollar-sign w-3 text-center"></i>RCM</a>
+  </nav>
+  <div class="ml-auto flex items-center gap-2">
+    <button onclick="openNewVisitModal()" class="btn-primary text-xs py-1.5 px-3"><i class="fas fa-plus"></i> New Visit</button>
+  </div>
+</header>
+
+<!-- ── Tab Bar ──────────────────────────────────────────────────────────────── -->
+<div class="tab-bar">
+  <button class="tab-btn active" id="tab-btn-overview"   onclick="showTab('overview',this)"><i class="fas fa-gauge-high"></i>Overview</button>
+  <button class="tab-btn"        id="tab-btn-queue"      onclick="showTab('queue',this)"><i class="fas fa-list-check"></i>Visit Queue</button>
+  <button class="tab-btn"        id="tab-btn-live"       onclick="showTab('live',this)"><i class="fas fa-video"></i>Live Sessions</button>
+  <button class="tab-btn"        id="tab-btn-completed"  onclick="showTab('completed',this)"><i class="fas fa-check-circle"></i>Completed</button>
+  <button class="tab-btn"        id="tab-btn-settings"   onclick="showTab('settings',this)"><i class="fas fa-sliders"></i>Settings</button>
+</div>
+
+<!-- ── Main Layout ─────────────────────────────────────────────────────────── -->
+<div class="layout">
+
+  <!-- ── Left: Visit list sidebar ── -->
+  <aside class="sidebar">
+    <div class="queue-toolbar">
+      <button class="filter-pill active" id="fp-ALL"     onclick="setQueueFilter('ALL',this)">All</button>
+      <button class="filter-pill"        id="fp-PENDING" onclick="setQueueFilter('PENDING',this)"><i class="fas fa-clock mr-1"></i>Pending</button>
+      <button class="filter-pill"        id="fp-URGENT"  onclick="setQueueFilter('URGENT',this)"><i class="fas fa-circle-exclamation mr-1"></i>Urgent</button>
+      <button class="filter-pill"        id="fp-LIVE"    onclick="setQueueFilter('LIVE',this)"><i class="fas fa-video mr-1"></i>Live</button>
+    </div>
+    <div id="visit-list">
+      <div class="text-slate-500 text-xs text-center py-6"><i class="fas fa-spinner fa-spin mr-1"></i>Loading…</div>
+    </div>
+  </aside>
+
+  <!-- ── Right: Content area ── -->
+  <main class="main">
+
+    <!-- ── OVERVIEW TAB ──────────────────────────────────────────────────── -->
+    <div id="tab-overview" class="fade-in">
+      <div class="stats-row" id="ov-stats">
+        <div class="stat-card c-indigo"><div class="num" id="ov-awaiting">—</div><div class="lbl">Awaiting Review</div><div class="sub">In queue</div></div>
+        <div class="stat-card c-yellow"><div class="num" id="ov-info">—</div><div class="lbl">Awaiting Info</div><div class="sub">Patient response needed</div></div>
+        <div class="stat-card c-red"><div class="num" id="ov-urgent">—</div><div class="lbl">Urgent / Emergent</div><div class="sub">Needs immediate review</div></div>
+        <div class="stat-card c-teal"><div class="num" id="ov-live">—</div><div class="lbl">Live Today</div><div class="sub">Scheduled video calls</div></div>
+        <div class="stat-card c-green"><div class="num" id="ov-completed">—</div><div class="lbl">Completed Today</div><div class="sub" id="ov-week">— this week</div></div>
+      </div>
+
+      <div class="g2" style="align-items:start;">
+        <!-- Recent visit queue -->
+        <div class="card">
+          <div class="card-title"><i class="fas fa-inbox text-teal-400"></i>Active Visit Queue
+            <span class="text-xs text-slate-500 font-normal ml-auto" id="ov-queue-count"></span>
+          </div>
+          <div id="ov-queue-list"></div>
+        </div>
+        <!-- Upcoming live sessions -->
+        <div class="card">
+          <div class="card-title"><i class="fas fa-video text-indigo-400"></i>Upcoming Live Sessions</div>
+          <div id="ov-live-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── QUEUE TAB ─────────────────────────────────────────────────────── -->
+    <div id="tab-queue" class="fade-in hidden">
+      <div id="queue-empty" class="hidden text-slate-500 text-sm text-center py-12">
+        <i class="fas fa-inbox text-3xl mb-3 block"></i>No visits in this queue
+      </div>
+      <div id="queue-detail-panel">
+        <!-- Visit detail will render here when selected -->
+        <div id="visit-detail-placeholder" class="text-slate-500 text-sm text-center py-16">
+          <i class="fas fa-arrow-left mr-2"></i>Select a visit from the sidebar to view details
+        </div>
+        <div id="visit-detail" class="hidden"></div>
+      </div>
+    </div>
+
+    <!-- ── LIVE TAB ──────────────────────────────────────────────────────── -->
+    <div id="tab-live" class="fade-in hidden">
+      <div id="live-sessions-list"></div>
+    </div>
+
+    <!-- ── COMPLETED TAB ─────────────────────────────────────────────────── -->
+    <div id="tab-completed" class="fade-in hidden">
+      <div id="completed-list"></div>
+    </div>
+
+    <!-- ── SETTINGS TAB ──────────────────────────────────────────────────── -->
+    <div id="tab-settings" class="fade-in hidden">
+      <div class="card max-w-lg">
+        <div class="card-title"><i class="fas fa-sliders text-teal-400"></i>Telehealth Configuration</div>
+        <div class="space-y-4">
+          <div class="detail-row">
+            <div class="detail-key">Platform</div>
+            <div class="detail-val">OculoFlow Async + Video</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-key">Video Provider</div>
+            <div class="detail-val">meet.oculoflow.ai (simulated)</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-key">Default Visit Type</div>
+            <div class="detail-val">Async Review</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-key">Auto-assign</div>
+            <div class="detail-val"><span class="chip ch-completed">Enabled</span></div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-key">Patient Notifications</div>
+            <div class="detail-val">SMS + Email (via Reminders module)</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-key">Review SLA (Routine)</div>
+            <div class="detail-val">24 hours</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-key">Review SLA (Urgent)</div>
+            <div class="detail-val">4 hours</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-key">HIPAA Compliant</div>
+            <div class="detail-val"><span class="chip ch-completed">Verified</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="card max-w-lg">
+        <div class="card-title"><i class="fas fa-user-doctor text-indigo-400"></i>Assigned Providers</div>
+        <div id="settings-providers"></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ── New Visit Modal ──────────────────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="modal-new-visit">
+  <div class="modal fade-in">
+    <div class="modal-header">
+      <span class="modal-title"><i class="fas fa-video mr-2 text-teal-400"></i>New Telehealth Visit</span>
+      <button onclick="closeModal('modal-new-visit')" class="text-slate-500 hover:text-slate-300"><i class="fas fa-xmark text-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="g2">
+        <div class="form-group">
+          <label class="form-label">Patient Name *</label>
+          <input class="form-input" id="nv-patient-name" placeholder="e.g. Jane Smith">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Patient ID</label>
+          <input class="form-input" id="nv-patient-id" placeholder="e.g. pt-001">
+        </div>
+      </div>
+      <div class="g2">
+        <div class="form-group">
+          <label class="form-label">Patient Email</label>
+          <input class="form-input" id="nv-email" type="email" placeholder="patient@email.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Patient Phone</label>
+          <input class="form-input" id="nv-phone" placeholder="(305) 555-0100">
+        </div>
+      </div>
+      <div class="g2">
+        <div class="form-group">
+          <label class="form-label">Visit Type *</label>
+          <select class="form-input" id="nv-type">
+            <option value="ASYNC_REVIEW">Async Review</option>
+            <option value="LIVE_VIDEO">Live Video</option>
+            <option value="PHOTO_REVIEW">Photo Review</option>
+            <option value="MEDICATION_FOLLOWUP">Medication Follow-up</option>
+            <option value="SECOND_OPINION">Second Opinion</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Urgency *</label>
+          <select class="form-input" id="nv-urgency">
+            <option value="ROUTINE">Routine</option>
+            <option value="URGENT">Urgent</option>
+            <option value="EMERGENT">Emergent</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Chief Complaint *</label>
+        <input class="form-input" id="nv-complaint" placeholder="Brief description of the reason for visit">
+      </div>
+      <div class="form-group" id="nv-schedule-group" style="display:none;">
+        <label class="form-label">Scheduled Date/Time</label>
+        <input class="form-input" id="nv-scheduled" type="datetime-local">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Assign to Provider</label>
+        <select class="form-input" id="nv-provider">
+          <option value="">— Unassigned —</option>
+          <option value="dr-chen|Dr. Sarah Chen">Dr. Sarah Chen</option>
+          <option value="dr-patel|Dr. Raj Patel">Dr. Raj Patel</option>
+          <option value="dr-torres|Dr. Amy Torres">Dr. Amy Torres</option>
+        </select>
+      </div>
+      <div class="flex gap-2 justify-end mt-4">
+        <button onclick="closeModal('modal-new-visit')" class="btn-sm">Cancel</button>
+        <button onclick="submitNewVisit()" class="btn-primary"><i class="fas fa-plus"></i> Create Visit</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Review Modal ─────────────────────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="modal-review">
+  <div class="modal fade-in" style="max-width:700px;">
+    <div class="modal-header">
+      <span class="modal-title"><i class="fas fa-stethoscope mr-2 text-teal-400"></i>Provider Review</span>
+      <button onclick="closeModal('modal-review')" class="text-slate-500 hover:text-slate-300"><i class="fas fa-xmark text-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="review-visit-id">
+      <div class="form-group">
+        <label class="form-label">Clinical Findings *</label>
+        <textarea class="form-textarea" id="rv-findings" rows="3" placeholder="Document your clinical findings based on questionnaire, photos, and history…"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Assessment (ICD-10 diagnosis) *</label>
+        <textarea class="form-textarea" id="rv-assessment" rows="2" placeholder="e.g. Dry eye disease (H04.123), well-controlled"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Plan *</label>
+        <textarea class="form-textarea" id="rv-plan" rows="3" placeholder="Treatment plan, medication changes, referrals…"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Patient Instructions *</label>
+        <textarea class="form-textarea" id="rv-instructions" rows="2" placeholder="Plain-language instructions for the patient…"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Internal Notes</label>
+        <textarea class="form-textarea" id="rv-internal" rows="2" placeholder="Internal notes (not visible to patient)…"></textarea>
+      </div>
+      <div class="g2">
+        <div class="form-group">
+          <label class="form-label">Follow-up Required?</label>
+          <select class="form-input" id="rv-followup">
+            <option value="no">No</option>
+            <option value="yes">Yes</option>
+          </select>
+        </div>
+        <div class="form-group" id="rv-followup-days-group" style="display:none;">
+          <label class="form-label">Follow-up in (days)</label>
+          <input class="form-input" id="rv-followup-days" type="number" placeholder="30">
+        </div>
+      </div>
+      <div class="g2">
+        <div class="form-group">
+          <label class="form-label">Referral Required?</label>
+          <select class="form-input" id="rv-referral">
+            <option value="no">No</option>
+            <option value="yes">Yes</option>
+          </select>
+        </div>
+        <div class="form-group" id="rv-referral-to-group" style="display:none;">
+          <label class="form-label">Refer to</label>
+          <input class="form-input" id="rv-referral-to" placeholder="e.g. Retina specialist">
+        </div>
+      </div>
+      <!-- Prescriptions -->
+      <div class="mb-3">
+        <div class="flex items-center justify-between mb-2">
+          <div class="form-label mb-0">Prescriptions</div>
+          <button onclick="addRxRow()" class="btn-sm text-xs"><i class="fas fa-plus"></i> Add Rx</button>
+        </div>
+        <div id="rx-rows"></div>
+      </div>
+      <div class="flex gap-2 justify-end mt-4">
+        <button onclick="closeModal('modal-review')" class="btn-sm">Cancel</button>
+        <button onclick="submitReview(false)" class="btn-sm"><i class="fas fa-save"></i> Save Draft</button>
+        <button onclick="submitReview(true)" class="btn-primary"><i class="fas fa-signature"></i> Sign & Complete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Info Request Modal ───────────────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="modal-info-req">
+  <div class="modal fade-in" style="max-width:500px;">
+    <div class="modal-header">
+      <span class="modal-title"><i class="fas fa-question-circle mr-2 text-yellow-400"></i>Request More Information</span>
+      <button onclick="closeModal('modal-info-req')" class="text-slate-500 hover:text-slate-300"><i class="fas fa-xmark text-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="ir-visit-id">
+      <div class="form-group">
+        <label class="form-label">Your Question for the Patient *</label>
+        <textarea class="form-textarea" id="ir-question" rows="4" placeholder="Ask the patient for additional information, photos, or clarification…"></textarea>
+      </div>
+      <div class="flex gap-2 justify-end mt-4">
+        <button onclick="closeModal('modal-info-req')" class="btn-sm">Cancel</button>
+        <button onclick="submitInfoRequest()" class="btn-primary"><i class="fas fa-paper-plane"></i> Send to Patient</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Message Modal ────────────────────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="modal-message">
+  <div class="modal fade-in" style="max-width:480px;">
+    <div class="modal-header">
+      <span class="modal-title"><i class="fas fa-comment mr-2 text-indigo-400"></i>Send Message</span>
+      <button onclick="closeModal('modal-message')" class="text-slate-500 hover:text-slate-300"><i class="fas fa-xmark text-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="msg-visit-id">
+      <div class="form-group">
+        <label class="form-label">Message</label>
+        <textarea class="form-textarea" id="msg-body" rows="4" placeholder="Type your message…"></textarea>
+      </div>
+      <div class="flex gap-2 justify-end mt-4">
+        <button onclick="closeModal('modal-message')" class="btn-sm">Cancel</button>
+        <button onclick="submitMessage()" class="btn-primary"><i class="fas fa-paper-plane"></i> Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 border border-slate-600 text-white text-sm px-5 py-2.5 rounded-xl shadow-2xl z-[300] hidden"></div>
+
+<script src="/static/telehealth.js"></script>
+</body>
+</html>

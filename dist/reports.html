@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reports & Analytics — OculoFlow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #020817; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+    /* Nav */
+    .nav-item { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 8px;
+                font-size: 12px; font-weight: 500; color: #94a3b8; text-decoration: none;
+                transition: all .15s; white-space: nowrap; }
+    .nav-item:hover  { background: rgba(51,65,85,.6); color: #f1f5f9; }
+    .nav-item.active { background: rgba(59,130,246,.15); color: #60a5fa; }
+
+    /* Stat cards */
+    .stat-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; padding: 18px 22px; }
+    .stat-value { font-size: 28px; font-weight: 700; line-height: 1; }
+    .stat-label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 4px; }
+    .stat-sub   { font-size: 12px; color: #64748b; margin-top: 4px; }
+
+    /* Chart containers */
+    .chart-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; padding: 20px; }
+    .chart-title { font-size: 13px; font-weight: 600; color: #94a3b8; margin-bottom: 14px; display: flex; align-items: center; gap: 6px; }
+
+    /* Tables */
+    .data-table th { font-size: 10px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: .07em; padding: 8px 12px; border-bottom: 1px solid #1e293b; }
+    .data-table td { font-size: 13px; color: #cbd5e1; padding: 9px 12px; border-bottom: 1px solid #0f172a; }
+    .data-table tr:hover td { background: rgba(30,41,59,.5); }
+    .data-table tr:last-child td { border-bottom: none; }
+
+    /* Range tabs */
+    .range-btn { padding: 5px 12px; border-radius: 7px; font-size: 12px; font-weight: 500;
+                 color: #64748b; background: transparent; border: 1px solid #1e293b;
+                 cursor: pointer; transition: all .15s; }
+    .range-btn:hover  { border-color: #334155; color: #94a3b8; }
+    .range-btn.active { background: rgba(59,130,246,.15); border-color: #3b82f6; color: #60a5fa; }
+
+    /* Progress bars */
+    .prog-bar { height: 6px; border-radius: 3px; background: #1e293b; overflow: hidden; }
+    .prog-fill { height: 100%; border-radius: 3px; transition: width .5s ease; }
+
+    /* Badges */
+    .badge { display:inline-flex; align-items:center; gap:3px; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:600; }
+    .badge-up   { background:rgba(34,197,94,.15); color:#4ade80; }
+    .badge-down { background:rgba(239,68,68,.15); color:#f87171; }
+    .badge-neu  { background:rgba(100,116,139,.15); color:#94a3b8; }
+
+    /* Section tabs */
+    .section-tab { padding: 8px 16px; font-size: 13px; font-weight: 500; color: #64748b;
+                   cursor: pointer; border-bottom: 2px solid transparent; transition: all .15s; white-space: nowrap; }
+    .section-tab:hover  { color: #94a3b8; }
+    .section-tab.active { color: #60a5fa; border-bottom-color: #3b82f6; }
+
+    /* Spinner */
+    .spinner { width:32px; height:32px; border:3px solid #1e293b; border-top-color:#3b82f6; border-radius:50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    /* Tooltip */
+    .tooltip-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:4px; }
+  </style>
+  <script src="/static/auth-nav.js"></script>
+</head>
+<body class="text-slate-200 min-h-screen flex flex-col">
+
+<!-- ── TOP NAV ─────────────────────────────────────────────────────────────── -->
+<header class="h-12 bg-slate-900/80 border-b border-slate-800 flex items-center px-4 gap-3 sticky top-0 z-30 backdrop-blur">
+  <a href="/" class="flex items-center gap-2 mr-2">
+    <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center">
+      <i class="fas fa-eye text-white text-xs"></i>
+    </div>
+    <span class="font-bold text-sm text-white">OculoFlow</span>
+  </a>
+  <div class="h-5 w-px bg-slate-700"></div>
+  <nav class="flex items-center gap-1">
+    <a href="/dashboard" class="nav-item"><i class="fas fa-gauge-high"></i> Dashboard</a>
+    <a href="/patients"  class="nav-item"><i class="fas fa-users"></i> Patients</a>
+    <a href="/schedule"  class="nav-item"><i class="fas fa-calendar-days"></i> Schedule</a>
+    <a href="/exam"      class="nav-item"><i class="fas fa-eye"></i> Exam</a>
+    <a href="/billing"   class="nav-item"><i class="fas fa-file-invoice-dollar"></i> Billing</a>
+    <a href="/optical"   class="nav-item"><i class="fas fa-glasses"></i> Optical</a>
+    <a href="/portal"    class="nav-item"><i class="fas fa-user-circle"></i> Patient Portal</a>
+    <a href="/messaging"  class="nav-item"><i class="fas fa-comment-medical"></i> Messaging</a>
+    <a href="/reminders" class="nav-item"><i class="fas fa-bell"></i> Reminders</a>
+    <a href="/scorecards" class="nav-item"><i class="fas fa-chart-bar"></i> Scorecards</a>
+    <a href="/telehealth" class="nav-item"><i class="fas fa-video"></i> Telehealth</a>
+    <a href="/erx" class="nav-item"><i class="fas fa-prescription-bottle"></i> eRx</a>
+    <a href="/ai" class="nav-item"><i class="fas fa-brain"></i> AI CDS</a>
+    <a href="/priorauth" class="nav-item"><i class="fas fa-clipboard-check"></i> Prior Auth</a><a href="/rcm" class="nav-item"><i class="fas fa-dollar-sign"></i> RCM</a>
+    <a href="/reports"   class="nav-item active"><i class="fas fa-chart-line"></i> Reports</a>
+  </nav>
+  <div class="ml-auto flex items-center gap-2">
+    <!-- Range picker -->
+    <div class="flex items-center gap-1" id="range-picker">
+      <button class="range-btn" data-range="7d">7D</button>
+      <button class="range-btn active" data-range="30d">30D</button>
+      <button class="range-btn" data-range="90d">90D</button>
+      <button class="range-btn" data-range="ytd">YTD</button>
+      <button class="range-btn" data-range="all">All</button>
+    </div>
+    <button id="btn-refresh" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition-colors" title="Refresh">
+      <i class="fas fa-rotate-right text-xs"></i>
+    </button>
+  </div>
+</header>
+
+<!-- ── MAIN LAYOUT ─────────────────────────────────────────────────────────── -->
+<div class="flex flex-1 overflow-hidden">
+
+  <!-- SIDEBAR -->
+  <aside class="w-48 border-r border-slate-800 bg-slate-900/30 flex flex-col p-3 gap-0.5 overflow-y-auto shrink-0">
+    <p class="text-[10px] font-semibold uppercase tracking-widest text-slate-500 px-2 mt-1 mb-1">Sections</p>
+    <div class="nav-item active" data-section="overview"    id="snav-overview"><i class="fas fa-gauge-high"></i> Overview</div>
+    <div class="nav-item" data-section="revenue"     id="snav-revenue"><i class="fas fa-circle-dollar-to-slot"></i> Revenue</div>
+    <div class="nav-item" data-section="providers"   id="snav-providers"><i class="fas fa-user-doctor"></i> Providers</div>
+    <div class="nav-item" data-section="payer-mix"   id="snav-payer-mix"><i class="fas fa-building-columns"></i> Payer Mix</div>
+    <div class="nav-item" data-section="ar-aging"    id="snav-ar-aging"><i class="fas fa-clock-rotate-left"></i> AR Aging</div>
+    <div class="nav-item" data-section="appointments" id="snav-appointments"><i class="fas fa-calendar-check"></i> Appointments</div>
+    <div class="nav-item" data-section="exams"       id="snav-exams"><i class="fas fa-stethoscope"></i> Exams</div>
+    <div class="nav-item" data-section="patients"    id="snav-patients"><i class="fas fa-users"></i> Patients</div>
+
+    <div class="h-px bg-slate-800 my-2"></div>
+    <p class="text-[10px] font-semibold uppercase tracking-widest text-slate-500 px-2 mb-1">Quick Nav</p>
+    <a href="/billing" class="nav-item"><i class="fas fa-file-invoice-dollar"></i> Billing</a>
+    <a href="/optical" class="nav-item"><i class="fas fa-glasses"></i> Optical</a>
+    <a href="/portal"  class="nav-item"><i class="fas fa-user-circle"></i> Patient Portal</a>
+    <a href="/messaging" class="nav-item"><i class="fas fa-comment-medical"></i> Messaging</a>
+    <a href="/reminders" class="nav-item"><i class="fas fa-bell"></i> Reminders</a>
+    <a href="/schedule" class="nav-item"><i class="fas fa-calendar-days"></i> Schedule</a>
+    <a href="/exam"    class="nav-item"><i class="fas fa-eye"></i> Exam</a>
+  </aside>
+
+  <!-- CONTENT -->
+  <main class="flex-1 overflow-y-auto p-5 space-y-6" id="main-content">
+
+    <!-- Loading state -->
+    <div id="loading-state" class="flex items-center justify-center h-64">
+      <div class="text-center">
+        <div class="spinner mx-auto mb-4"></div>
+        <p class="text-slate-500 text-sm">Loading analytics…</p>
+      </div>
+    </div>
+
+    <!-- ── OVERVIEW ──────────────────────────────────────────────────────── -->
+    <div id="section-overview" class="hidden space-y-5">
+      <!-- KPI row -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4" id="kpi-row"></div>
+      <!-- Revenue + Appointments charts side by side -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="chart-card">
+          <div class="chart-title"><i class="fas fa-circle-dollar-to-slot text-emerald-400"></i>Revenue — Last 14 Days</div>
+          <canvas id="chart-revenue-mini" height="120"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title"><i class="fas fa-calendar-check text-blue-400"></i>Appointments — Last 14 Days</div>
+          <canvas id="chart-appt-mini" height="120"></canvas>
+        </div>
+      </div>
+      <!-- Provider cards + payer donut -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-2 chart-card">
+          <div class="chart-title"><i class="fas fa-user-doctor text-violet-400"></i>Provider Performance</div>
+          <div id="overview-providers"></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title"><i class="fas fa-building-columns text-amber-400"></i>Payer Mix</div>
+          <canvas id="chart-payer-donut" height="180"></canvas>
+          <div id="payer-legend" class="mt-3 space-y-1"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── REVENUE ────────────────────────────────────────────────────────── -->
+    <div id="section-revenue" class="hidden space-y-5">
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4" id="revenue-kpis"></div>
+      <div class="chart-card">
+        <div class="chart-title"><i class="fas fa-chart-bar text-emerald-400"></i>Daily Revenue — Charged vs Collected</div>
+        <canvas id="chart-revenue-full" height="160"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title"><i class="fas fa-list text-slate-400"></i>Superbill Status Breakdown</div>
+        <div id="revenue-status-table"></div>
+      </div>
+    </div>
+
+    <!-- ── PROVIDERS ──────────────────────────────────────────────────────── -->
+    <div id="section-providers" class="hidden space-y-5">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="chart-card">
+          <div class="chart-title"><i class="fas fa-chart-bar text-violet-400"></i>Charges by Provider</div>
+          <canvas id="chart-provider-bar" height="180"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title"><i class="fas fa-chart-bar text-blue-400"></i>Exams & Completion</div>
+          <canvas id="chart-provider-exams" height="180"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title"><i class="fas fa-table text-slate-400"></i>Provider Detail</div>
+        <table class="w-full data-table">
+          <thead>
+            <tr>
+              <th class="text-left">Provider</th>
+              <th class="text-right">Appointments</th>
+              <th class="text-right">No-Show Rate</th>
+              <th class="text-right">Exams</th>
+              <th class="text-right">Signed</th>
+              <th class="text-right">Charged</th>
+              <th class="text-right">Collected</th>
+              <th class="text-right">Avg/Visit</th>
+            </tr>
+          </thead>
+          <tbody id="provider-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── PAYER MIX ───────────────────────────────────────────────────────── -->
+    <div id="section-payer-mix" class="hidden space-y-5">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="chart-card">
+          <div class="chart-title"><i class="fas fa-chart-pie text-amber-400"></i>Payer Distribution</div>
+          <canvas id="chart-payer-full" height="240"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title"><i class="fas fa-chart-bar text-rose-400"></i>Denial Rate by Payer</div>
+          <canvas id="chart-denial-bar" height="240"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title"><i class="fas fa-table text-slate-400"></i>Payer Detail</div>
+        <table class="w-full data-table">
+          <thead>
+            <tr>
+              <th class="text-left">Payer</th>
+              <th class="text-right">Claims</th>
+              <th class="text-right">Total Charged</th>
+              <th class="text-right">Total Paid</th>
+              <th class="text-right">Avg Payment</th>
+              <th class="text-right">Denial Rate</th>
+              <th class="text-right">% of Mix</th>
+            </tr>
+          </thead>
+          <tbody id="payer-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── AR AGING ────────────────────────────────────────────────────────── -->
+    <div id="section-ar-aging" class="hidden space-y-5">
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-4" id="aging-buckets"></div>
+      <div class="chart-card">
+        <div class="chart-title"><i class="fas fa-chart-bar text-red-400"></i>AR Aging Distribution</div>
+        <canvas id="chart-aging-bar" height="180"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title"><i class="fas fa-info-circle text-slate-400"></i>Aging Detail</div>
+        <table class="w-full data-table">
+          <thead>
+            <tr>
+              <th class="text-left">Bucket</th>
+              <th class="text-right">Claims</th>
+              <th class="text-right">Balance</th>
+              <th class="text-right">% of Total</th>
+              <th class="text-left">Distribution</th>
+            </tr>
+          </thead>
+          <tbody id="aging-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── APPOINTMENTS ────────────────────────────────────────────────────── -->
+    <div id="section-appointments" class="hidden space-y-5">
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4" id="appt-kpis"></div>
+      <div class="chart-card">
+        <div class="chart-title"><i class="fas fa-chart-area text-blue-400"></i>Daily Appointment Volume</div>
+        <canvas id="chart-appt-full" height="160"></canvas>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="chart-card">
+          <div class="chart-title"><i class="fas fa-chart-pie text-cyan-400"></i>By Appointment Type</div>
+          <canvas id="chart-appt-type" height="200"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title"><i class="fas fa-table text-slate-400"></i>Type Breakdown</div>
+          <table class="w-full data-table">
+            <thead><tr><th class="text-left">Type</th><th class="text-right">Count</th><th class="text-right">% of Total</th></tr></thead>
+            <tbody id="appt-type-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── EXAMS ───────────────────────────────────────────────────────────── -->
+    <div id="section-exams" class="hidden space-y-5">
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4" id="exam-kpis"></div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="chart-card">
+          <div class="chart-title"><i class="fas fa-chart-bar text-indigo-400"></i>Top ICD-10 Diagnoses</div>
+          <canvas id="chart-dx-bar" height="220"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title"><i class="fas fa-chart-bar text-sky-400"></i>Top CPT Codes</div>
+          <canvas id="chart-cpt-bar" height="220"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PATIENTS ────────────────────────────────────────────────────────── -->
+    <div id="section-patients" class="hidden space-y-5">
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4" id="patient-kpis"></div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="chart-card">
+          <div class="chart-title"><i class="fas fa-chart-pie text-teal-400"></i>Insurance Distribution</div>
+          <canvas id="chart-insur-donut" height="220"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title"><i class="fas fa-table text-slate-400"></i>Insurance Breakdown</div>
+          <table class="w-full data-table">
+            <thead><tr><th class="text-left">Payer</th><th class="text-right">Patients</th><th class="text-right">%</th></tr></thead>
+            <tbody id="insur-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script src="/static/reports.js"></script>
+</body>
+</html>

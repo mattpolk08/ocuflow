@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OculoFlow — Reminders & Communications</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg-0:#0a0e1a;--bg-1:#0f1629;--bg-2:#141c35;--bg-3:#1a2340;
+      --border:rgba(99,102,241,.15);
+      --accent:#6366f1;--accent-h:#818cf8;
+      --green:#10b981;--yellow:#f59e0b;--red:#ef4444;--orange:#f97316;--cyan:#06b6d4;
+      --text-1:#f1f5f9;--text-2:#94a3b8;--text-3:#475569;
+    }
+    *{box-sizing:border-box;}
+    body{background:var(--bg-0);color:var(--text-1);font-family:'Inter',system-ui,sans-serif;margin:0;min-height:100vh;display:flex;flex-direction:column;}
+    /* Topbar */
+    .topbar{background:var(--bg-1);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 16px;gap:10px;flex-shrink:0;z-index:50;}
+    .logo-pill{display:flex;align-items:center;gap:8px;background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.25);border-radius:8px;padding:4px 10px;}
+    .nav-link{font-size:11px;font-weight:500;color:var(--text-2);text-decoration:none;padding:4px 8px;border-radius:6px;transition:all .15s;display:flex;align-items:center;gap:5px;white-space:nowrap;}
+    .nav-link:hover,.nav-link.active{background:rgba(99,102,241,.15);color:var(--text-1);}
+    /* Page tabs */
+    .tab-bar{background:var(--bg-1);border-bottom:1px solid var(--border);padding:0 20px;display:flex;gap:0;flex-shrink:0;}
+    .tab-btn{padding:12px 20px;font-size:12px;font-weight:600;color:var(--text-2);border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;gap:7px;}
+    .tab-btn:hover{color:var(--text-1);}
+    .tab-btn.active{color:#818cf8;border-bottom-color:#6366f1;}
+    .tab-badge{min-width:18px;height:18px;border-radius:9px;font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;padding:0 5px;}
+    .tb-red{background:#ef4444;color:#fff;}
+    .tb-orange{background:#f97316;color:#fff;}
+    .tb-indigo{background:#6366f1;color:#fff;}
+    /* Content */
+    .page-content{flex:1;padding:20px;overflow-y:auto;max-width:1400px;width:100%;margin:0 auto;}
+    /* Stat cards */
+    .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;}
+    .stat-card{background:var(--bg-1);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+    .stat-card .num{font-size:28px;font-weight:700;line-height:1;margin-bottom:4px;}
+    .stat-card .lbl{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.07em;}
+    .stat-card .sub{font-size:11px;color:var(--text-2);margin-top:4px;}
+    .c-green .num{color:var(--green);} .c-yellow .num{color:var(--yellow);} .c-red .num{color:var(--red);} .c-indigo .num{color:var(--accent-h);} .c-cyan .num{color:var(--cyan);}
+    /* Tables */
+    .data-table{width:100%;border-collapse:collapse;font-size:12px;}
+    .data-table th{text-align:left;padding:8px 12px;color:var(--text-3);font-size:10px;text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--border);font-weight:700;}
+    .data-table td{padding:10px 12px;border-bottom:1px solid rgba(99,102,241,.06);vertical-align:middle;}
+    .data-table tr:hover td{background:rgba(99,102,241,.04);}
+    /* Cards */
+    .card{background:var(--bg-1);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;}
+    .card-title{font-size:13px;font-weight:700;color:var(--text-1);margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+    /* Status chips */
+    .chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.06em;}
+    .ch-delivered{background:rgba(16,185,129,.15);color:#34d399;}
+    .ch-sent{background:rgba(99,102,241,.15);color:#818cf8;}
+    .ch-pending{background:rgba(245,158,11,.15);color:#fbbf24;}
+    .ch-failed{background:rgba(239,68,68,.15);color:#f87171;}
+    .ch-bounced{background:rgba(239,68,68,.2);color:#fca5a5;}
+    .ch-opted_out{background:rgba(71,85,105,.2);color:#64748b;}
+    .ch-confirmed{background:rgba(16,185,129,.15);color:#34d399;}
+    .ch-cancelled{background:rgba(239,68,68,.15);color:#f87171;}
+    .ch-reschedule{background:rgba(245,158,11,.15);color:#fbbf24;}
+    .ch-no_response{background:rgba(71,85,105,.15);color:#94a3b8;}
+    .ch-draft{background:rgba(71,85,105,.2);color:#94a3b8;}
+    .ch-running{background:rgba(6,182,212,.15);color:#22d3ee;}
+    .ch-scheduled{background:rgba(99,102,241,.15);color:#818cf8;}
+    .ch-completed{background:rgba(16,185,129,.15);color:#34d399;}
+    .ch-paused{background:rgba(245,158,11,.15);color:#fbbf24;}
+    .ch-cancelled-c{background:rgba(239,68,68,.15);color:#f87171;}
+    .ch-uncontacted{background:rgba(245,158,11,.15);color:#fbbf24;}
+    .ch-followup_sent{background:rgba(6,182,212,.15);color:#22d3ee;}
+    .ch-rescheduled{background:rgba(16,185,129,.15);color:#34d399;}
+    .ch-dismissed{background:rgba(71,85,105,.2);color:#64748b;}
+    .ch-sms{background:rgba(6,182,212,.12);color:#22d3ee;}
+    .ch-email{background:rgba(99,102,241,.12);color:#818cf8;}
+    .ch-both{background:rgba(139,92,246,.12);color:#a78bfa;}
+    /* Priority dot */
+    .p-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+    .pd-STAT{background:#ef4444;box-shadow:0 0 6px #ef444480;}
+    .pd-URGENT{background:#f97316;} .pd-NORMAL{background:#6366f1;} .pd-HIGH{background:#eab308;}
+    /* Channel icon colors */
+    .ci-SMS{color:#22d3ee;} .ci-EMAIL{color:#818cf8;} .ci-BOTH{color:#a78bfa;}
+    /* Buttons */
+    .btn-primary{background:var(--accent);color:#fff;border:none;padding:8px 18px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .15s;}
+    .btn-primary:hover{background:var(--accent-h);}
+    .btn-sm{background:none;border:1px solid var(--border);color:var(--text-2);padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all .15s;}
+    .btn-sm:hover{border-color:var(--accent);color:var(--text-1);}
+    .btn-green{background:none;border:1px solid rgba(16,185,129,.3);color:#34d399;padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all .15s;}
+    .btn-green:hover{background:rgba(16,185,129,.1);}
+    .btn-danger{background:none;border:1px solid rgba(239,68,68,.3);color:#f87171;padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;}
+    /* Form */
+    .form-group{margin-bottom:14px;}
+    .form-label{display:block;font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:5px;}
+    .form-input{width:100%;background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:13px;color:var(--text-1);outline:none;font-family:inherit;}
+    .form-input:focus{border-color:rgba(99,102,241,.5);}
+    textarea.form-input{resize:vertical;min-height:80px;}
+    select.form-input option{background:var(--bg-2);}
+    /* Grid helpers */
+    .g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+    .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+    /* Modal */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,10,.85);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;}
+    .modal{background:var(--bg-1);border:1px solid var(--border);border-radius:16px;width:100%;max-width:560px;max-height:90vh;overflow-y:auto;}
+    .modal-header{padding:18px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+    .modal-title{font-size:15px;font-weight:700;}
+    .modal-body{padding:16px 20px 20px;}
+    /* Progress bar */
+    .prog-bar{height:6px;background:var(--bg-2);border-radius:3px;overflow:hidden;}
+    .prog-fill{height:100%;border-radius:3px;transition:width .3s;}
+    /* Template preview */
+    .tpl-preview{background:var(--bg-2);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:12px;color:var(--text-2);white-space:pre-wrap;line-height:1.6;min-height:80px;}
+    /* Upcoming reminders */
+    .reminder-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(99,102,241,.07);}
+    .reminder-row:last-child{border-bottom:none;}
+    /* Scrollbar */
+    ::-webkit-scrollbar{width:4px;height:4px;}
+    ::-webkit-scrollbar-thumb{background:rgba(99,102,241,.3);border-radius:2px;}
+    ::-webkit-scrollbar-track{background:transparent;}
+    /* Animations */
+    @keyframes fadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+    .fade-in{animation:fadeIn .2s ease;}
+    /* Hidden */
+    .hidden{display:none!important;}
+  </style>
+  <script src="/static/auth-nav.js"></script>
+</head>
+<body>
+
+<!-- ── Top Bar ──────────────────────────────────────────────────────────────── -->
+<header class="topbar">
+  <div class="logo-pill">
+    <i class="fas fa-bell text-indigo-400 text-xs"></i>
+    <span class="text-xs font-bold text-indigo-300 tracking-wide">Comms Hub</span>
+    <span class="text-xs text-slate-500 ml-1">v1.9.0</span>
+  </div>
+  <nav class="hidden md:flex items-center gap-0.5 ml-2 overflow-x-auto">
+    <a href="/"          class="nav-link"><i class="fas fa-house w-3 text-center"></i>Home</a>
+    <a href="/dashboard" class="nav-link"><i class="fas fa-gauge-high w-3 text-center"></i>Dashboard</a>
+    <a href="/patients"  class="nav-link"><i class="fas fa-users w-3 text-center"></i>Patients</a>
+    <a href="/schedule"  class="nav-link"><i class="fas fa-calendar-days w-3 text-center"></i>Schedule</a>
+    <a href="/exam"      class="nav-link"><i class="fas fa-file-medical w-3 text-center"></i>Exam</a>
+    <a href="/billing"   class="nav-link"><i class="fas fa-file-invoice-dollar w-3 text-center"></i>Billing</a>
+    <a href="/optical"   class="nav-link"><i class="fas fa-glasses w-3 text-center"></i>Optical</a>
+    <a href="/reports"   class="nav-link"><i class="fas fa-chart-line w-3 text-center"></i>Reports</a>
+    <a href="/portal"    class="nav-link"><i class="fas fa-user-circle w-3 text-center"></i>Portal</a>
+    <a href="/messaging" class="nav-link"><i class="fas fa-comment-medical w-3 text-center"></i>Messaging</a>
+    <a href="/reminders" class="nav-link active"><i class="fas fa-bell w-3 text-center"></i>Reminders</a>
+    <a href="/scorecards" class="nav-link"><i class="fas fa-chart-bar w-3 text-center"></i>Scorecards</a>
+    <a href="/telehealth" class="nav-link"><i class="fas fa-video w-3 text-center"></i>Telehealth</a>
+    <a href="/erx" class="nav-link"><i class="fas fa-prescription-bottle w-3 text-center"></i>eRx</a>
+    <a href="/ai" class="nav-link"><i class="fas fa-brain w-3 text-center"></i>AI CDS</a>
+    <a href="/priorauth" class="nav-link"><i class="fas fa-clipboard-check w-3 text-center"></i>Prior Auth</a><a href="/rcm" class="nav-link"><i class="fas fa-dollar-sign w-3 text-center"></i>RCM</a>
+  </nav>
+  <div class="ml-auto flex items-center gap-2">
+    <button onclick="openSendModal()" class="btn-primary text-xs py-1.5 px-3"><i class="fas fa-paper-plane"></i> Send Message</button>
+    <button onclick="openCampaignModal()" class="btn-sm"><i class="fas fa-bullhorn"></i> Campaign</button>
+  </div>
+</header>
+
+<!-- ── Tab Bar ──────────────────────────────────────────────────────────────── -->
+<div class="tab-bar">
+  <button class="tab-btn active" id="tab-btn-overview"   onclick="showTab('overview',this)"><i class="fas fa-chart-pie"></i>Overview</button>
+  <button class="tab-btn"        id="tab-btn-messages"   onclick="showTab('messages',this)"><i class="fas fa-paper-plane"></i>Message Log <span class="tab-badge tb-indigo" id="badge-msg">—</span></button>
+  <button class="tab-btn"        id="tab-btn-noshows"    onclick="showTab('noshows',this)"><i class="fas fa-user-slash"></i>No-Shows <span class="tab-badge tb-red" id="badge-ns">—</span></button>
+  <button class="tab-btn"        id="tab-btn-campaigns"  onclick="showTab('campaigns',this)"><i class="fas fa-bullhorn"></i>Campaigns</button>
+  <button class="tab-btn"        id="tab-btn-templates"  onclick="showTab('templates',this)"><i class="fas fa-file-lines"></i>Templates</button>
+  <button class="tab-btn"        id="tab-btn-rules"      onclick="showTab('rules',this)"><i class="fas fa-robot"></i>Automation Rules</button>
+</div>
+
+<!-- ── Page Content ─────────────────────────────────────────────────────────── -->
+<div class="page-content">
+
+  <!-- ── OVERVIEW TAB ──────────────────────────────────────────────────────── -->
+  <div id="tab-overview" class="fade-in">
+    <!-- Stats row -->
+    <div class="stats-row">
+      <div class="stat-card c-indigo"><div class="num" id="s-pending">—</div><div class="lbl">Pending Reminders</div><div class="sub">Queued to send</div></div>
+      <div class="stat-card c-green"><div class="num" id="s-sent">—</div><div class="lbl">Sent Today</div><div class="sub" id="s-delivered-sub">— delivered</div></div>
+      <div class="stat-card c-green"><div class="num" id="s-confirmed">—</div><div class="lbl">Confirmed Today</div><div class="sub">Patients replied Y</div></div>
+      <div class="stat-card c-red"><div class="num" id="s-noshows">—</div><div class="lbl">No-Shows Today</div><div class="sub">Needs follow-up</div></div>
+      <div class="stat-card c-cyan"><div class="num" id="s-response-rate">—%</div><div class="lbl">Response Rate</div><div class="sub">Confirmed / sent</div></div>
+    </div>
+
+    <div class="g2" style="gap:16px;align-items:start;">
+      <!-- Upcoming Reminders -->
+      <div class="card">
+        <div class="card-title"><i class="fas fa-clock text-indigo-400"></i>Upcoming Reminders</div>
+        <div id="upcoming-list">
+          <div class="text-slate-500 text-xs text-center py-6"><i class="fas fa-spinner fa-spin mr-2"></i>Loading…</div>
+        </div>
+      </div>
+
+      <!-- Recent Message Log -->
+      <div class="card">
+        <div class="card-title"><i class="fas fa-list text-indigo-400"></i>Recent Messages</div>
+        <div style="overflow-x:auto;">
+          <table class="data-table" id="recent-msgs-table">
+            <thead><tr><th>Patient</th><th>Type</th><th>Channel</th><th>Status</th><th>Response</th></tr></thead>
+            <tbody id="recent-msgs-body"><tr><td colspan="5" class="text-slate-500 text-center py-4">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active campaigns + no-shows row -->
+    <div class="g2" style="gap:16px;align-items:start;">
+      <div class="card">
+        <div class="card-title"><i class="fas fa-bullhorn text-indigo-400"></i>Active Campaigns</div>
+        <div id="active-campaigns-list">
+          <div class="text-slate-500 text-xs text-center py-4">Loading…</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><i class="fas fa-user-slash text-red-400"></i>Open No-Shows</div>
+        <div id="open-noshows-list">
+          <div class="text-slate-500 text-xs text-center py-4">Loading…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MESSAGES TAB ───────────────────────────────────────────────────────── -->
+  <div id="tab-messages" class="fade-in hidden">
+    <div class="flex items-center justify-between mb-4">
+      <div class="flex items-center gap-2">
+        <select id="msg-filter-status" class="form-input" style="width:auto;font-size:12px;" onchange="loadMessages()">
+          <option value="">All Statuses</option>
+          <option value="DELIVERED">Delivered</option>
+          <option value="SENT">Sent</option>
+          <option value="FAILED">Failed</option>
+          <option value="PENDING">Pending</option>
+        </select>
+        <select id="msg-filter-type" class="form-input" style="width:auto;font-size:12px;" onchange="loadMessages()">
+          <option value="">All Types</option>
+          <option value="REMINDER_24H">24h Reminder</option>
+          <option value="REMINDER_48H">48h Reminder</option>
+          <option value="REMINDER_1H">1h Reminder</option>
+          <option value="CONFIRMATION_REQUEST">Confirmation Request</option>
+          <option value="NO_SHOW_FOLLOWUP">No-Show Follow-Up</option>
+          <option value="RECALL_OUTREACH">Recall Outreach</option>
+        </select>
+      </div>
+      <button onclick="openSendModal()" class="btn-primary text-xs py-1.5 px-3"><i class="fas fa-plus"></i> Send Message</button>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>Patient</th><th>Type</th><th>Channel</th><th>Status</th><th>Patient Response</th><th>Sent</th><th>Actions</th></tr></thead>
+          <tbody id="msgs-body"><tr><td colspan="7" class="text-slate-500 text-center py-6">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── NO-SHOWS TAB ───────────────────────────────────────────────────────── -->
+  <div id="tab-noshows" class="fade-in hidden">
+    <div class="flex items-center justify-between mb-4">
+      <select id="ns-filter" class="form-input" style="width:auto;font-size:12px;" onchange="loadNoShows()">
+        <option value="">All Statuses</option>
+        <option value="UNCONTACTED">Uncontacted</option>
+        <option value="FOLLOWUP_SENT">Follow-Up Sent</option>
+        <option value="RESCHEDULED">Rescheduled</option>
+        <option value="DISMISSED">Dismissed</option>
+      </select>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>Patient</th><th>Missed Date</th><th>Appt Type</th><th>Provider</th><th>Status</th><th>Notes</th><th>Actions</th></tr></thead>
+          <tbody id="ns-body"><tr><td colspan="7" class="text-slate-500 text-center py-6">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CAMPAIGNS TAB ──────────────────────────────────────────────────────── -->
+  <div id="tab-campaigns" class="fade-in hidden">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-sm font-bold text-slate-200">Outreach Campaigns</h2>
+      <button onclick="openCampaignModal()" class="btn-primary text-xs py-1.5 px-3"><i class="fas fa-plus"></i> New Campaign</button>
+    </div>
+    <div id="campaigns-list">
+      <div class="text-slate-500 text-xs text-center py-8">Loading…</div>
+    </div>
+  </div>
+
+  <!-- ── TEMPLATES TAB ──────────────────────────────────────────────────────── -->
+  <div id="tab-templates" class="fade-in hidden">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-sm font-bold text-slate-200">Message Templates</h2>
+      <button onclick="openTemplateModal()" class="btn-primary text-xs py-1.5 px-3"><i class="fas fa-plus"></i> New Template</button>
+    </div>
+    <div id="templates-list" class="g2" style="align-items:start;"></div>
+  </div>
+
+  <!-- ── AUTOMATION RULES TAB ───────────────────────────────────────────────── -->
+  <div id="tab-rules" class="fade-in hidden">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-sm font-bold text-slate-200">Automation Rules</h2>
+      <span class="text-xs text-slate-500">Rules fire automatically at the scheduled time before each appointment</span>
+    </div>
+    <div id="rules-list" class="flex flex-col gap-3"></div>
+  </div>
+</div>
+
+<!-- ── Send Message Modal ─────────────────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="modal-send">
+  <div class="modal fade-in">
+    <div class="modal-header">
+      <span class="modal-title"><i class="fas fa-paper-plane mr-2 text-indigo-400"></i>Send Message</span>
+      <button onclick="closeModal('modal-send')" class="text-slate-500 hover:text-slate-300"><i class="fas fa-xmark text-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="g2"><div class="form-group"><label class="form-label">Patient Name *</label><input class="form-input" id="snd-patient" placeholder="Margaret Sullivan"></div>
+      <div class="form-group"><label class="form-label">Patient ID</label><input class="form-input" id="snd-pid" placeholder="pat-001"></div></div>
+      <div class="g2"><div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="snd-phone" placeholder="(305) 555-0101"></div>
+      <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="snd-email" placeholder="patient@email.com" type="email"></div></div>
+      <div class="g2">
+        <div class="form-group"><label class="form-label">Channel *</label>
+          <select class="form-input" id="snd-channel"><option value="SMS">SMS</option><option value="EMAIL">Email</option><option value="BOTH">Both</option></select></div>
+        <div class="form-group"><label class="form-label">Message Type *</label>
+          <select class="form-input" id="snd-type">
+            <option value="REMINDER_24H">24h Reminder</option><option value="REMINDER_48H">48h Reminder</option>
+            <option value="REMINDER_1H">1h Reminder</option><option value="CONFIRMATION_REQUEST">Confirmation Request</option>
+            <option value="NO_SHOW_FOLLOWUP">No-Show Follow-Up</option><option value="RECALL_OUTREACH">Recall Outreach</option>
+            <option value="CANCELLATION_NOTICE">Cancellation Notice</option><option value="CUSTOM">Custom</option>
+          </select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Message Body *</label>
+        <textarea class="form-input" id="snd-body" rows="4" placeholder="Hi {{patient_name}}, your appointment is on {{date}} at {{time}} with {{provider}}."></textarea>
+      </div>
+      <div class="flex gap-2 justify-end mt-4">
+        <button onclick="closeModal('modal-send')" class="btn-sm">Cancel</button>
+        <button onclick="submitSend()" class="btn-primary"><i class="fas fa-paper-plane"></i> Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Campaign Modal ─────────────────────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="modal-campaign">
+  <div class="modal fade-in">
+    <div class="modal-header">
+      <span class="modal-title"><i class="fas fa-bullhorn mr-2 text-indigo-400"></i>New Outreach Campaign</span>
+      <button onclick="closeModal('modal-campaign')" class="text-slate-500 hover:text-slate-300"><i class="fas fa-xmark text-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">Campaign Name *</label><input class="form-input" id="cmp-name" placeholder="e.g. Spring Recall — Glaucoma Patients"></div>
+      <div class="form-group"><label class="form-label">Description</label><input class="form-input" id="cmp-desc" placeholder="Optional description"></div>
+      <div class="g2">
+        <div class="form-group"><label class="form-label">Channel *</label>
+          <select class="form-input" id="cmp-channel"><option value="SMS">SMS</option><option value="EMAIL">Email</option><option value="BOTH">Both</option></select></div>
+        <div class="form-group"><label class="form-label">Message Type *</label>
+          <select class="form-input" id="cmp-type"><option value="RECALL_OUTREACH">Recall Outreach</option><option value="CUSTOM">Custom</option><option value="CONFIRMATION_REQUEST">Confirmation Request</option></select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Template *</label>
+        <select class="form-input" id="cmp-template"><option value="">— Select template —</option></select></div>
+      <div class="form-group"><label class="form-label">Created By *</label><input class="form-input" id="cmp-creator" placeholder="Dr. Sarah Chen" value="Dr. Sarah Chen"></div>
+      <div class="flex gap-2 justify-end mt-4">
+        <button onclick="closeModal('modal-campaign')" class="btn-sm">Cancel</button>
+        <button onclick="submitCampaign()" class="btn-primary"><i class="fas fa-plus"></i> Create Campaign</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Template Modal ─────────────────────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="modal-template">
+  <div class="modal fade-in">
+    <div class="modal-header">
+      <span class="modal-title"><i class="fas fa-file-lines mr-2 text-indigo-400"></i>New Message Template</span>
+      <button onclick="closeModal('modal-template')" class="text-slate-500 hover:text-slate-300"><i class="fas fa-xmark text-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">Template Name *</label><input class="form-input" id="tpl-name" placeholder="e.g. Weekend Reminder SMS"></div>
+      <div class="g2">
+        <div class="form-group"><label class="form-label">Type *</label>
+          <select class="form-input" id="tpl-type"><option value="REMINDER_24H">24h Reminder</option><option value="REMINDER_48H">48h Reminder</option><option value="CUSTOM">Custom</option></select></div>
+        <div class="form-group"><label class="form-label">Channel *</label>
+          <select class="form-input" id="tpl-channel"><option value="SMS">SMS</option><option value="EMAIL">Email</option><option value="BOTH">Both</option></select></div>
+      </div>
+      <div class="form-group" id="tpl-subject-group"><label class="form-label">Email Subject</label><input class="form-input" id="tpl-subject" placeholder="Subject line…"></div>
+      <div class="form-group"><label class="form-label">Body * <span class="text-slate-500 text-xs font-normal">— variables: {{patient_name}} {{date}} {{time}} {{provider}} {{location}} {{reason}}</span></label>
+        <textarea class="form-input" id="tpl-body" rows="5" oninput="previewTpl()"></textarea>
+      </div>
+      <div class="form-group"><label class="form-label">Preview</label><div class="tpl-preview" id="tpl-preview-box">Start typing to see preview…</div></div>
+      <div class="flex gap-2 justify-end mt-4">
+        <button onclick="closeModal('modal-template')" class="btn-sm">Cancel</button>
+        <button onclick="submitTemplate()" class="btn-primary"><i class="fas fa-save"></i> Save Template</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 border border-slate-600 text-white text-sm px-5 py-2.5 rounded-xl shadow-2xl z-[300] hidden"></div>
+
+<script src="/static/reminders.js"></script>
+</body>
+</html>

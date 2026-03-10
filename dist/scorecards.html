@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OculoFlow — Provider Scorecards</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg-0:#0a0e1a;--bg-1:#0f1629;--bg-2:#141c35;--bg-3:#1a2340;
+      --border:rgba(99,102,241,.15);
+      --accent:#6366f1;--accent-h:#818cf8;
+      --green:#10b981;--yellow:#f59e0b;--red:#ef4444;--orange:#f97316;--cyan:#06b6d4;--purple:#a855f7;
+      --text-1:#f1f5f9;--text-2:#94a3b8;--text-3:#475569;
+    }
+    *{box-sizing:border-box;}
+    body{background:var(--bg-0);color:var(--text-1);font-family:'Inter',system-ui,sans-serif;margin:0;min-height:100vh;display:flex;flex-direction:column;}
+    /* Topbar */
+    .topbar{background:var(--bg-1);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 16px;gap:10px;flex-shrink:0;z-index:50;}
+    .logo-pill{display:flex;align-items:center;gap:8px;background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.25);border-radius:8px;padding:4px 10px;}
+    .nav-link{font-size:11px;font-weight:500;color:var(--text-2);text-decoration:none;padding:4px 8px;border-radius:6px;transition:all .15s;display:flex;align-items:center;gap:5px;white-space:nowrap;}
+    .nav-link:hover,.nav-link.active{background:rgba(99,102,241,.15);color:var(--text-1);}
+    /* Tab bar */
+    .tab-bar{background:var(--bg-1);border-bottom:1px solid var(--border);padding:0 20px;display:flex;gap:0;flex-shrink:0;overflow-x:auto;}
+    .tab-btn{padding:12px 20px;font-size:12px;font-weight:600;color:var(--text-2);border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;gap:7px;white-space:nowrap;}
+    .tab-btn:hover{color:var(--text-1);}
+    .tab-btn.active{color:#818cf8;border-bottom-color:#6366f1;}
+    /* Layout */
+    .layout{display:flex;flex:1;overflow:hidden;}
+    .sidebar{width:220px;background:var(--bg-1);border-right:1px solid var(--border);padding:16px 12px;flex-shrink:0;overflow-y:auto;}
+    .main{flex:1;padding:20px;overflow-y:auto;}
+    /* Provider card in sidebar */
+    .prov-card{padding:10px 12px;border-radius:10px;cursor:pointer;transition:all .15s;margin-bottom:6px;border:1px solid transparent;}
+    .prov-card:hover{background:rgba(99,102,241,.08);border-color:var(--border);}
+    .prov-card.active{background:rgba(99,102,241,.15);border-color:rgba(99,102,241,.4);}
+    .prov-avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;}
+    /* Stat cards */
+    .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:20px;}
+    .stat-card{background:var(--bg-1);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+    .stat-card .num{font-size:26px;font-weight:700;line-height:1;margin-bottom:4px;}
+    .stat-card .lbl{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.07em;}
+    .stat-card .sub{font-size:11px;color:var(--text-2);margin-top:4px;}
+    .c-green .num{color:var(--green);}.c-yellow .num{color:var(--yellow);}.c-red .num{color:var(--red);}.c-indigo .num{color:var(--accent-h);}.c-cyan .num{color:var(--cyan);}.c-purple .num{color:var(--purple);}
+    /* Score ring */
+    .score-ring{position:relative;display:inline-flex;align-items:center;justify-content:center;}
+    .score-ring canvas{position:absolute;}
+    .score-num{font-size:28px;font-weight:800;z-index:1;}
+    /* Cards */
+    .card{background:var(--bg-1);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;}
+    .card-title{font-size:13px;font-weight:700;color:var(--text-1);margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+    /* Benchmark bar */
+    .bm-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(99,102,241,.06);}
+    .bm-row:last-child{border-bottom:none;}
+    .bm-label{width:160px;font-size:11px;color:var(--text-2);flex-shrink:0;}
+    .bm-bar-wrap{flex:1;height:6px;background:var(--bg-2);border-radius:3px;overflow:visible;position:relative;}
+    .bm-bar{height:100%;border-radius:3px;transition:width .4s;}
+    .bm-value{font-size:11px;font-weight:700;width:50px;text-align:right;flex-shrink:0;}
+    .bm-avg{font-size:10px;color:var(--text-3);width:70px;text-align:right;flex-shrink:0;}
+    /* Goal chips */
+    .chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.06em;}
+    .ch-on_track{background:rgba(16,185,129,.15);color:#34d399;}
+    .ch-at_risk{background:rgba(245,158,11,.15);color:#fbbf24;}
+    .ch-achieved{background:rgba(6,182,212,.15);color:#22d3ee;}
+    .ch-missed{background:rgba(239,68,68,.15);color:#f87171;}
+    /* Trend arrows */
+    .t-up{color:#10b981;}.t-down{color:#ef4444;}.t-flat{color:#94a3b8;}
+    /* Leaderboard */
+    .lb-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(99,102,241,.07);}
+    .lb-row:last-child{border-bottom:none;}
+    .lb-rank{font-size:18px;font-weight:800;width:28px;text-align:center;flex-shrink:0;}
+    .rank-1{color:#f59e0b;}.rank-2{color:#94a3b8;}.rank-3{color:#cd7c2f;}
+    /* Data table */
+    .data-table{width:100%;border-collapse:collapse;font-size:12px;}
+    .data-table th{text-align:left;padding:8px 12px;color:var(--text-3);font-size:10px;text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--border);font-weight:700;}
+    .data-table td{padding:10px 12px;border-bottom:1px solid rgba(99,102,241,.06);vertical-align:middle;}
+    .data-table tr:hover td{background:rgba(99,102,241,.04);}
+    /* Progress bar */
+    .prog-bar{height:6px;background:var(--bg-2);border-radius:3px;overflow:hidden;}
+    .prog-fill{height:100%;border-radius:3px;transition:width .3s;}
+    /* Buttons */
+    .btn-primary{background:var(--accent);color:#fff;border:none;padding:8px 18px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .15s;}
+    .btn-primary:hover{background:var(--accent-h);}
+    .btn-sm{background:none;border:1px solid var(--border);color:var(--text-2);padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all .15s;}
+    .btn-sm:hover{border-color:var(--accent);color:var(--text-1);}
+    .btn-danger{background:none;border:1px solid rgba(239,68,68,.3);color:#f87171;padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;}
+    /* Range pills */
+    .range-pill{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--border);color:var(--text-2);background:none;transition:all .15s;}
+    .range-pill.active,.range-pill:hover{background:rgba(99,102,241,.15);border-color:rgba(99,102,241,.4);color:var(--text-1);}
+    /* Form */
+    .form-group{margin-bottom:14px;}
+    .form-label{display:block;font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:5px;}
+    .form-input{width:100%;background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:13px;color:var(--text-1);outline:none;font-family:inherit;}
+    .form-input:focus{border-color:rgba(99,102,241,.5);}
+    select.form-input option{background:var(--bg-2);}
+    .g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+    .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+    /* Modal */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,10,.85);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;}
+    .modal{background:var(--bg-1);border:1px solid var(--border);border-radius:16px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;}
+    .modal-header{padding:18px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+    .modal-title{font-size:15px;font-weight:700;}
+    .modal-body{padding:16px 20px 20px;}
+    /* Scrollbar */
+    ::-webkit-scrollbar{width:4px;height:4px;}
+    ::-webkit-scrollbar-thumb{background:rgba(99,102,241,.3);border-radius:2px;}
+    ::-webkit-scrollbar-track{background:transparent;}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+    .fade-in{animation:fadeIn .2s ease;}
+    .hidden{display:none!important;}
+    /* Sparkline canvas */
+    .sparkline{height:40px;width:100%;}
+    /* Period snapshot row */
+    .snap-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(99,102,241,.06);font-size:12px;}
+    .snap-row:last-child{border-bottom:none;}
+  </style>
+  <script src="/static/auth-nav.js"></script>
+</head>
+<body>
+
+<!-- ── Top Bar ──────────────────────────────────────────────────────────────── -->
+<header class="topbar">
+  <div class="logo-pill">
+    <i class="fas fa-chart-bar text-indigo-400 text-xs"></i>
+    <span class="text-xs font-bold text-indigo-300 tracking-wide">Scorecards</span>
+    <span class="text-xs text-slate-500 ml-1">v2.0.0</span>
+  </div>
+  <nav class="hidden md:flex items-center gap-0.5 ml-2 overflow-x-auto">
+    <a href="/"          class="nav-link"><i class="fas fa-house w-3 text-center"></i>Home</a>
+    <a href="/dashboard" class="nav-link"><i class="fas fa-gauge-high w-3 text-center"></i>Dashboard</a>
+    <a href="/patients"  class="nav-link"><i class="fas fa-users w-3 text-center"></i>Patients</a>
+    <a href="/schedule"  class="nav-link"><i class="fas fa-calendar-days w-3 text-center"></i>Schedule</a>
+    <a href="/exam"      class="nav-link"><i class="fas fa-file-medical w-3 text-center"></i>Exam</a>
+    <a href="/billing"   class="nav-link"><i class="fas fa-file-invoice-dollar w-3 text-center"></i>Billing</a>
+    <a href="/optical"   class="nav-link"><i class="fas fa-glasses w-3 text-center"></i>Optical</a>
+    <a href="/reports"   class="nav-link"><i class="fas fa-chart-line w-3 text-center"></i>Reports</a>
+    <a href="/portal"    class="nav-link"><i class="fas fa-user-circle w-3 text-center"></i>Portal</a>
+    <a href="/messaging" class="nav-link"><i class="fas fa-comment-medical w-3 text-center"></i>Messaging</a>
+    <a href="/reminders" class="nav-link"><i class="fas fa-bell w-3 text-center"></i>Reminders</a>
+    <a href="/scorecards" class="nav-link active"><i class="fas fa-chart-bar w-3 text-center"></i>Scorecards</a>
+    <a href="/telehealth" class="nav-link"><i class="fas fa-video w-3 text-center"></i>Telehealth</a>
+    <a href="/erx" class="nav-link"><i class="fas fa-prescription-bottle w-3 text-center"></i>eRx</a>
+    <a href="/ai" class="nav-link"><i class="fas fa-brain w-3 text-center"></i>AI CDS</a>
+    <a href="/priorauth" class="nav-link"><i class="fas fa-clipboard-check w-3 text-center"></i>Prior Auth</a><a href="/rcm" class="nav-link"><i class="fas fa-dollar-sign w-3 text-center"></i>RCM</a>
+  </nav>
+  <div class="ml-auto flex items-center gap-2">
+    <div class="flex gap-1" id="range-pills">
+      <button class="range-pill" onclick="setRange('7d',this)">7d</button>
+      <button class="range-pill active" onclick="setRange('30d',this)">30d</button>
+      <button class="range-pill" onclick="setRange('90d',this)">90d</button>
+      <button class="range-pill" onclick="setRange('ytd',this)">YTD</button>
+    </div>
+    <button onclick="openGoalModal()" class="btn-primary text-xs py-1.5 px-3"><i class="fas fa-bullseye"></i> Set Goal</button>
+  </div>
+</header>
+
+<!-- ── Tab Bar ──────────────────────────────────────────────────────────────── -->
+<div class="tab-bar">
+  <button class="tab-btn active" id="tab-btn-overview"    onclick="showTab('overview',this)"><i class="fas fa-chart-pie"></i>Practice Overview</button>
+  <button class="tab-btn"        id="tab-btn-scorecard"   onclick="showTab('scorecard',this)"><i class="fas fa-id-card"></i>Provider Scorecard</button>
+  <button class="tab-btn"        id="tab-btn-benchmarks"  onclick="showTab('benchmarks',this)"><i class="fas fa-balance-scale"></i>Benchmarks</button>
+  <button class="tab-btn"        id="tab-btn-trends"      onclick="showTab('trends',this)"><i class="fas fa-chart-line"></i>Trends</button>
+  <button class="tab-btn"        id="tab-btn-goals"       onclick="showTab('goals',this)"><i class="fas fa-bullseye"></i>Goals</button>
+</div>
+
+<!-- ── Main Layout ───────────────────────────────────────────────────────────── -->
+<div class="layout">
+
+  <!-- Sidebar: Provider Selector -->
+  <aside class="sidebar">
+    <div class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 px-1">Providers</div>
+    <div id="provider-list">
+      <div class="text-slate-500 text-xs text-center py-4"><i class="fas fa-spinner fa-spin mr-1"></i>Loading…</div>
+    </div>
+    <div class="mt-4 pt-4 border-t border-slate-800">
+      <button onclick="selectProvider('__practice__')" id="prov-btn-practice"
+        class="prov-card w-full text-left flex items-center gap-2">
+        <div class="prov-avatar bg-slate-700 text-slate-300"><i class="fas fa-hospital text-xs"></i></div>
+        <div>
+          <div class="text-xs font-bold text-slate-200">Practice</div>
+          <div class="text-xs text-slate-500">All Providers</div>
+        </div>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main">
+
+    <!-- ── OVERVIEW TAB ──────────────────────────────────────────────────── -->
+    <div id="tab-overview" class="fade-in">
+      <!-- Practice stats row -->
+      <div class="stats-row" id="overview-stats">
+        <div class="stat-card c-indigo"><div class="num" id="ov-visits">—</div><div class="lbl">Total Visits</div><div class="sub" id="ov-providers">— providers</div></div>
+        <div class="stat-card c-green"><div class="num" id="ov-revenue">—</div><div class="lbl">Total Revenue</div><div class="sub" id="ov-coll-rate">—% collection</div></div>
+        <div class="stat-card c-cyan"><div class="num" id="ov-new-pts">—</div><div class="lbl">New Patients</div><div class="sub">This period</div></div>
+        <div class="stat-card c-yellow"><div class="num" id="ov-satisf">—</div><div class="lbl">Avg Satisfaction</div><div class="sub">/ 5.0</div></div>
+        <div class="stat-card c-purple"><div class="num" id="ov-exam-min">—</div><div class="lbl">Avg Exam (min)</div><div class="sub">Practice avg</div></div>
+      </div>
+
+      <div class="g2" style="align-items:start;">
+        <!-- Leaderboard -->
+        <div class="card">
+          <div class="card-title"><i class="fas fa-trophy text-yellow-400"></i>Provider Leaderboard</div>
+          <div id="leaderboard-list"></div>
+        </div>
+        <!-- Practice visit chart -->
+        <div class="card">
+          <div class="card-title"><i class="fas fa-chart-area text-indigo-400"></i>Practice Visits (Daily)</div>
+          <canvas id="chart-practice-visits" height="160"></canvas>
+        </div>
+      </div>
+
+      <div class="g2" style="align-items:start;">
+        <!-- Visit type breakdown -->
+        <div class="card">
+          <div class="card-title"><i class="fas fa-stethoscope text-cyan-400"></i>Visits by Type</div>
+          <canvas id="chart-visit-types" height="200"></canvas>
+        </div>
+        <!-- Revenue by payer -->
+        <div class="card">
+          <div class="card-title"><i class="fas fa-wallet text-green-400"></i>Revenue by Payer</div>
+          <canvas id="chart-payer-mix" height="200"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SCORECARD TAB ──────────────────────────────────────────────────── -->
+    <div id="tab-scorecard" class="fade-in hidden">
+      <div id="scorecard-select-prompt" class="text-slate-500 text-sm text-center py-12">
+        <i class="fas fa-arrow-left mr-2"></i>Select a provider from the sidebar
+      </div>
+      <div id="scorecard-content" class="hidden">
+        <!-- Provider header -->
+        <div class="card mb-4">
+          <div class="flex items-center gap-4">
+            <div id="sc-avatar" class="prov-avatar w-14 h-14 text-xl bg-indigo-600"></div>
+            <div class="flex-1">
+              <div class="text-lg font-bold text-slate-100" id="sc-name">—</div>
+              <div class="text-sm text-slate-400" id="sc-specialty">—</div>
+            </div>
+            <div class="text-center">
+              <div class="score-ring" style="width:80px;height:80px;">
+                <canvas id="chart-score-ring" width="80" height="80"></canvas>
+                <div class="score-num" id="sc-score">—</div>
+              </div>
+              <div class="text-xs text-slate-500 mt-1">Overall Score</div>
+              <div class="text-xs font-bold mt-0.5" id="sc-trend-text">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- KPI grid -->
+        <div class="g3 mb-4" id="sc-kpi-grid"></div>
+
+        <!-- Volume + Revenue charts side by side -->
+        <div class="g2" style="align-items:start;">
+          <div class="card">
+            <div class="card-title"><i class="fas fa-users text-cyan-400"></i>Daily Visit Volume</div>
+            <canvas id="chart-sc-volume" height="150"></canvas>
+          </div>
+          <div class="card">
+            <div class="card-title"><i class="fas fa-dollar-sign text-green-400"></i>Daily Revenue</div>
+            <canvas id="chart-sc-revenue" height="150"></canvas>
+          </div>
+        </div>
+
+        <!-- Appt type breakdown -->
+        <div class="g2" style="align-items:start;">
+          <div class="card">
+            <div class="card-title"><i class="fas fa-stethoscope text-indigo-400"></i>Visits by Appointment Type</div>
+            <canvas id="chart-sc-appt-types" height="200"></canvas>
+          </div>
+          <div class="card">
+            <div class="card-title"><i class="fas fa-wallet text-purple-400"></i>Revenue by Payer</div>
+            <canvas id="chart-sc-payer" height="200"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── BENCHMARKS TAB ─────────────────────────────────────────────────── -->
+    <div id="tab-benchmarks" class="fade-in hidden">
+      <div id="bench-select-prompt" class="text-slate-500 text-sm text-center py-12">
+        <i class="fas fa-arrow-left mr-2"></i>Select a provider from the sidebar
+      </div>
+      <div id="bench-content" class="hidden">
+        <div class="card">
+          <div class="card-title"><i class="fas fa-balance-scale text-indigo-400"></i>Benchmark Comparison
+            <span class="text-xs text-slate-500 font-normal ml-2">vs Practice Avg & National Avg</span>
+          </div>
+          <div class="flex items-center gap-4 mb-4 text-xs text-slate-400">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-indigo-500 inline-block"></span>This Provider</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-slate-500 inline-block"></span>Practice Avg</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-slate-700 inline-block"></span>National Avg</span>
+          </div>
+          <div id="benchmark-list"></div>
+        </div>
+        <div class="card">
+          <div class="card-title"><i class="fas fa-chart-bar text-cyan-400"></i>Benchmark Radar Chart</div>
+          <div style="max-width:420px;margin:0 auto;">
+            <canvas id="chart-radar" height="300"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── TRENDS TAB ─────────────────────────────────────────────────────── -->
+    <div id="tab-trends" class="fade-in hidden">
+      <div id="trends-select-prompt" class="text-slate-500 text-sm text-center py-12">
+        <i class="fas fa-arrow-left mr-2"></i>Select a provider from the sidebar
+      </div>
+      <div id="trends-content" class="hidden">
+        <div class="card">
+          <div class="card-title"><i class="fas fa-table text-indigo-400"></i>Weekly Performance Snapshots</div>
+          <div style="overflow-x:auto;">
+            <table class="data-table">
+              <thead><tr><th>Week</th><th>Visits</th><th>Revenue</th><th>New Patients</th><th>Avg Exam (min)</th><th>Satisfaction</th></tr></thead>
+              <tbody id="snapshots-body"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="g2" style="align-items:start;">
+          <div class="card">
+            <div class="card-title"><i class="fas fa-chart-line text-cyan-400"></i>Weekly Visit Trend</div>
+            <canvas id="chart-weekly-visits" height="180"></canvas>
+          </div>
+          <div class="card">
+            <div class="card-title"><i class="fas fa-chart-line text-green-400"></i>Weekly Revenue Trend</div>
+            <canvas id="chart-weekly-revenue" height="180"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── GOALS TAB ──────────────────────────────────────────────────────── -->
+    <div id="tab-goals" class="fade-in hidden">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-2">
+          <select id="goals-prov-filter" class="form-input" style="width:auto;font-size:12px;" onchange="loadGoals()">
+            <option value="">All Providers</option>
+            <option value="dr-chen">Dr. Sarah Chen</option>
+            <option value="dr-patel">Dr. Raj Patel</option>
+            <option value="dr-torres">Dr. Amy Torres</option>
+          </select>
+          <select id="goals-status-filter" class="form-input" style="width:auto;font-size:12px;" onchange="loadGoals()">
+            <option value="">All Statuses</option>
+            <option value="ON_TRACK">On Track</option>
+            <option value="AT_RISK">At Risk</option>
+            <option value="ACHIEVED">Achieved</option>
+            <option value="MISSED">Missed</option>
+          </select>
+        </div>
+        <button onclick="openGoalModal()" class="btn-primary text-xs py-1.5 px-3"><i class="fas fa-plus"></i> New Goal</button>
+      </div>
+      <div id="goals-list"></div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ── Goal Modal ──────────────────────────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="modal-goal">
+  <div class="modal fade-in">
+    <div class="modal-header">
+      <span class="modal-title"><i class="fas fa-bullseye mr-2 text-indigo-400"></i><span id="modal-goal-title">New Goal</span></span>
+      <button onclick="closeModal('modal-goal')" class="text-slate-500 hover:text-slate-300"><i class="fas fa-xmark text-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="goal-edit-id">
+      <div class="form-group">
+        <label class="form-label">Provider *</label>
+        <select class="form-input" id="goal-provider">
+          <option value="dr-chen">Dr. Sarah Chen</option>
+          <option value="dr-patel">Dr. Raj Patel</option>
+          <option value="dr-torres">Dr. Amy Torres</option>
+        </select>
+      </div>
+      <div class="g2">
+        <div class="form-group">
+          <label class="form-label">Metric *</label>
+          <select class="form-input" id="goal-metric">
+            <option value="visits">Patient Visits</option>
+            <option value="revenue">Revenue ($)</option>
+            <option value="satisfaction">Patient Satisfaction</option>
+            <option value="collection_rate">Collection Rate (%)</option>
+            <option value="exam_completion">Exam Completion (%)</option>
+            <option value="no_show_rate">No-Show Rate (%)</option>
+            <option value="new_patients">New Patients</option>
+            <option value="utilization">Utilization Rate (%)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Period *</label>
+          <input class="form-input" id="goal-period" placeholder="e.g. 2026-03 or 2026-Q1">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description *</label>
+        <input class="form-input" id="goal-desc" placeholder="e.g. Reach 180 patient visits in March">
+      </div>
+      <div class="g2">
+        <div class="form-group">
+          <label class="form-label">Target Value *</label>
+          <input class="form-input" id="goal-target" type="number" placeholder="e.g. 180">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Current Value *</label>
+          <input class="form-input" id="goal-current" type="number" placeholder="e.g. 142">
+        </div>
+      </div>
+      <div class="g2">
+        <div class="form-group">
+          <label class="form-label">Unit *</label>
+          <input class="form-input" id="goal-unit" placeholder="visits / % / $ / pts">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Due Date *</label>
+          <input class="form-input" id="goal-due" type="date">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Status</label>
+        <select class="form-input" id="goal-status">
+          <option value="ON_TRACK">On Track</option>
+          <option value="AT_RISK">At Risk</option>
+          <option value="ACHIEVED">Achieved</option>
+          <option value="MISSED">Missed</option>
+        </select>
+      </div>
+      <div class="flex gap-2 justify-end mt-4">
+        <button onclick="closeModal('modal-goal')" class="btn-sm">Cancel</button>
+        <button onclick="submitGoal()" class="btn-primary"><i class="fas fa-save"></i> Save Goal</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 border border-slate-600 text-white text-sm px-5 py-2.5 rounded-xl shadow-2xl z-[300] hidden"></div>
+
+<script src="/static/scorecards.js"></script>
+</body>
+</html>

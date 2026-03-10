@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OculoFlow — E-Prescribing</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg-0:#0a0e1a;--bg-1:#0f1629;--bg-2:#141c35;--bg-3:#1a2340;
+      --border:rgba(16,185,129,.15);
+      --accent:#10b981;--accent-h:#34d399;
+      --blue:#3b82f6;--yellow:#f59e0b;--red:#ef4444;--orange:#f97316;--purple:#a855f7;--cyan:#06b6d4;--rose:#f43f5e;
+      --text-1:#f1f5f9;--text-2:#94a3b8;--text-3:#475569;
+    }
+    *{box-sizing:border-box;}
+    body{background:var(--bg-0);color:var(--text-1);font-family:'Inter',system-ui,sans-serif;margin:0;min-height:100vh;display:flex;flex-direction:column;}
+    .topbar{background:var(--bg-1);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 16px;gap:10px;flex-shrink:0;z-index:50;}
+    .logo-pill{display:flex;align-items:center;gap:8px;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.25);border-radius:8px;padding:4px 10px;}
+    .nav-link{font-size:11px;font-weight:500;color:var(--text-2);text-decoration:none;padding:4px 8px;border-radius:6px;transition:all .15s;display:flex;align-items:center;gap:5px;white-space:nowrap;}
+    .nav-link:hover,.nav-link.active{background:rgba(16,185,129,.15);color:var(--text-1);}
+    .tab-bar{background:var(--bg-1);border-bottom:1px solid var(--border);padding:0 20px;display:flex;gap:0;flex-shrink:0;overflow-x:auto;}
+    .tab-btn{padding:12px 20px;font-size:12px;font-weight:600;color:var(--text-2);border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;gap:7px;white-space:nowrap;}
+    .tab-btn:hover{color:var(--text-1);}
+    .tab-btn.active{color:#34d399;border-bottom-color:#10b981;}
+    .layout{display:flex;flex:1;overflow:hidden;}
+    .sidebar{width:320px;background:var(--bg-1);border-right:1px solid var(--border);flex-shrink:0;overflow-y:auto;display:flex;flex-direction:column;}
+    .main{flex:1;padding:20px;overflow-y:auto;}
+    /* Rx rows */
+    .rx-row{padding:11px 14px;border-bottom:1px solid rgba(16,185,129,.06);cursor:pointer;transition:all .15s;}
+    .rx-row:hover{background:rgba(16,185,129,.05);}
+    .rx-row.active{background:rgba(16,185,129,.08);border-left:3px solid #10b981;padding-left:11px;}
+    /* Status chips */
+    .chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.06em;}
+    .ch-draft{background:rgba(148,163,184,.12);color:#94a3b8;}
+    .ch-pending_review{background:rgba(245,158,11,.15);color:#fbbf24;}
+    .ch-signed{background:rgba(59,130,246,.15);color:#60a5fa;}
+    .ch-sent{background:rgba(16,185,129,.15);color:#34d399;}
+    .ch-filled{background:rgba(16,185,129,.25);color:#6ee7b7;}
+    .ch-cancelled{background:rgba(239,68,68,.12);color:#f87171;}
+    .ch-expired{background:rgba(107,114,128,.12);color:#9ca3af;}
+    .ch-denied{background:rgba(239,68,68,.2);color:#fca5a5;}
+    /* Severity */
+    .sev-minor{color:#94a3b8;}
+    .sev-moderate{color:#fbbf24;}
+    .sev-major{color:#f97316;}
+    .sev-contraindicated{color:#ef4444;}
+    /* Card */
+    .card{background:var(--bg-1);border:1px solid var(--border);border-radius:12px;padding:16px;}
+    .kpi-card{background:var(--bg-2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;}
+    /* Form */
+    .form-label{font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:4px;display:block;text-transform:uppercase;letter-spacing:.05em;}
+    .form-input{width:100%;background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;color:var(--text-1);outline:none;transition:border-color .15s;}
+    .form-input:focus{border-color:var(--accent);}
+    .form-select{appearance:none;background-image:url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");background-repeat:no-repeat;background-position:right 8px center;background-size:16px;padding-right:32px;}
+    .btn{padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:all .15s;display:inline-flex;align-items:center;gap:6px;}
+    .btn-primary{background:var(--accent);color:#fff;}
+    .btn-primary:hover{background:var(--accent-h);}
+    .btn-ghost{background:transparent;color:var(--text-2);border:1px solid var(--border);}
+    .btn-ghost:hover{background:var(--bg-2);color:var(--text-1);}
+    .btn-danger{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.25);}
+    .btn-danger:hover{background:rgba(239,68,68,.25);}
+    .btn-warning{background:rgba(245,158,11,.15);color:#f59e0b;border:1px solid rgba(245,158,11,.25);}
+    .btn-warning:hover{background:rgba(245,158,11,.25);}
+    /* Modal */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,10,.85);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;}
+    .modal{background:var(--bg-1);border:1px solid var(--border);border-radius:16px;width:100%;max-width:720px;max-height:92vh;overflow-y:auto;}
+    .modal-header{padding:18px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg-1);z-index:1;}
+    .modal-title{font-size:15px;font-weight:700;}
+    .modal-body{padding:16px 20px 20px;}
+    /* Drug search */
+    .drug-result{padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:all .15s;border-radius:6px;margin-bottom:2px;}
+    .drug-result:hover{background:rgba(16,185,129,.08);}
+    .drug-result.selected{background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.4);}
+    /* Interaction alert */
+    .interaction-alert{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:10px 12px;margin-bottom:8px;}
+    .interaction-alert.major{background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.3);}
+    .interaction-alert.contraindicated{background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.5);}
+    /* PDMP */
+    .pdmp-clear{background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);border-radius:8px;padding:10px 12px;}
+    .pdmp-alert{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:10px 12px;}
+    .pdmp-high{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:10px 12px;}
+    /* Table */
+    .data-table{width:100%;border-collapse:collapse;}
+    .data-table th{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);padding:8px 10px;border-bottom:1px solid var(--border);text-align:left;}
+    .data-table td{font-size:12px;padding:10px 10px;border-bottom:1px solid rgba(16,185,129,.04);}
+    .data-table tr:hover td{background:rgba(16,185,129,.03);}
+    /* Controlled badge */
+    .controlled-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);}
+    /* Sig builder */
+    .sig-preview{background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;color:#34d399;font-family:monospace;}
+    /* Scrollbar */
+    ::-webkit-scrollbar{width:4px;height:4px;}
+    ::-webkit-scrollbar-thumb{background:rgba(16,185,129,.3);border-radius:2px;}
+    ::-webkit-scrollbar-track{background:transparent;}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+    .fade-in{animation:fadeIn .2s ease;}
+    .hidden{display:none!important;}
+    /* Sidebar toolbar */
+    .sidebar-toolbar{padding:10px 14px;border-bottom:1px solid rgba(16,185,129,.06);display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+    /* Section headers */
+    .section-hdr{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);padding:8px 14px 4px;border-top:1px solid rgba(16,185,129,.06);}
+    /* Allergy chip */
+    .allergy-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;background:rgba(239,68,68,.12);color:#f87171;border:1px solid rgba(239,68,68,.2);}
+    /* Formulary grid */
+    .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    @media(max-width:640px){.form-grid{grid-template-columns:1fr;}}
+    /* Step wizard */
+    .wizard-step{display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;border-radius:8px;transition:all .15s;}
+    .wizard-step.active{background:rgba(16,185,129,.1);}
+    .step-num{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;}
+    .step-num.done{background:var(--accent);color:#fff;}
+    .step-num.active-s{background:rgba(16,185,129,.2);border:2px solid var(--accent);color:#34d399;}
+    .step-num.pending-s{background:var(--bg-2);border:2px solid var(--border);color:var(--text-3);}
+  </style>
+  <script src="/static/auth-nav.js"></script>
+</head>
+<body>
+
+<!-- ── Top Bar ──────────────────────────────────────────────────────────────── -->
+<header class="topbar">
+  <div class="logo-pill">
+    <i class="fas fa-prescription-bottle text-emerald-400 text-xs"></i>
+    <span class="text-xs font-bold text-emerald-300 tracking-wide">E-Prescribing</span>
+    <span class="text-xs text-slate-500 ml-1">v2.2.0</span>
+  </div>
+  <nav class="hidden md:flex items-center gap-0.5 ml-2 overflow-x-auto">
+    <a href="/"           class="nav-link"><i class="fas fa-house w-3 text-center"></i>Home</a>
+    <a href="/dashboard"  class="nav-link"><i class="fas fa-gauge-high w-3 text-center"></i>Dashboard</a>
+    <a href="/patients"   class="nav-link"><i class="fas fa-users w-3 text-center"></i>Patients</a>
+    <a href="/schedule"   class="nav-link"><i class="fas fa-calendar-days w-3 text-center"></i>Schedule</a>
+    <a href="/exam"       class="nav-link"><i class="fas fa-file-medical w-3 text-center"></i>Exam</a>
+    <a href="/billing"    class="nav-link"><i class="fas fa-file-invoice-dollar w-3 text-center"></i>Billing</a>
+    <a href="/optical"    class="nav-link"><i class="fas fa-glasses w-3 text-center"></i>Optical</a>
+    <a href="/reports"    class="nav-link"><i class="fas fa-chart-line w-3 text-center"></i>Reports</a>
+    <a href="/portal"     class="nav-link"><i class="fas fa-user-circle w-3 text-center"></i>Portal</a>
+    <a href="/messaging"  class="nav-link"><i class="fas fa-comment-medical w-3 text-center"></i>Messaging</a>
+    <a href="/reminders"  class="nav-link"><i class="fas fa-bell w-3 text-center"></i>Reminders</a>
+    <a href="/scorecards" class="nav-link"><i class="fas fa-chart-bar w-3 text-center"></i>Scorecards</a>
+    <a href="/telehealth" class="nav-link"><i class="fas fa-video w-3 text-center"></i>Telehealth</a>
+    <a href="/erx"        class="nav-link active"><i class="fas fa-prescription-bottle w-3 text-center"></i>eRx</a>
+    <a href="/ai"         class="nav-link"><i class="fas fa-brain w-3 text-center"></i>AI CDS</a>
+    <a href="/priorauth" class="nav-link"><i class="fas fa-clipboard-check w-3 text-center"></i>Prior Auth</a><a href="/rcm" class="nav-link"><i class="fas fa-dollar-sign w-3 text-center"></i>RCM</a>
+  </nav>
+  <div class="ml-auto flex items-center gap-2">
+    <button onclick="openNewRxModal()" class="btn btn-primary text-xs py-1.5 px-3"><i class="fas fa-plus"></i> New Rx</button>
+  </div>
+</header>
+
+<!-- ── Tab Bar ──────────────────────────────────────────────────────────────── -->
+<div class="tab-bar">
+  <button class="tab-btn active" id="tab-btn-dashboard"  onclick="showTab('dashboard',this)"><i class="fas fa-gauge-high"></i>Dashboard</button>
+  <button class="tab-btn"        id="tab-btn-queue"       onclick="showTab('queue',this)"><i class="fas fa-list-check"></i>Rx Queue</button>
+  <button class="tab-btn"        id="tab-btn-formulary"   onclick="showTab('formulary',this)"><i class="fas fa-pills"></i>Formulary</button>
+  <button class="tab-btn"        id="tab-btn-pdmp"        onclick="showTab('pdmp',this)"><i class="fas fa-shield-halved"></i>PDMP</button>
+  <button class="tab-btn"        id="tab-btn-allergies"   onclick="showTab('allergies',this)"><i class="fas fa-triangle-exclamation"></i>Allergies</button>
+</div>
+
+<!-- ── Main Layout ─────────────────────────────────────────────────────────── -->
+<div class="layout">
+
+  <!-- ── Left Sidebar ── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-toolbar">
+      <select id="sidebar-filter" onchange="loadSidebarRx()" class="form-input form-select text-xs py-1.5" style="flex:1">
+        <option value="">All Status</option>
+        <option value="DRAFT">Draft</option>
+        <option value="PENDING_REVIEW">Pending Review</option>
+        <option value="SIGNED">Signed</option>
+        <option value="SENT">Sent</option>
+        <option value="FILLED">Filled</option>
+        <option value="CANCELLED">Cancelled</option>
+      </select>
+    </div>
+    <div id="sidebar-rx-list">
+      <div class="p-4 text-center text-xs text-slate-500"><i class="fas fa-spinner fa-spin"></i> Loading…</div>
+    </div>
+  </aside>
+
+  <!-- ── Main Content ── -->
+  <div class="main">
+
+    <!-- ── Dashboard Tab ── -->
+    <div id="tab-dashboard" class="tab-content fade-in">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-base font-bold">E-Prescribing Dashboard</h2>
+        <span class="text-xs text-slate-500" id="dashboard-ts"></span>
+      </div>
+      <!-- KPI Row -->
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6" id="kpi-row">
+        <div class="kpi-card"><div class="text-xs text-slate-400 mb-1">Pending Review</div><div class="text-2xl font-bold text-yellow-400" id="kpi-pending">—</div></div>
+        <div class="kpi-card"><div class="text-xs text-slate-400 mb-1">Signed Today</div><div class="text-2xl font-bold text-blue-400" id="kpi-signed">—</div></div>
+        <div class="kpi-card"><div class="text-xs text-slate-400 mb-1">Sent Today</div><div class="text-2xl font-bold text-emerald-400" id="kpi-sent">—</div></div>
+        <div class="kpi-card"><div class="text-xs text-slate-400 mb-1">Refill Requests</div><div class="text-2xl font-bold text-purple-400" id="kpi-refills">—</div></div>
+        <div class="kpi-card"><div class="text-xs text-slate-400 mb-1">PDMP Alerts</div><div class="text-2xl font-bold text-red-400" id="kpi-pdmp">—</div></div>
+        <div class="kpi-card"><div class="text-xs text-slate-400 mb-1">DDI Alerts</div><div class="text-2xl font-bold text-orange-400" id="kpi-ddi">—</div></div>
+      </div>
+      <!-- Recent Prescriptions -->
+      <div class="card mb-4">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold">Recent Prescriptions</h3>
+          <button onclick="showTab('queue', document.getElementById('tab-btn-queue'))" class="text-xs text-emerald-400 hover:underline">View all →</button>
+        </div>
+        <table class="data-table" id="recent-rx-table">
+          <thead><tr><th>Patient</th><th>Drug</th><th>Provider</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+          <tbody id="recent-rx-body"></tbody>
+        </table>
+      </div>
+      <!-- Refill Requests & PDMP Alerts side by side -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="card">
+          <h3 class="text-sm font-semibold mb-3"><i class="fas fa-rotate text-purple-400 mr-2"></i>Pending Refill Requests</h3>
+          <div id="refill-list"><p class="text-xs text-slate-500">No pending refills</p></div>
+        </div>
+        <div class="card">
+          <h3 class="text-sm font-semibold mb-3"><i class="fas fa-shield-halved text-red-400 mr-2"></i>PDMP Alerts</h3>
+          <div id="pdmp-alert-list"><p class="text-xs text-slate-500">No active PDMP alerts</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Rx Queue Tab ── -->
+    <div id="tab-queue" class="tab-content hidden fade-in">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-base font-bold">Prescription Queue</h2>
+        <button onclick="openNewRxModal()" class="btn btn-primary text-xs"><i class="fas fa-plus"></i> New Rx</button>
+      </div>
+      <!-- Detail pane or empty state -->
+      <div id="rx-detail-pane">
+        <div class="card text-center py-12">
+          <i class="fas fa-prescription-bottle text-4xl text-slate-700 mb-3"></i>
+          <p class="text-slate-400 text-sm">Select a prescription from the sidebar to view details</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Formulary Tab ── -->
+    <div id="tab-formulary" class="tab-content hidden fade-in">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-base font-bold">Drug Formulary</h2>
+        <div class="flex items-center gap-2">
+          <select id="cat-filter" onchange="loadFormulary()" class="form-input form-select text-xs py-1.5" style="width:160px">
+            <option value="">All Categories</option>
+          </select>
+          <div class="relative">
+            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
+            <input id="formulary-search" type="text" placeholder="Search drugs…" oninput="loadFormulary()" class="form-input text-xs py-1.5 pl-7" style="width:200px">
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <table class="data-table" id="formulary-table">
+          <thead><tr><th>Drug Name</th><th>Generic</th><th>Form</th><th>Strength</th><th>Category</th><th>Schedule</th><th>Common Dosing</th><th>Actions</th></tr></thead>
+          <tbody id="formulary-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── PDMP Tab ── -->
+    <div id="tab-pdmp" class="tab-content hidden fade-in">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-base font-bold">PDMP — Prescription Drug Monitoring</h2>
+        <button onclick="openPdmpCheckModal()" class="btn btn-primary text-xs"><i class="fas fa-shield-halved"></i> Run PDMP Check</button>
+      </div>
+      <div class="card mb-4 p-4" style="background:rgba(245,158,11,.05);border-color:rgba(245,158,11,.2)">
+        <div class="flex items-start gap-3">
+          <i class="fas fa-circle-info text-yellow-400 mt-0.5"></i>
+          <div>
+            <p class="text-sm font-semibold text-yellow-300">PDMP Integration Active (Simulated)</p>
+            <p class="text-xs text-slate-400 mt-1">In production, this integrates with your state's PDMP (e.g., Florida PDMP/AWARE, CSMD). All controlled substance prescriptions are automatically reported. Check is required before prescribing Schedule II–V drugs.</p>
+          </div>
+        </div>
+      </div>
+      <div id="pdmp-reports-list">
+        <div class="p-4 text-center text-xs text-slate-500"><i class="fas fa-spinner fa-spin"></i> Loading…</div>
+      </div>
+    </div>
+
+    <!-- ── Allergies Tab ── -->
+    <div id="tab-allergies" class="tab-content hidden fade-in">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-base font-bold">Patient Allergy Records</h2>
+        <button onclick="openAllergyModal()" class="btn btn-primary text-xs"><i class="fas fa-plus"></i> Add Allergy</button>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Patient ID</label>
+        <div class="flex gap-2">
+          <input id="allergy-patient-id" type="text" value="pt-001" placeholder="e.g. pt-001" class="form-input text-xs py-1.5" style="width:160px">
+          <button onclick="loadAllergies()" class="btn btn-ghost text-xs"><i class="fas fa-search"></i> Load</button>
+        </div>
+      </div>
+      <div id="allergies-list">
+        <div class="p-4 text-center text-xs text-slate-500">Enter a patient ID and click Load</div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /layout -->
+
+<!-- ── New Rx Modal ──────────────────────────────────────────────────────────── -->
+<div id="new-rx-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <h2 class="modal-title"><i class="fas fa-prescription-bottle text-emerald-400 mr-2"></i>New Prescription</h2>
+        <p class="text-xs text-slate-400 mt-0.5">Step <span id="rx-step-label">1</span> of 4</p>
+      </div>
+      <button onclick="closeNewRxModal()" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+    </div>
+    <div class="modal-body">
+      <!-- Step indicators -->
+      <div class="flex items-center gap-1 mb-5">
+        <div class="wizard-step active" id="ws-1" onclick="gotoStep(1)"><div class="step-num active-s" id="sn-1">1</div><span class="text-xs font-medium">Patient</span></div>
+        <div class="flex-1 h-0.5 bg-slate-700"></div>
+        <div class="wizard-step" id="ws-2" onclick="gotoStep(2)"><div class="step-num pending-s" id="sn-2">2</div><span class="text-xs font-medium">Drug</span></div>
+        <div class="flex-1 h-0.5 bg-slate-700"></div>
+        <div class="wizard-step" id="ws-3" onclick="gotoStep(3)"><div class="step-num pending-s" id="sn-3">3</div><span class="text-xs font-medium">SIG</span></div>
+        <div class="flex-1 h-0.5 bg-slate-700"></div>
+        <div class="wizard-step" id="ws-4" onclick="gotoStep(4)"><div class="step-num pending-s" id="sn-4">4</div><span class="text-xs font-medium">Review</span></div>
+      </div>
+
+      <!-- Step 1: Patient Info -->
+      <div id="rx-step-1">
+        <div class="form-grid mb-3">
+          <div><label class="form-label">Patient ID *</label><input id="rx-patient-id" type="text" placeholder="e.g. pt-001" class="form-input"></div>
+          <div><label class="form-label">Patient Name *</label><input id="rx-patient-name" type="text" placeholder="Full name" class="form-input"></div>
+        </div>
+        <div class="form-grid mb-3">
+          <div><label class="form-label">Date of Birth *</label><input id="rx-patient-dob" type="date" class="form-input"></div>
+          <div>
+            <label class="form-label">Provider *</label>
+            <select id="rx-provider" class="form-input form-select">
+              <option value="dr-chen|Dr. Sarah Chen|1234567001">Dr. Sarah Chen</option>
+              <option value="dr-patel|Dr. Raj Patel|1234567002">Dr. Raj Patel</option>
+              <option value="dr-torres|Dr. Amy Torres|1234567003">Dr. Amy Torres</option>
+            </select>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Diagnosis Codes (ICD-10, comma-separated)</label>
+          <input id="rx-diag" type="text" placeholder="e.g. H40.1131, H26.9" class="form-input">
+        </div>
+        <div id="patient-allergy-banner" class="hidden mb-3"></div>
+      </div>
+
+      <!-- Step 2: Drug Selection -->
+      <div id="rx-step-2" class="hidden">
+        <div class="mb-3">
+          <label class="form-label">Search Drug *</label>
+          <input id="drug-search-input" type="text" placeholder="Search by name or generic…" oninput="searchDrugs()" class="form-input">
+        </div>
+        <div id="drug-search-results" class="mb-3" style="max-height:200px;overflow-y:auto;"></div>
+        <div id="selected-drug-card" class="hidden card mb-3">
+          <h4 class="text-sm font-bold text-emerald-400 mb-1" id="sel-drug-name"></h4>
+          <div class="grid grid-cols-3 gap-2 text-xs text-slate-400">
+            <div>Generic: <span class="text-white" id="sel-drug-generic"></span></div>
+            <div>Form: <span class="text-white" id="sel-drug-form"></span></div>
+            <div>Schedule: <span class="text-white" id="sel-drug-sched"></span></div>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">Common dosing: <span class="text-emerald-300" id="sel-drug-dosing"></span></p>
+        </div>
+        <div id="interaction-alerts" class="hidden">
+          <p class="text-xs font-semibold text-yellow-300 mb-2"><i class="fas fa-triangle-exclamation mr-1"></i>Drug Interaction Alerts</p>
+          <div id="interaction-alert-list"></div>
+        </div>
+      </div>
+
+      <!-- Step 3: SIG Builder -->
+      <div id="rx-step-3" class="hidden">
+        <div class="form-grid mb-3">
+          <div><label class="form-label">Quantity *</label><input id="sig-qty" type="number" min="0.1" step="0.1" placeholder="e.g. 2.5" class="form-input"></div>
+          <div><label class="form-label">Unit</label><input id="sig-unit" type="text" placeholder="mL / tablet / g" class="form-input"></div>
+        </div>
+        <div class="form-grid mb-3">
+          <div><label class="form-label">Days Supply *</label><input id="sig-days" type="number" min="1" placeholder="30" class="form-input"></div>
+          <div><label class="form-label">Refills</label><input id="sig-refills" type="number" min="0" max="12" placeholder="0" class="form-input"></div>
+        </div>
+        <div class="form-grid mb-3">
+          <div>
+            <label class="form-label">Frequency *</label>
+            <select id="sig-freq" onchange="buildSig()" class="form-input form-select">
+              <option value="QD">QD – Once daily</option>
+              <option value="BID">BID – Twice daily</option>
+              <option value="TID">TID – Three times daily</option>
+              <option value="QID">QID – Four times daily</option>
+              <option value="QHS">QHS – Every bedtime</option>
+              <option value="PRN">PRN – As needed</option>
+              <option value="Q4H">Q4H – Every 4 hours</option>
+              <option value="Q6H">Q6H – Every 6 hours</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Route *</label>
+            <select id="sig-route" onchange="buildSig()" class="form-input form-select">
+              <option value="OU">OU – Both eyes</option>
+              <option value="OD">OD – Right eye</option>
+              <option value="OS">OS – Left eye</option>
+              <option value="PO">PO – By mouth</option>
+              <option value="TOP">Topical</option>
+              <option value="INJ">Injection</option>
+            </select>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Dosage Instructions (SIG) *</label>
+          <input id="sig-instructions" type="text" oninput="updateSigPreview()" placeholder="Instill 1 drop in each eye every night at bedtime" class="form-input">
+        </div>
+        <div class="mb-3">
+          <div class="flex items-center gap-2 mb-1">
+            <input type="checkbox" id="sig-prn" onchange="buildSig()">
+            <label for="sig-prn" class="text-xs text-slate-300">PRN (as needed)</label>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">SIG Preview</label>
+          <div class="sig-preview" id="sig-preview">—</div>
+        </div>
+        <div class="form-grid mb-3">
+          <div>
+            <label class="form-label">Pharmacy</label>
+            <select id="rx-pharmacy" class="form-input form-select">
+              <option value="">— Select pharmacy —</option>
+            </select>
+          </div>
+          <div class="flex items-end gap-2">
+            <div class="flex items-center gap-2">
+              <input type="checkbox" id="sig-daw">
+              <label for="sig-daw" class="text-xs text-slate-300">DAW (Dispense As Written)</label>
+            </div>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Clinical Note</label>
+          <textarea id="rx-note" rows="2" placeholder="Optional clinical note…" class="form-input" style="resize:vertical"></textarea>
+        </div>
+      </div>
+
+      <!-- Step 4: Review & Sign -->
+      <div id="rx-step-4" class="hidden">
+        <div class="card mb-4 p-4" id="rx-review-card"></div>
+        <div class="flex items-center gap-2 mb-4 p-3 rounded-lg" style="background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2)">
+          <i class="fas fa-shield-check text-emerald-400"></i>
+          <div>
+            <p class="text-xs font-semibold text-emerald-300">Electronic Signature</p>
+            <p class="text-xs text-slate-400">By clicking Sign &amp; Send, you confirm this prescription is clinically appropriate and authorized.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Navigation -->
+      <div class="flex items-center justify-between mt-4 pt-4 border-t border-slate-700/50">
+        <button id="rx-prev-btn" onclick="prevStep()" class="btn btn-ghost text-xs hidden"><i class="fas fa-arrow-left"></i> Back</button>
+        <div class="flex gap-2 ml-auto">
+          <button onclick="closeNewRxModal()" class="btn btn-ghost text-xs">Cancel</button>
+          <button id="rx-next-btn" onclick="nextStep()" class="btn btn-primary text-xs">Next <i class="fas fa-arrow-right"></i></button>
+          <button id="rx-sign-btn" onclick="signRx()" class="btn btn-primary text-xs hidden"><i class="fas fa-pen-nib"></i> Sign & Send</button>
+          <button id="rx-draft-btn" onclick="saveDraft()" class="btn btn-ghost text-xs hidden"><i class="fas fa-floppy-disk"></i> Save Draft</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── PDMP Check Modal ───────────────────────────────────────────────────────── -->
+<div id="pdmp-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h2 class="modal-title"><i class="fas fa-shield-halved text-yellow-400 mr-2"></i>Run PDMP Check</h2>
+      <button onclick="closePdmpModal()" class="text-slate-400 hover:text-white text-xl">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="mb-3"><label class="form-label">Patient ID *</label><input id="pdmp-patient-id" type="text" placeholder="pt-001" class="form-input"></div>
+      <div class="mb-3"><label class="form-label">Patient Name *</label><input id="pdmp-patient-name" type="text" placeholder="Full name" class="form-input"></div>
+      <div class="mb-4"><label class="form-label">Requested By *</label><input id="pdmp-requested-by" type="text" placeholder="Dr. Name" class="form-input"></div>
+      <div class="flex gap-2 justify-end">
+        <button onclick="closePdmpModal()" class="btn btn-ghost text-xs">Cancel</button>
+        <button onclick="runPdmpCheck()" class="btn btn-primary text-xs"><i class="fas fa-shield-halved"></i> Run Check</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Allergy Modal ──────────────────────────────────────────────────────────── -->
+<div id="allergy-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <h2 class="modal-title"><i class="fas fa-triangle-exclamation text-red-400 mr-2"></i>Add Patient Allergy</h2>
+      <button onclick="closeAllergyModal()" class="text-slate-400 hover:text-white text-xl">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid mb-3">
+        <div><label class="form-label">Patient ID *</label><input id="alg-patient-id" type="text" placeholder="pt-001" class="form-input"></div>
+        <div><label class="form-label">Allergen *</label><input id="alg-allergen" type="text" placeholder="e.g. Penicillin" class="form-input"></div>
+      </div>
+      <div class="form-grid mb-3">
+        <div>
+          <label class="form-label">Type *</label>
+          <select id="alg-type" class="form-input form-select">
+            <option value="DRUG">Drug</option>
+            <option value="FOOD">Food</option>
+            <option value="ENVIRONMENTAL">Environmental</option>
+            <option value="LATEX">Latex</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Reaction *</label>
+          <select id="alg-reaction" class="form-input form-select">
+            <option value="ANAPHYLAXIS">Anaphylaxis</option>
+            <option value="RASH">Rash</option>
+            <option value="HIVES">Hives</option>
+            <option value="NAUSEA">Nausea</option>
+            <option value="SWELLING">Swelling</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-grid mb-3">
+        <div>
+          <label class="form-label">Severity *</label>
+          <select id="alg-severity" class="form-input form-select">
+            <option value="MILD">Mild</option>
+            <option value="MODERATE">Moderate</option>
+            <option value="SEVERE">Severe</option>
+            <option value="LIFE_THREATENING">Life Threatening</option>
+          </select>
+        </div>
+        <div><label class="form-label">Recorded By *</label><input id="alg-recorded-by" type="text" placeholder="Dr. Name" class="form-input"></div>
+      </div>
+      <div class="mb-4"><label class="form-label">Notes</label><textarea id="alg-notes" rows="2" placeholder="Additional details…" class="form-input" style="resize:vertical"></textarea></div>
+      <div class="flex gap-2 justify-end">
+        <button onclick="closeAllergyModal()" class="btn btn-ghost text-xs">Cancel</button>
+        <button onclick="saveAllergy()" class="btn btn-danger text-xs"><i class="fas fa-triangle-exclamation"></i> Add Allergy</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Rx Detail Modal (sign/send/cancel from queue) ─────────────────────────── -->
+<div id="rx-action-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <h2 class="modal-title" id="rx-action-title">Prescription Details</h2>
+      <button onclick="closeRxActionModal()" class="text-slate-400 hover:text-white text-xl">×</button>
+    </div>
+    <div class="modal-body" id="rx-action-body"></div>
+  </div>
+</div>
+
+<script src="/static/erx.js"></script>
+</body>
+</html>

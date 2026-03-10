@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Exam Record — OculoFlow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" />
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: #020617; color: #e2e8f0; margin: 0; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+
+    /* ── Layout ── */
+    .exam-layout { display: flex; height: 100vh; overflow: hidden; }
+    .sidebar     { width: 220px; flex-shrink: 0; background: #0f172a; border-right: 1px solid #1e293b; display: flex; flex-direction: column; overflow-y: auto; }
+    .main-area   { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .topbar      { background: #0f172a; border-bottom: 1px solid #1e293b; padding: 0 20px; height: 52px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    .content     { flex: 1; overflow-y: auto; padding: 24px; }
+
+    /* ── Section nav ── */
+    .sec-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 14px; margin: 2px 8px; border-radius: 8px;
+      font-size: 12px; color: #94a3b8; cursor: pointer;
+      transition: all .15s; user-select: none; border: none; background: none; width: calc(100% - 16px); text-align: left;
+    }
+    .sec-item:hover  { background: rgba(148,163,184,.06); color: #cbd5e1; }
+    .sec-item.active { background: rgba(59,130,246,.12); color: #60a5fa; }
+    .sec-item .dot   { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: #334155; }
+    .sec-item.done .dot   { background: #10b981; }
+    .sec-item.active .dot { background: #3b82f6; }
+
+    /* ── Cards ── */
+    .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+    .card-title { font-size: 13px; font-weight: 700; color: #e2e8f0; margin-bottom: 14px; display: flex; align-items: center; gap-8px: gap: 8px; }
+    .section-panel { display: none; }
+    .section-panel.active { display: block; }
+
+    /* ── Form inputs ── */
+    .field-label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
+    input[type=text], input[type=number], input[type=date], input[type=time], textarea, select {
+      width: 100%; background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+      color: #e2e8f0; padding: 8px 10px; font-size: 13px; outline: none; transition: border .15s;
+    }
+    input:focus, textarea:focus, select:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.15); }
+    textarea { resize: vertical; min-height: 64px; }
+    select { cursor: pointer; }
+
+    /* ── Eye columns ── */
+    .eye-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .eye-label { font-size: 10px; font-weight: 700; letter-spacing: .1em; padding: 3px 8px; border-radius: 4px; display: inline-block; margin-bottom: 8px; }
+    .eye-od { background: rgba(59,130,246,.15); color: #93c5fd; }
+    .eye-os { background: rgba(139,92,246,.15); color: #c4b5fd; }
+
+    /* ── Status chips ── */
+    .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 20px; font-size: 10px; font-weight: 600; }
+    .chip-draft       { background: rgba(100,116,139,.2); color: #94a3b8; }
+    .chip-in-progress { background: rgba(59,130,246,.2); color: #93c5fd; }
+    .chip-complete    { background: rgba(16,185,129,.2); color: #6ee7b7; }
+    .chip-signed      { background: rgba(16,185,129,.25); color: #34d399; border: 1px solid rgba(16,185,129,.3); }
+    .chip-amended     { background: rgba(245,158,11,.2); color: #fbbf24; }
+
+    /* ── Progress bar ── */
+    .progress-bar { height: 4px; background: #1e293b; border-radius: 2px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #06b6d4); border-radius: 2px; transition: width .4s; }
+
+    /* ── Buttons ── */
+    .btn-primary { padding: 8px 16px; background: #2563eb; border: none; color: #fff; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-ghost  { padding: 7px 14px; background: #1e293b; border: 1px solid #334155; color: #94a3b8; border-radius: 8px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-ghost:hover { background: #253345; color: #e2e8f0; }
+    .btn-sign   { padding: 9px 20px; background: #059669; border: none; color: #fff; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s; display: inline-flex; align-items: center; gap: 7px; box-shadow: 0 4px 12px rgba(5,150,105,.3); }
+    .btn-sign:hover { background: #047857; }
+    .btn-sign:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* ── Grade buttons (slit lamp) ── */
+    .grade-btn { padding: 4px 8px; font-size: 11px; border: 1px solid #334155; background: #1e293b; color: #94a3b8; border-radius: 5px; cursor: pointer; transition: all .1s; }
+    .grade-btn.sel { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+    /* ── ICD-10 autocomplete ── */
+    .icd-dropdown { position: absolute; left: 0; right: 0; top: 100%; z-index: 50; background: #1e293b; border: 1px solid #334155; border-radius: 8px; max-height: 200px; overflow-y: auto; margin-top: 2px; }
+    .icd-item { padding: 8px 12px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 10px; }
+    .icd-item:hover { background: rgba(59,130,246,.1); }
+    .icd-tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; background: rgba(59,130,246,.15); color: #93c5fd; border-radius: 5px; font-size: 11px; font-weight: 600; margin: 2px; }
+    .icd-tag .rm { cursor: pointer; opacity: .6; }
+    .icd-tag .rm:hover { opacity: 1; }
+
+    /* ── Plan entries ── */
+    .plan-item { display: flex; align-items: start; gap: 8px; padding: 8px 10px; background: #1e293b; border-radius: 8px; margin-bottom: 6px; }
+    .plan-cat  { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; flex-shrink: 0; }
+    .cat-med   { background: rgba(59,130,246,.2); color: #93c5fd; }
+    .cat-proc  { background: rgba(139,92,246,.2); color: #c4b5fd; }
+    .cat-ref   { background: rgba(245,158,11,.2); color: #fbbf24; }
+    .cat-test  { background: rgba(6,182,212,.2); color: #67e8f9; }
+    .cat-edu   { background: rgba(16,185,129,.2); color: #6ee7b7; }
+    .cat-fu    { background: rgba(248,113,113,.2); color: #fca5a5; }
+    .cat-opt   { background: rgba(251,191,36,.2); color: #fcd34d; }
+    .cat-oth   { background: rgba(100,116,139,.2); color: #94a3b8; }
+
+    /* ── Toast ── */
+    #toast { position:fixed; bottom:24px; right:24px; z-index:9999; background:#1e293b; border:1px solid #334155; border-radius:10px; padding:10px 16px; display:flex; align-items:center; gap:10px; font-size:13px; color:#e2e8f0; box-shadow:0 8px 32px rgba(0,0,0,.4); transform:translateY(20px); opacity:0; transition:all .25s; pointer-events:none; min-width:220px; }
+    #toast.show { transform:translateY(0); opacity:1; pointer-events:auto; }
+
+    /* ── Signed overlay ── */
+    .signed-banner { background: rgba(5,150,105,.12); border: 1px solid rgba(5,150,105,.3); border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      .sidebar { width: 52px; }
+      .sec-item span { display: none; }
+      .eye-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+  <script src="/static/auth-nav.js"></script>
+</head>
+<body>
+
+<!-- ── Toast ─────────────────────────────────────────────────────────────── -->
+<div id="toast">
+  <i id="toast-icon" class="fas fa-circle-check text-emerald-400"></i>
+  <span id="toast-msg"></span>
+</div>
+
+<!-- ── Sign Modal ─────────────────────────────────────────────────────────── -->
+<div id="modal-sign" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 backdrop-blur-sm">
+  <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+        <i class="fas fa-signature text-emerald-400 text-sm"></i>
+      </div>
+      <div>
+        <h3 class="font-bold text-white text-base">Sign &amp; Lock Exam</h3>
+        <p class="text-xs text-slate-400">This action cannot be undone</p>
+      </div>
+    </div>
+    <p class="text-sm text-slate-400 mb-4">You are about to electronically sign and lock this exam record. Once signed, sections cannot be edited without an amendment.</p>
+    <div class="mb-4">
+      <label class="field-label">Signing Provider</label>
+      <input id="sign-provider-name" type="text" placeholder="Dr. Full Name, OD / MD" class="w-full" />
+    </div>
+    <div class="flex gap-2 justify-end">
+      <button id="btn-cancel-sign" class="btn-ghost">Cancel</button>
+      <button id="btn-confirm-sign" class="btn-sign"><i class="fas fa-signature text-xs"></i> Sign &amp; Lock</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── New Exam Modal ──────────────────────────────────────────────────────── -->
+<div id="modal-new" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 backdrop-blur-sm">
+  <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-lg mx-4 shadow-2xl">
+    <div class="flex items-center justify-between mb-5">
+      <h3 class="font-bold text-white text-base">Start New Exam</h3>
+      <button id="btn-close-new" class="text-slate-500 hover:text-slate-300 text-lg">&times;</button>
+    </div>
+    <div class="grid grid-cols-2 gap-3 mb-3">
+      <div class="col-span-2">
+        <label class="field-label">Patient Name</label>
+        <input id="new-patient-name" type="text" placeholder="Full name" />
+      </div>
+      <div>
+        <label class="field-label">Patient ID</label>
+        <input id="new-patient-id" type="text" placeholder="pt-001" />
+      </div>
+      <div>
+        <label class="field-label">Date of Birth</label>
+        <input id="new-patient-dob" type="date" />
+      </div>
+      <div>
+        <label class="field-label">Exam Type</label>
+        <select id="new-exam-type">
+          <option value="COMPREHENSIVE">Comprehensive Exam</option>
+          <option value="FOLLOWUP">Follow-up</option>
+          <option value="CONTACT_LENS">Contact Lens Fitting</option>
+          <option value="GLAUCOMA">Glaucoma Exam</option>
+          <option value="DIABETIC">Diabetic Eye Exam</option>
+          <option value="POST_OP">Post-Op Check</option>
+          <option value="PEDIATRIC">Pediatric Exam</option>
+          <option value="URGENT">Urgent Care</option>
+          <option value="REFRACTIVE">Refractive Eval</option>
+        </select>
+      </div>
+      <div>
+        <label class="field-label">Exam Date</label>
+        <input id="new-exam-date" type="date" />
+      </div>
+      <div>
+        <label class="field-label">Provider</label>
+        <select id="new-provider-id">
+          <option value="dr-chen">Dr. Sarah Chen, OD</option>
+          <option value="dr-patel">Dr. Raj Patel, MD</option>
+        </select>
+      </div>
+      <div class="col-span-2">
+        <label class="field-label">Chief Complaint</label>
+        <input id="new-chief" type="text" placeholder="Reason for visit" />
+      </div>
+    </div>
+    <div id="new-error" class="hidden text-xs text-red-400 bg-red-500/10 rounded-lg p-2 mb-3">
+      <i class="fas fa-circle-xmark mr-1"></i><span></span>
+    </div>
+    <div class="flex gap-2 justify-end">
+      <button id="btn-cancel-new" class="btn-ghost">Cancel</button>
+      <button id="btn-confirm-new" class="btn-primary"><i class="fas fa-plus text-xs"></i> Create Exam</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- MAIN LAYOUT                                                                -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="exam-layout">
+
+  <!-- ── Sidebar ──────────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <!-- Brand -->
+    <div class="flex items-center gap-2 px-4 py-4 border-b border-slate-800 flex-shrink-0">
+      <a href="/" class="flex items-center gap-2">
+        <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0">
+          <i class="fas fa-eye text-white text-xs"></i>
+        </div>
+        <span class="font-bold text-sm text-white tracking-tight">OculoFlow</span>
+      </a>
+    </div>
+
+    <!-- Exam list switcher -->
+    <div class="px-3 py-3 border-b border-slate-800 flex-shrink-0">
+      <button id="btn-new-exam" class="w-full btn-primary text-xs py-2 justify-center">
+        <i class="fas fa-plus text-xs"></i> New Exam
+      </button>
+    </div>
+
+    <!-- Exam section nav -->
+    <div class="flex-1 overflow-y-auto py-2" id="section-nav">
+      <p class="text-[10px] font-semibold text-slate-600 uppercase tracking-wider px-4 mb-1 mt-1">Sections</p>
+      <button class="sec-item" data-sec="overview"><span class="dot"></span><i class="fas fa-id-card w-3.5 text-center"></i><span>Overview</span></button>
+      <button class="sec-item" data-sec="hpi"><span class="dot"></span><i class="fas fa-comment-medical w-3.5 text-center"></i><span>Chief / HPI</span></button>
+      <button class="sec-item" data-sec="history"><span class="dot"></span><i class="fas fa-book-medical w-3.5 text-center"></i><span>Hx &amp; Meds</span></button>
+      <button class="sec-item" data-sec="va"><span class="dot"></span><i class="fas fa-eye w-3.5 text-center"></i><span>Visual Acuity</span></button>
+      <button class="sec-item" data-sec="prelim"><span class="dot"></span><i class="fas fa-stethoscope w-3.5 text-center"></i><span>Pupils / EOMs</span></button>
+      <button class="sec-item" data-sec="iop"><span class="dot"></span><i class="fas fa-gauge w-3.5 text-center"></i><span>IOP</span></button>
+      <button class="sec-item" data-sec="slitlamp"><span class="dot"></span><i class="fas fa-microscope w-3.5 text-center"></i><span>Slit Lamp</span></button>
+      <button class="sec-item" data-sec="fundus"><span class="dot"></span><i class="fas fa-circle-dot w-3.5 text-center"></i><span>Fundus</span></button>
+      <button class="sec-item" data-sec="refraction"><span class="dot"></span><i class="fas fa-glasses w-3.5 text-center"></i><span>Refraction</span></button>
+      <button class="sec-item" data-sec="assessment"><span class="dot"></span><i class="fas fa-clipboard-list w-3.5 text-center"></i><span>A&amp;P</span></button>
+    </div>
+
+    <!-- Quick nav -->
+    <div class="border-t border-slate-800 p-3 space-y-1">
+      <a href="/dashboard" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-gauge-high w-3.5 text-center"></i><span>Dashboard</span></a>
+      <a href="/patients"  class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-users w-3.5 text-center"></i><span>Patients</span></a>
+      <a href="/schedule"  class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-calendar-days w-3.5 text-center"></i><span>Schedule</span></a>
+      <a href="/billing"   class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-file-invoice-dollar w-3.5 text-center"></i><span>Billing</span></a>
+      <a href="/reports"   class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-chart-line w-3.5 text-center"></i><span>Reports</span></a>
+      <a href="/optical"   class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-glasses w-3.5 text-center"></i><span>Optical</span></a>
+      <a href="/portal"    class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-user-circle w-3.5 text-center"></i><span>Portal</span></a>
+      <a href="/messaging" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-comment-medical w-3.5 text-center"></i><span>Messaging</span></a>
+      <a href="/reminders" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-bell w-3.5 text-center"></i><span>Reminders</span></a>
+      <a href="/scorecards" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-chart-bar w-3.5 text-center"></i><span>Scorecards</span></a>
+      <a href="/telehealth" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-video w-3.5 text-center"></i><span>Telehealth</span></a>
+      <a href="/erx" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-prescription-bottle w-3.5 text-center"></i><span>eRx</span></a>
+      <a href="/ai" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-brain w-3.5 text-center"></i><span>AI CDS</span></a>
+      <a href="/priorauth" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-clipboard-check w-3.5 text-center"></i><span>Prior Auth</span></a><a href="/rcm" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-dollar-sign w-3.5 text-center"></i><span>RCM</span></a>
+    </div>
+  </aside>
+
+  <!-- ── Main Area ─────────────────────────────────────────────────────────── -->
+  <div class="main-area">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <!-- Patient / exam info -->
+      <div class="flex-1 min-w-0 flex items-center gap-3">
+        <div id="topbar-avatar" class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">?</div>
+        <div class="min-w-0">
+          <p id="topbar-patient" class="text-sm font-semibold text-white truncate">No exam selected</p>
+          <p id="topbar-sub"     class="text-xs text-slate-500 truncate">Select an exam or create a new one</p>
+        </div>
+      </div>
+
+      <!-- Status chip + progress -->
+      <div class="flex items-center gap-3 flex-shrink-0">
+        <div class="hidden sm:block w-24">
+          <div class="flex items-center justify-between mb-0.5">
+            <span class="text-xs text-slate-500">Complete</span>
+            <span id="pct-label" class="text-xs text-slate-400 font-semibold">0%</span>
+          </div>
+          <div class="progress-bar"><div id="progress-fill" class="progress-fill" style="width:0%"></div></div>
+        </div>
+        <div id="exam-status-chip" class="chip chip-draft"><i class="fas fa-circle-dot text-[8px]"></i> Draft</div>
+        <button id="btn-sign-exam" class="btn-sign text-xs py-1.5 px-3" disabled>
+          <i class="fas fa-signature text-xs"></i> Sign
+        </button>
+      </div>
+
+      <!-- Nav links -->
+      <nav class="flex items-center gap-1 ml-2">
+        <a href="/patients" class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Patients</a>
+        <a href="/schedule" class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Schedule</a>
+        <a href="/billing"  class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Billing</a>
+        <a href="/reports"  class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Reports</a>
+        <a href="/optical"  class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Optical</a>
+        <a href="/portal"   class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Portal</a>
+        <a href="/messaging" class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Messaging</a>
+      </nav>
+    </header>
+
+    <!-- Content -->
+    <main class="content">
+
+      <!-- Recent exams (shown when no exam is loaded) -->
+      <div id="panel-recents">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-bold text-white">Exam Records</h2>
+          <button id="btn-new-exam-2" class="btn-primary text-xs"><i class="fas fa-plus text-xs"></i> New Exam</button>
+        </div>
+        <div id="recent-list" class="space-y-2">
+          <div class="text-slate-600 text-sm text-center py-8"><i class="fas fa-spinner fa-spin mr-2"></i>Loading exams…</div>
+        </div>
+      </div>
+
+      <!-- Exam sections (hidden until an exam is loaded) -->
+      <div id="panel-exam" class="hidden">
+
+        <!-- Signed banner (shown when locked) -->
+        <div id="signed-banner" class="signed-banner hidden">
+          <i class="fas fa-lock text-emerald-400 text-sm"></i>
+          <div>
+            <p class="text-sm font-semibold text-emerald-300">Exam Signed &amp; Locked</p>
+            <p id="signed-by-text" class="text-xs text-slate-400"></p>
+          </div>
+          <button id="btn-amend" class="ml-auto btn-ghost text-xs">
+            <i class="fas fa-pen text-xs"></i> Amend
+          </button>
+        </div>
+
+        <!-- ── OVERVIEW ───────────────────────────────────────────────────── -->
+        <div class="section-panel" id="sec-overview">
+          <div class="card">
+            <p class="card-title"><i class="fas fa-id-card text-blue-400 mr-2"></i>Exam Overview</p>
+            <div id="overview-content" class="space-y-2 text-sm text-slate-300"></div>
+          </div>
+        </div>
+
+        <!-- ── CHIEF COMPLAINT / HPI ─────────────────────────────────────── -->
+        <div class="section-panel" id="sec-hpi">
+          <div class="card">
+            <p class="card-title"><i class="fas fa-comment-medical text-blue-400 mr-2"></i>Chief Complaint &amp; HPI</p>
+            <div class="space-y-3">
+              <div>
+                <label class="field-label">Chief Complaint *</label>
+                <input id="hpi-chief" type="text" placeholder="Primary reason for visit" />
+              </div>
+              <div>
+                <label class="field-label">History of Present Illness</label>
+                <textarea id="hpi-hpi" rows="4" placeholder="Detailed description of presenting problem…"></textarea>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="field-label">Onset</label>
+                  <input id="hpi-onset" type="text" placeholder="e.g. Gradual over 2 months" />
+                </div>
+                <div>
+                  <label class="field-label">Duration</label>
+                  <input id="hpi-duration" type="text" placeholder="e.g. 3 months" />
+                </div>
+                <div>
+                  <label class="field-label">Severity (1–10)</label>
+                  <select id="hpi-severity">
+                    <option value="">–</option>
+                    <option>1</option><option>2</option><option>3</option><option>4</option>
+                    <option>5</option><option>6</option><option>7</option><option>8</option>
+                    <option>9</option><option>10</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label">Quality</label>
+                  <input id="hpi-quality" type="text" placeholder="e.g. Sharp, dull, burning" />
+                </div>
+              </div>
+              <div>
+                <label class="field-label">Modifying Factors</label>
+                <input id="hpi-modifying" type="text" placeholder="What makes it better or worse?" />
+              </div>
+              <div>
+                <label class="field-label">Associated Symptoms</label>
+                <textarea id="hpi-associated" rows="2" placeholder="Flashes, floaters, pain, discharge, etc."></textarea>
+              </div>
+            </div>
+            <div class="mt-4 flex justify-end">
+              <button class="btn-primary text-xs" data-save="chiefComplaint">
+                <i class="fas fa-cloud-arrow-up text-xs"></i> Save Section
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── HISTORY & MEDICATIONS ─────────────────────────────────────── -->
+        <div class="section-panel" id="sec-history">
+          <div class="card">
+            <p class="card-title"><i class="fas fa-book-medical text-blue-400 mr-2"></i>Medical History &amp; Medications</p>
+            <div class="space-y-3">
+              <div>
+                <label class="field-label">Ocular History</label>
+                <textarea id="hist-ocular" rows="2" placeholder="Previous eye conditions, surgeries, injuries…"></textarea>
+              </div>
+              <div>
+                <label class="field-label">Systemic History</label>
+                <textarea id="hist-systemic" rows="2" placeholder="Diabetes, HTN, autoimmune conditions…"></textarea>
+              </div>
+              <div>
+                <label class="field-label">Surgical History</label>
+                <textarea id="hist-surgical" rows="2" placeholder="Previous surgeries (ocular and systemic)…"></textarea>
+              </div>
+              <div>
+                <label class="field-label">Family History</label>
+                <textarea id="hist-family" rows="2" placeholder="Glaucoma, ARMD, diabetes in family…"></textarea>
+              </div>
+              <div>
+                <label class="field-label">Current Medications</label>
+                <textarea id="hist-medications" rows="3" placeholder="List all medications with doses and frequency…"></textarea>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="field-label">Allergies</label>
+                  <input id="hist-allergies" type="text" placeholder="NKDA or list allergies" />
+                </div>
+                <div>
+                  <label class="field-label">Social History</label>
+                  <input id="hist-social" type="text" placeholder="Smoker, occupation, etc." />
+                </div>
+              </div>
+            </div>
+            <div class="mt-4 flex justify-end">
+              <button class="btn-primary text-xs" data-save="medicalHistory">
+                <i class="fas fa-cloud-arrow-up text-xs"></i> Save Section
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── VISUAL ACUITY ──────────────────────────────────────────────── -->
+        <div class="section-panel" id="sec-va">
+          <div class="card">
+            <p class="card-title"><i class="fas fa-eye text-blue-400 mr-2"></i>Visual Acuity</p>
+            <div class="eye-grid mb-3">
+              <div>
+                <span class="eye-label eye-od">OD — Right Eye</span>
+                <div class="space-y-2">
+                  <div><label class="field-label">sc (without Rx)</label><input id="va-od-sc" type="text" placeholder="20/200" /></div>
+                  <div><label class="field-label">cc (with Rx)</label><input id="va-od-cc" type="text" placeholder="20/20" /></div>
+                  <div><label class="field-label">Pinhole</label><input id="va-od-ph" type="text" placeholder="20/20" /></div>
+                  <div><label class="field-label">Near</label><input id="va-od-near" type="text" placeholder="J1+" /></div>
+                </div>
+              </div>
+              <div>
+                <span class="eye-label eye-os">OS — Left Eye</span>
+                <div class="space-y-2">
+                  <div><label class="field-label">sc (without Rx)</label><input id="va-os-sc" type="text" placeholder="20/200" /></div>
+                  <div><label class="field-label">cc (with Rx)</label><input id="va-os-cc" type="text" placeholder="20/20" /></div>
+                  <div><label class="field-label">Pinhole</label><input id="va-os-ph" type="text" placeholder="20/20" /></div>
+                  <div><label class="field-label">Near</label><input id="va-os-near" type="text" placeholder="J1+" /></div>
+                </div>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <div><label class="field-label">Method</label>
+                <select id="va-method">
+                  <option value="Snellen">Snellen</option>
+                  <option value="LogMAR">LogMAR</option>
+                  <option value="ETDRS">ETDRS</option>
+                  <option value="Allen">Allen (Pediatric)</option>
+                  <option value="Teller">Teller</option>
+                </select>
+              </div>
+              <div><label class="field-label">Notes</label><input id="va-notes" type="text" placeholder="Optical assist, etc." /></div>
+            </div>
+            <div class="flex justify-end">
+              <button class="btn-primary text-xs" data-save="visualAcuity">
+                <i class="fas fa-cloud-arrow-up text-xs"></i> Save Section
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── PUPILS / EOMs / FIELDS ─────────────────────────────────────── -->
+        <div class="section-panel" id="sec-prelim">
+          <div class="card mb-4">
+            <p class="card-title"><i class="fas fa-circle-dot text-blue-400 mr-2"></i>Pupils</p>
+            <div class="eye-grid mb-3">
+              <div>
+                <span class="eye-label eye-od">OD</span>
+                <div class="space-y-2">
+                  <div><label class="field-label">Size</label><input id="pu-od-size" type="text" placeholder="3mm" /></div>
+                  <div><label class="field-label">Reaction</label><input id="pu-od-rxn" type="text" placeholder="Brisk, Sluggish, NR" /></div>
+                </div>
+              </div>
+              <div>
+                <span class="eye-label eye-os">OS</span>
+                <div class="space-y-2">
+                  <div><label class="field-label">Size</label><input id="pu-os-size" type="text" placeholder="3mm" /></div>
+                  <div><label class="field-label">Reaction</label><input id="pu-os-rxn" type="text" placeholder="Brisk, Sluggish, NR" /></div>
+                </div>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div><label class="field-label">APD</label>
+                <select id="pu-apd"><option value="none">None</option><option value="OD">OD</option><option value="OS">OS</option></select>
+              </div>
+              <div><label class="field-label">Notes</label><input id="pu-notes" type="text" placeholder="e.g. Round, reactive to light and accommodation" /></div>
+            </div>
+          </div>
+
+          <div class="card mb-4">
+            <p class="card-title"><i class="fas fa-arrows-up-down-left-right text-blue-400 mr-2"></i>Extra-Ocular Motility</p>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <div><label class="field-label">OD</label>
+                <select id="eom-od"><option value="Full">Full</option><option value="Restricted">Restricted</option><option value="Paretic">Paretic</option><option value="N/A">N/A</option></select>
+              </div>
+              <div><label class="field-label">OS</label>
+                <select id="eom-os"><option value="Full">Full</option><option value="Restricted">Restricted</option><option value="Paretic">Paretic</option><option value="N/A">N/A</option></select>
+              </div>
+              <div><label class="field-label">Versions</label><input id="eom-versions" type="text" placeholder="Full, smooth, comitant" /></div>
+              <div><label class="field-label">Cover Test</label><input id="eom-cover" type="text" placeholder="Orthophoria / esophoria…" /></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <p class="card-title"><i class="fas fa-border-all text-blue-400 mr-2"></i>Confrontation Visual Fields</p>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <div><label class="field-label">OD</label>
+                <select id="cvf-od"><option value="Full">Full</option><option value="Defect">Defect</option><option value="Not tested">Not tested</option></select>
+              </div>
+              <div><label class="field-label">OS</label>
+                <select id="cvf-os"><option value="Full">Full</option><option value="Defect">Defect</option><option value="Not tested">Not tested</option></select>
+              </div>
+              <div class="col-span-2"><label class="field-label">Notes</label><input id="cvf-notes" type="text" placeholder="Describe any defects" /></div>
+            </div>
+          </div>
+
+          <div class="flex justify-end mt-2">
+            <button class="btn-primary text-xs" data-save="prelim">
+              <i class="fas fa-cloud-arrow-up text-xs"></i> Save Pupils / EOMs / Fields
+            </button>
+          </div>
+        </div>
+
+        <!-- ── IOP ────────────────────────────────────────────────────────── -->
+        <div class="section-panel" id="sec-iop">
+          <div class="card">
+            <p class="card-title"><i class="fas fa-gauge text-blue-400 mr-2"></i>Intraocular Pressure</p>
+            <div class="eye-grid mb-3">
+              <div>
+                <span class="eye-label eye-od">OD (mmHg)</span>
+                <input id="iop-od" type="number" min="4" max="80" placeholder="16" class="text-lg font-semibold" />
+              </div>
+              <div>
+                <span class="eye-label eye-os">OS (mmHg)</span>
+                <input id="iop-os" type="number" min="4" max="80" placeholder="14" class="text-lg font-semibold" />
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <div><label class="field-label">Method</label>
+                <select id="iop-method">
+                  <option value="Goldmann">Goldmann Applanation</option>
+                  <option value="Non-contact">Non-contact (NCT)</option>
+                  <option value="iCare">iCare Rebound</option>
+                  <option value="Tono-pen">Tono-pen</option>
+                  <option value="Perkins">Perkins</option>
+                  <option value="Digital">Digital Palpation</option>
+                </select>
+              </div>
+              <div><label class="field-label">Time Taken</label><input id="iop-time" type="time" /></div>
+              <div><label class="field-label">CCT OD (µm)</label><input id="iop-cct-od" type="number" placeholder="545" /></div>
+              <div><label class="field-label">CCT OS (µm)</label><input id="iop-cct-os" type="number" placeholder="545" /></div>
+            </div>
+            <div class="flex justify-end">
+              <button class="btn-primary text-xs" data-save="iop">
+                <i class="fas fa-cloud-arrow-up text-xs"></i> Save IOP
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── SLIT LAMP ───────────────────────────────────────────────────── -->
+        <div class="section-panel" id="sec-slitlamp">
+          <div class="card">
+            <p class="card-title"><i class="fas fa-microscope text-blue-400 mr-2"></i>Slit Lamp Biomicroscopy</p>
+
+            <div class="eye-grid mb-4">
+              <!-- OD -->
+              <div>
+                <span class="eye-label eye-od">OD — Right Eye</span>
+                <div class="space-y-2" id="sl-od-fields">
+                  <div><label class="field-label">Lids / Lashes</label><input id="sl-od-lids" type="text" placeholder="WNL" /></div>
+                  <div><label class="field-label">Conjunctiva</label><input id="sl-od-conj" type="text" placeholder="Clear, white, quiet" /></div>
+                  <div><label class="field-label">Cornea</label><input id="sl-od-cornea" type="text" placeholder="Clear" /></div>
+                  <div><label class="field-label">Anterior Chamber</label><input id="sl-od-ac" type="text" placeholder="Deep and quiet" /></div>
+                  <div>
+                    <label class="field-label">Cell / Flare</label>
+                    <div class="flex gap-2 items-center">
+                      <span class="text-xs text-slate-500 w-8">Cell</span>
+                      <div id="sl-od-cell-btns" class="flex gap-1 flex-wrap">
+                        <button class="grade-btn" data-grade="0">0</button>
+                        <button class="grade-btn" data-grade="Trace">Tr</button>
+                        <button class="grade-btn" data-grade="1+">1+</button>
+                        <button class="grade-btn" data-grade="2+">2+</button>
+                        <button class="grade-btn" data-grade="3+">3+</button>
+                        <button class="grade-btn" data-grade="4+">4+</button>
+                        <button class="grade-btn" data-grade="WNL">WNL</button>
+                      </div>
+                      <input id="sl-od-cell" type="hidden" value="WNL" />
+                    </div>
+                    <div class="flex gap-2 items-center mt-1">
+                      <span class="text-xs text-slate-500 w-8">Flare</span>
+                      <div id="sl-od-flare-btns" class="flex gap-1 flex-wrap">
+                        <button class="grade-btn" data-grade="0">0</button>
+                        <button class="grade-btn" data-grade="Trace">Tr</button>
+                        <button class="grade-btn" data-grade="1+">1+</button>
+                        <button class="grade-btn" data-grade="2+">2+</button>
+                        <button class="grade-btn" data-grade="3+">3+</button>
+                        <button class="grade-btn" data-grade="4+">4+</button>
+                        <button class="grade-btn" data-grade="WNL">WNL</button>
+                      </div>
+                      <input id="sl-od-flare" type="hidden" value="WNL" />
+                    </div>
+                  </div>
+                  <div><label class="field-label">Iris</label><input id="sl-od-iris" type="text" placeholder="Flat, round, intact" /></div>
+                  <div><label class="field-label">Lens</label><input id="sl-od-lens" type="text" placeholder="Clear / NS / PSC…" /></div>
+                  <div><label class="field-label">Anterior Vitreous</label><input id="sl-od-vit" type="text" placeholder="Clear" /></div>
+                </div>
+              </div>
+              <!-- OS -->
+              <div>
+                <span class="eye-label eye-os">OS — Left Eye</span>
+                <div class="space-y-2">
+                  <div><label class="field-label">Lids / Lashes</label><input id="sl-os-lids" type="text" placeholder="WNL" /></div>
+                  <div><label class="field-label">Conjunctiva</label><input id="sl-os-conj" type="text" placeholder="Clear, white, quiet" /></div>
+                  <div><label class="field-label">Cornea</label><input id="sl-os-cornea" type="text" placeholder="Clear" /></div>
+                  <div><label class="field-label">Anterior Chamber</label><input id="sl-os-ac" type="text" placeholder="Deep and quiet" /></div>
+                  <div>
+                    <label class="field-label">Cell / Flare</label>
+                    <div class="flex gap-2 items-center">
+                      <span class="text-xs text-slate-500 w-8">Cell</span>
+                      <div id="sl-os-cell-btns" class="flex gap-1 flex-wrap">
+                        <button class="grade-btn" data-grade="0">0</button>
+                        <button class="grade-btn" data-grade="Trace">Tr</button>
+                        <button class="grade-btn" data-grade="1+">1+</button>
+                        <button class="grade-btn" data-grade="2+">2+</button>
+                        <button class="grade-btn" data-grade="3+">3+</button>
+                        <button class="grade-btn" data-grade="4+">4+</button>
+                        <button class="grade-btn" data-grade="WNL">WNL</button>
+                      </div>
+                      <input id="sl-os-cell" type="hidden" value="WNL" />
+                    </div>
+                    <div class="flex gap-2 items-center mt-1">
+                      <span class="text-xs text-slate-500 w-8">Flare</span>
+                      <div id="sl-os-flare-btns" class="flex gap-1 flex-wrap">
+                        <button class="grade-btn" data-grade="0">0</button>
+                        <button class="grade-btn" data-grade="Trace">Tr</button>
+                        <button class="grade-btn" data-grade="1+">1+</button>
+                        <button class="grade-btn" data-grade="2+">2+</button>
+                        <button class="grade-btn" data-grade="3+">3+</button>
+                        <button class="grade-btn" data-grade="4+">4+</button>
+                        <button class="grade-btn" data-grade="WNL">WNL</button>
+                      </div>
+                      <input id="sl-os-flare" type="hidden" value="WNL" />
+                    </div>
+                  </div>
+                  <div><label class="field-label">Iris</label><input id="sl-os-iris" type="text" placeholder="Flat, round, intact" /></div>
+                  <div><label class="field-label">Lens</label><input id="sl-os-lens" type="text" placeholder="Clear / NS / PSC…" /></div>
+                  <div><label class="field-label">Anterior Vitreous</label><input id="sl-os-vit" type="text" placeholder="Clear" /></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Dilation -->
+            <div class="bg-slate-800/50 rounded-xl p-3 mb-3">
+              <p class="field-label mb-2">Dilation</p>
+              <div class="grid grid-cols-2 gap-3">
+                <div class="flex items-center gap-2">
+                  <input id="sl-dil-done" type="checkbox" class="w-4 h-4 accent-blue-500" />
+                  <label for="sl-dil-done" class="text-sm text-slate-300">Dilation performed</label>
+                </div>
+                <div><label class="field-label">Agent</label><input id="sl-dil-agent" type="text" placeholder="1% Tropicamide + 2.5% Phenyephrine" /></div>
+                <div><label class="field-label">Time Instilled</label><input id="sl-dil-time" type="time" /></div>
+                <div><label class="field-label">Ready Time</label><input id="sl-dil-ready" type="time" /></div>
+              </div>
+            </div>
+
+            <div class="flex justify-end">
+              <button class="btn-primary text-xs" data-save="slitLamp">
+                <i class="fas fa-cloud-arrow-up text-xs"></i> Save Slit Lamp
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── FUNDUS ──────────────────────────────────────────────────────── -->
+        <div class="section-panel" id="sec-fundus">
+          <div class="card">
+            <p class="card-title"><i class="fas fa-circle-dot text-blue-400 mr-2"></i>Fundus Examination</p>
+            <div class="grid grid-cols-2 gap-2 mb-3">
+              <div><label class="field-label">Method</label>
+                <select id="fun-method">
+                  <option value="BIO">BIO (Binocular Indirect)</option>
+                  <option value="Slit lamp 90D">Slit lamp 90D</option>
+                  <option value="Slit lamp 78D">Slit lamp 78D</option>
+                  <option value="Direct">Direct Ophthalmoscope</option>
+                  <option value="OCT">OCT</option>
+                  <option value="RetCam">RetCam</option>
+                </select>
+              </div>
+              <div class="flex items-end pb-1">
+                <div class="flex items-center gap-2">
+                  <input id="fun-dilated" type="checkbox" class="w-4 h-4 accent-blue-500" />
+                  <label for="fun-dilated" class="text-sm text-slate-300">Dilated fundus exam</label>
+                </div>
+              </div>
+            </div>
+
+            <div class="eye-grid">
+              <!-- OD -->
+              <div>
+                <span class="eye-label eye-od">OD — Right Eye</span>
+                <div class="space-y-2">
+                  <div><label class="field-label">Disc</label><input id="fun-od-disc" type="text" placeholder="Pink, sharp, distinct margins" /></div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div><label class="field-label">C/D Horiz</label>
+                      <select id="fun-od-cd">
+                        <option value="">–</option>
+                        <option>0.1</option><option>0.2</option><option>0.3</option><option>0.4</option>
+                        <option>0.5</option><option>0.6</option><option>0.7</option><option>0.8</option><option>0.9</option><option>1.0</option>
+                      </select>
+                    </div>
+                    <div><label class="field-label">C/D Vert</label>
+                      <select id="fun-od-cdv">
+                        <option value="">–</option>
+                        <option>0.1</option><option>0.2</option><option>0.3</option><option>0.4</option>
+                        <option>0.5</option><option>0.6</option><option>0.7</option><option>0.8</option><option>0.9</option><option>1.0</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div><label class="field-label">Rim</label><input id="fun-od-rim" type="text" placeholder="Intact, no notching" /></div>
+                  <div><label class="field-label">Vessels</label><input id="fun-od-vessels" type="text" placeholder="A/V ratio 2/3" /></div>
+                  <div><label class="field-label">Macula</label><input id="fun-od-macula" type="text" placeholder="Flat, even reflex" /></div>
+                  <div><label class="field-label">Periphery</label><input id="fun-od-periph" type="text" placeholder="Flat, no tears or lattice" /></div>
+                  <div><label class="field-label">Notes OD</label><textarea id="fun-od-notes" rows="2" placeholder="Additional findings…"></textarea></div>
+                </div>
+              </div>
+              <!-- OS -->
+              <div>
+                <span class="eye-label eye-os">OS — Left Eye</span>
+                <div class="space-y-2">
+                  <div><label class="field-label">Disc</label><input id="fun-os-disc" type="text" placeholder="Pink, sharp, distinct margins" /></div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div><label class="field-label">C/D Horiz</label>
+                      <select id="fun-os-cd">
+                        <option value="">–</option>
+                        <option>0.1</option><option>0.2</option><option>0.3</option><option>0.4</option>
+                        <option>0.5</option><option>0.6</option><option>0.7</option><option>0.8</option><option>0.9</option><option>1.0</option>
+                      </select>
+                    </div>
+                    <div><label class="field-label">C/D Vert</label>
+                      <select id="fun-os-cdv">
+                        <option value="">–</option>
+                        <option>0.1</option><option>0.2</option><option>0.3</option><option>0.4</option>
+                        <option>0.5</option><option>0.6</option><option>0.7</option><option>0.8</option><option>0.9</option><option>1.0</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div><label class="field-label">Rim</label><input id="fun-os-rim" type="text" placeholder="Intact, no notching" /></div>
+                  <div><label class="field-label">Vessels</label><input id="fun-os-vessels" type="text" placeholder="A/V ratio 2/3" /></div>
+                  <div><label class="field-label">Macula</label><input id="fun-os-macula" type="text" placeholder="Flat, even reflex" /></div>
+                  <div><label class="field-label">Periphery</label><input id="fun-os-periph" type="text" placeholder="Flat, no tears or lattice" /></div>
+                  <div><label class="field-label">Notes OS</label><textarea id="fun-os-notes" rows="2" placeholder="Additional findings…"></textarea></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex justify-end mt-4">
+              <button class="btn-primary text-xs" data-save="fundus">
+                <i class="fas fa-cloud-arrow-up text-xs"></i> Save Fundus
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── REFRACTION ──────────────────────────────────────────────────── -->
+        <div class="section-panel" id="sec-refraction">
+          <div class="card">
+            <p class="card-title"><i class="fas fa-glasses text-blue-400 mr-2"></i>Refraction</p>
+
+            <div class="mb-3">
+              <label class="field-label">Refraction Type</label>
+              <select id="rx-type" class="w-40">
+                <option value="Manifest">Manifest</option>
+                <option value="Cycloplegic">Cycloplegic</option>
+                <option value="Dry">Dry</option>
+                <option value="Wet">Wet</option>
+              </select>
+            </div>
+
+            <!-- Refraction table -->
+            <div class="overflow-x-auto mb-4">
+              <table class="w-full text-xs border-collapse">
+                <thead>
+                  <tr class="text-slate-500 border-b border-slate-800">
+                    <th class="py-2 pr-3 text-left w-16">Eye</th>
+                    <th class="py-2 px-2 text-center">Sphere</th>
+                    <th class="py-2 px-2 text-center">Cylinder</th>
+                    <th class="py-2 px-2 text-center">Axis</th>
+                    <th class="py-2 px-2 text-center">Add</th>
+                    <th class="py-2 px-2 text-center">VA w/ Rx</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="border-b border-slate-800/50">
+                    <td class="py-1.5 pr-3"><span class="eye-label eye-od text-xs px-1.5 py-0.5">OD</span></td>
+                    <td class="py-1.5 px-1"><input id="rx-od-sph" type="text" placeholder="-2.25" class="text-center" /></td>
+                    <td class="py-1.5 px-1"><input id="rx-od-cyl" type="text" placeholder="-0.75" class="text-center" /></td>
+                    <td class="py-1.5 px-1"><input id="rx-od-axis" type="number" min="1" max="180" placeholder="90" class="text-center" /></td>
+                    <td class="py-1.5 px-1"><input id="rx-od-add" type="text" placeholder="+2.50" class="text-center" /></td>
+                    <td class="py-1.5 px-1"><input id="rx-od-va" type="text" placeholder="20/20" class="text-center" /></td>
+                  </tr>
+                  <tr>
+                    <td class="py-1.5 pr-3"><span class="eye-label eye-os text-xs px-1.5 py-0.5">OS</span></td>
+                    <td class="py-1.5 px-1"><input id="rx-os-sph" type="text" placeholder="-2.25" class="text-center" /></td>
+                    <td class="py-1.5 px-1"><input id="rx-os-cyl" type="text" placeholder="-0.75" class="text-center" /></td>
+                    <td class="py-1.5 px-1"><input id="rx-os-axis" type="number" min="1" max="180" placeholder="90" class="text-center" /></td>
+                    <td class="py-1.5 px-1"><input id="rx-os-add" type="text" placeholder="+2.50" class="text-center" /></td>
+                    <td class="py-1.5 px-1"><input id="rx-os-va" type="text" placeholder="20/20" class="text-center" /></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <p class="text-xs font-semibold text-slate-400 mb-2">Final Spectacle Rx</p>
+            <div class="overflow-x-auto mb-4">
+              <table class="w-full text-xs border-collapse">
+                <thead>
+                  <tr class="text-slate-500 border-b border-slate-800">
+                    <th class="py-2 pr-3 text-left w-16">Eye</th>
+                    <th class="py-2 px-2 text-center">Sphere</th>
+                    <th class="py-2 px-2 text-center">Cylinder</th>
+                    <th class="py-2 px-2 text-center">Axis</th>
+                    <th class="py-2 px-2 text-center">Add</th>
+                    <th class="py-2 px-2 text-center">PD (mm)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="border-b border-slate-800/50">
+                    <td class="py-1.5 pr-3"><span class="eye-label eye-od text-xs px-1.5 py-0.5">OD</span></td>
+                    <td class="py-1.5 px-1"><input id="frx-od-sph" type="text" placeholder="-2.25" class="text-center" /></td>
+                    <td class="py-1.5 px-1"><input id="frx-od-cyl" type="text" placeholder="-0.75" class="text-center" /></td>
+                    <td class="py-1.5 px-1"><input id="frx-od-axis" type="number" min="1" max="180" placeholder="90" class="text-center" /></td>
+                    <td class="py-1.5 px-1"><input id="frx-od-add" type="text" placeholder="+2.50" class="text-center" /></td>
+                    <td class="py-1.5 px-1"><input id="frx-pd-od" type="number" placeholder="32" class="text-center" /></td>
+                  </tr>
+                  <tr>
+                    <td class="py-1.5 pr-3"><span class="eye-label eye-os text-xs px-1.5 py-0.5">OS</span></td>
+                    <td class="py-1.5 px-1"><input id="frx-os-sph" type="text" placeholder="-2.25" class="text-center" /></td>
+                    <td class="py-1.5 px-1"><input id="frx-os-cyl" type="text" placeholder="-0.75" class="text-center" /></td>
+                    <td class="py-1.5 px-1"><input id="frx-os-axis" type="number" min="1" max="180" placeholder="90" class="text-center" /></td>
+                    <td class="py-1.5 px-1"><input id="frx-os-add" type="text" placeholder="+2.50" class="text-center" /></td>
+                    <td class="py-1.5 px-1"><input id="frx-pd-os" type="number" placeholder="32" class="text-center" /></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div><label class="field-label">Notes</label><textarea id="rx-notes" rows="2" placeholder="Contact lens Rx, reading glasses, etc."></textarea></div>
+
+            <div class="flex justify-end mt-3">
+              <button class="btn-primary text-xs" data-save="refraction">
+                <i class="fas fa-cloud-arrow-up text-xs"></i> Save Refraction
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── ASSESSMENT & PLAN ───────────────────────────────────────────── -->
+        <div class="section-panel" id="sec-assessment">
+          <div class="card mb-4">
+            <p class="card-title"><i class="fas fa-stethoscope text-blue-400 mr-2"></i>Assessment — Diagnoses</p>
+
+            <!-- ICD-10 search -->
+            <div class="relative mb-3">
+              <label class="field-label">Search ICD-10 Codes</label>
+              <div class="relative">
+                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs pointer-events-none"></i>
+                <input id="icd-search" type="text" placeholder="Search by code or description…" class="pl-8" autocomplete="off" />
+              </div>
+              <div id="icd-dropdown" class="icd-dropdown hidden"></div>
+            </div>
+
+            <!-- Selected diagnoses -->
+            <div id="icd-tags" class="flex flex-wrap gap-1 mb-3 min-h-8"></div>
+          </div>
+
+          <div class="card mb-4">
+            <p class="card-title"><i class="fas fa-clipboard-list text-blue-400 mr-2"></i>Plan</p>
+
+            <!-- Add plan item -->
+            <div class="bg-slate-800/40 rounded-xl p-3 mb-3">
+              <div class="grid grid-cols-2 gap-2 mb-2">
+                <div><label class="field-label">Category</label>
+                  <select id="plan-cat">
+                    <option value="Medication">Medication</option>
+                    <option value="Procedure">Procedure</option>
+                    <option value="Referral">Referral</option>
+                    <option value="Testing">Testing / Imaging</option>
+                    <option value="Education">Education</option>
+                    <option value="Follow-up">Follow-up</option>
+                    <option value="Optical">Optical</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div><label class="field-label">Eye</label>
+                  <select id="plan-eye">
+                    <option value="">N/A</option>
+                    <option value="OD">OD</option>
+                    <option value="OS">OS</option>
+                    <option value="OU">OU</option>
+                  </select>
+                </div>
+                <div class="col-span-2"><label class="field-label">Description *</label><input id="plan-desc" type="text" placeholder="e.g. Timolol 0.5% BID OU" /></div>
+                <div class="col-span-2"><label class="field-label">Details / Instructions</label><input id="plan-details" type="text" placeholder="Optional details" /></div>
+              </div>
+              <button id="btn-add-plan" class="btn-ghost text-xs"><i class="fas fa-plus text-xs"></i> Add Plan Item</button>
+            </div>
+
+            <!-- Plan list -->
+            <div id="plan-list" class="space-y-1.5 min-h-8"></div>
+          </div>
+
+          <div class="card">
+            <p class="card-title"><i class="fas fa-notes-medical text-blue-400 mr-2"></i>Provider Notes &amp; Follow-up</p>
+            <div class="space-y-3">
+              <div>
+                <label class="field-label">Follow-up</label>
+                <input id="ap-followup" type="text" placeholder="e.g. 6 months, 1 month IOP check, PRN" />
+              </div>
+              <div>
+                <label class="field-label">Referrals</label>
+                <input id="ap-referrals" type="text" placeholder="e.g. Retina specialist, low vision" />
+              </div>
+              <div>
+                <label class="field-label">Provider Notes</label>
+                <textarea id="ap-notes" rows="4" placeholder="Additional clinical notes, patient education provided…"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-end mt-4 gap-2">
+            <button class="btn-primary text-xs" data-save="assessment">
+              <i class="fas fa-cloud-arrow-up text-xs"></i> Save A&amp;P
+            </button>
+          </div>
+        </div>
+
+      </div><!-- end panel-exam -->
+    </main>
+  </div>
+</div>
+
+<script src="/static/exam.js"></script>
+</body>
+</html>
