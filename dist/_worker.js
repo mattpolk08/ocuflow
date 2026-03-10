@@ -53,7 +53,7 @@ Return format: { "memberId": "...", "groupNumber": "...", "payerName": "...", "s
          -2.25,-0.50,180,2.00,31.5,'20/20',
          -1.75,-0.75,175,2.00,32.0,'20/20',
          63.5,'PROGRESSIVE',1,'Patient adapted well to progressive design',
-         '${t}','${t}')`,[]),a.rx=!0}catch{try{await D(e,"ALTER TABLE optical_rx ADD COLUMN patient_name TEXT",[]),await D(e,"ALTER TABLE optical_rx ADD COLUMN provider_name TEXT",[]),await D(e,"ALTER TABLE optical_rx ADD COLUMN expires_date TEXT",[]),await D(e,"ALTER TABLE optical_rx ADD COLUMN is_signed INTEGER DEFAULT 1",[])}catch{}try{await D(e,`INSERT OR IGNORE INTO optical_rx
+         '${t}','${t}')`,[]),a.rx=!0}catch{try{await D(e,"ALTER TABLE optical_rx ADD COLUMN patient_name TEXT",[])}catch{}try{await D(e,"ALTER TABLE optical_rx ADD COLUMN provider_name TEXT",[])}catch{}try{await D(e,"ALTER TABLE optical_rx ADD COLUMN expires_date TEXT",[])}catch{}try{await D(e,"ALTER TABLE optical_rx ADD COLUMN is_signed INTEGER DEFAULT 1",[])}catch{}try{await D(e,`INSERT OR IGNORE INTO optical_rx
           (id, patient_id, patient_name, exam_id, provider_id, provider_name,
            rx_date, expires_date,
            od_sphere, od_cylinder, od_axis, od_add, od_pd, od_va,

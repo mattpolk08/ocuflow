@@ -157,13 +157,13 @@ export async function seedClinicalDemoData(db: D1Database): Promise<{ rx: boolea
         [])
       results.rx = true
     } catch (e: any) {
-      // May fail if patient_name column doesn't exist — add it and retry
-      try {
-        await dbRun(db, 'ALTER TABLE optical_rx ADD COLUMN patient_name TEXT', [])
-        await dbRun(db, 'ALTER TABLE optical_rx ADD COLUMN provider_name TEXT', [])
-        await dbRun(db, 'ALTER TABLE optical_rx ADD COLUMN expires_date TEXT', [])
-        await dbRun(db, 'ALTER TABLE optical_rx ADD COLUMN is_signed INTEGER DEFAULT 1', [])
-      } catch (_) { /* columns may already exist */ }
+      // Add each missing column individually — one try/catch per ALTER so a
+      // "duplicate column" error on an already-present column doesn't abort
+      // the others (e.g. patient_name may exist but is_signed may not).
+      try { await dbRun(db, 'ALTER TABLE optical_rx ADD COLUMN patient_name TEXT', []) } catch (_) {}
+      try { await dbRun(db, 'ALTER TABLE optical_rx ADD COLUMN provider_name TEXT', []) } catch (_) {}
+      try { await dbRun(db, 'ALTER TABLE optical_rx ADD COLUMN expires_date TEXT', []) } catch (_) {}
+      try { await dbRun(db, 'ALTER TABLE optical_rx ADD COLUMN is_signed INTEGER DEFAULT 1', []) } catch (_) {}
       try {
         await dbRun(db, `INSERT OR IGNORE INTO optical_rx
           (id, patient_id, patient_name, exam_id, provider_id, provider_name,
