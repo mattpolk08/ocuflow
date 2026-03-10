@@ -51,31 +51,6 @@ import engagementRoutes  from './routes/engagement'
 import analyticsRoutes   from './routes/analytics'
 import notificationsRoutes from './routes/notifications'
 import docRoutes         from './routes/documents'
-// Import HTML as raw string (Vite ?raw import)
-import intakeHtml    from '../public/intake.html?raw'
-import dashboardHtml from '../public/dashboard.html?raw'
-import patientsHtml  from '../public/patients.html?raw'
-import scheduleHtml  from '../public/schedule.html?raw'
-import examHtml      from '../public/exam.html?raw'
-import billingHtml   from '../public/billing.html?raw'
-import reportsHtml   from '../public/reports.html?raw'
-import opticalHtml   from '../public/optical.html?raw'
-import portalHtml      from '../public/portal.html?raw'
-import messagingHtml   from '../public/messaging.html?raw'
-import remindersHtml   from '../public/reminders.html?raw'
-import scorecardsHtml  from '../public/scorecards.html?raw'
-import telehealthHtml  from '../public/telehealth.html?raw'
-import erxHtml         from '../public/erx.html?raw'
-import aiHtml          from '../public/ai.html?raw'
-import priorauthHtml   from '../public/priorauth.html?raw'
-import rcmHtml         from '../public/rcm.html?raw'
-import loginHtml       from '../public/login.html?raw'
-import mfaVerifyHtml   from '../public/mfa-verify.html?raw'
-import mfaSetupHtml    from '../public/mfa-setup.html?raw'
-import engagementHtml  from '../public/engagement.html?raw'
-import analyticsHtml   from '../public/analytics.html?raw'
-import auditHtml       from '../public/audit.html?raw'
-import migrateRoutes   from './routes/migrate'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
@@ -110,64 +85,64 @@ app.use('/api/*', rateLimitMiddleware)
 app.use('/static/*', serveStatic({ root: './' }))
 
 // ── Patient Intake Page ───────────────────────────────────────────────────────
-app.get('/intake', (c) => c.html(intakeHtml))
+app.get('/intake', (c) => c.redirect("/intake.html"))
 
 // ── Command Center Dashboard ──────────────────────────────────────────────────
-app.get('/dashboard', (c) => c.html(dashboardHtml))
+app.get('/dashboard', (c) => c.redirect("/dashboard.html"))
 
 // ── Patient Registration & Insurance Verification ─────────────────────────────
-app.get('/patients', (c) => c.html(patientsHtml))
+app.get('/patients', (c) => c.redirect("/patients.html"))
 
 // ── Scheduling Engine ─────────────────────────────────────────────────────────
-app.get('/schedule', (c) => c.html(scheduleHtml))
+app.get('/schedule', (c) => c.redirect("/schedule.html"))
 
 // ── Exam Record ───────────────────────────────────────────────────────────────
-app.get('/exam', (c) => c.html(examHtml))
-app.get('/exam/:id', (c) => c.html(examHtml))
+app.get('/exam', (c) => c.redirect("/exam.html"))
+app.get('/exam/:id', (c) => c.redirect("/exam.html"))
 
 // ── Billing & Claims ─────────────────────────────────────────────────────────
-app.get('/billing', (c) => c.html(billingHtml))
+app.get('/billing', (c) => c.redirect("/billing.html"))
 
 // ── Reports & Analytics ───────────────────────────────────────────────────
-app.get('/reports', (c) => c.html(reportsHtml))
+app.get('/reports', (c) => c.redirect("/reports.html"))
 
 // ── Optical Dispensary ───────────────────────────────────────────────────────
-app.get('/optical', (c) => c.html(opticalHtml))
+app.get('/optical', (c) => c.redirect("/optical.html"))
 
 // ── Patient Portal ────────────────────────────────────────────────────────────
-app.get('/portal', (c) => c.html(portalHtml))
+app.get('/portal', (c) => c.redirect("/portal.html"))
 
 // ── Clinical Messaging & Task Board ──────────────────────────────────────────
-app.get('/messaging', (c) => c.html(messagingHtml))
+app.get('/messaging', (c) => c.redirect("/messaging.html"))
 
 // ── Reminders & Communications ────────────────────────────────────────────────
-app.get('/reminders', (c) => c.html(remindersHtml))
+app.get('/reminders', (c) => c.redirect("/reminders.html"))
 
 // ── Provider Scorecards & Benchmarking ───────────────────────────────────────
-app.get('/scorecards', (c) => c.html(scorecardsHtml))
+app.get('/scorecards', (c) => c.redirect("/scorecards.html"))
 
 // ── Telehealth / Async Video Visit ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── ───────────────────────────────────────────
-app.get('/telehealth', (c) => c.html(telehealthHtml))
+app.get('/telehealth', (c) => c.redirect("/telehealth.html"))
 
 // ── E-Prescribing & PDMP ─────────────────────────────────────────────────────
-app.get('/erx', (c) => c.html(erxHtml))
+app.get('/erx', (c) => c.redirect("/erx.html"))
 
 // ── AI Clinical Decision Support ─────────────────────────────────────────────
-app.get('/ai', (c) => c.html(aiHtml))
+app.get('/ai', (c) => c.redirect("/ai.html"))
 
 // ── Prior Authorization ───────────────────────────────────────────────────────
-app.get('/priorauth', (c) => c.html(priorauthHtml))
+app.get('/priorauth', (c) => c.redirect("/priorauth.html"))
 
 // ── Revenue Cycle Management ─────────────────────────────────────────────────
-app.get('/rcm', (c) => c.html(rcmHtml))
+app.get('/rcm', (c) => c.redirect("/rcm.html"))
 
 // ── Staff Login ───────────────────────────────────────────────────────────────
-app.get('/login',      (c) => c.html(loginHtml))
-app.get('/mfa-verify', (c) => c.html(mfaVerifyHtml))
-app.get('/mfa-setup',  (c) => c.html(mfaSetupHtml))
-app.get('/engagement', (c) => c.html(engagementHtml))
-app.get('/analytics',  (c) => c.html(analyticsHtml))
-app.get('/audit',      (c) => c.html(auditHtml))
+app.get('/login',      (c) => c.redirect("/login.html"))
+app.get('/mfa-verify', (c) => c.redirect("/mfa-verify.html"))
+app.get('/mfa-setup',  (c) => c.redirect("/mfa-setup.html"))
+app.get('/engagement', (c) => c.redirect("/engagement.html"))
+app.get('/analytics',  (c) => c.redirect("/analytics.html"))
+app.get('/audit',      (c) => c.redirect("/audit.html"))
 
 // ── API Routes ────────────────────────────────────────────────────────────────
 // Auth routes — public (login/logout/refresh) + self-protected (/me, /users)
@@ -260,9 +235,6 @@ app.route('/api/notifications', notificationsRoutes)
 // ── Phase B2 — Documents & PDF Generation ────────────────────────────────────
 app.use('/api/documents/*',  requireAuth, requireRole('ADMIN','PROVIDER','NURSE','FRONT_DESK','BILLING'), auditMiddleware)
 app.route('/api/documents',  docRoutes)
-
-// ── One-shot migration runner (temporary — remove after 0009 is confirmed) ───
-app.route('/api/migrate', migrateRoutes)
 
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (c) => {
