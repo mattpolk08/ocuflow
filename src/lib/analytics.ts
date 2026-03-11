@@ -157,7 +157,7 @@ async function buildKpiFromD1(period: string, db: D1Database): Promise<KpiSnapsh
     dbGet<{ charged: number; paid: number; adj: number }>(db,
       `SELECT COALESCE(SUM(total_charged), 0) as charged,
               COALESCE(SUM(total_paid), 0) as paid,
-              COALESCE(SUM(adjustment), 0) as adj
+              COALESCE(SUM(total_adjustment), 0) as adj
        FROM rcm_claims WHERE service_date BETWEEN ? AND ?`, [start, end]),
     dbGet<{ total: number; denied: number }>(db,
       `SELECT COUNT(*) as total,
@@ -174,7 +174,7 @@ async function buildKpiFromD1(period: string, db: D1Database): Promise<KpiSnapsh
               SUM(CASE WHEN strftime('%Y-%m', created_at)=? THEN 1 ELSE 0 END) as new_pt
        FROM appointments WHERE date BETWEEN ? AND ?`, [period, start, end]),
     dbGet<{ outstanding: number }>(db,
-      `SELECT COALESCE(SUM(total_charged - total_paid - adjustment), 0) as outstanding
+      `SELECT COALESCE(SUM(total_charged - total_paid - total_adjustment), 0) as outstanding
        FROM rcm_claims WHERE status NOT IN ('PAID','VOIDED','WRITTEN_OFF')`)
   ]);
 
