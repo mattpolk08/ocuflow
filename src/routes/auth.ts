@@ -344,6 +344,28 @@ authRoutes.get('/demo-credentials', async (c) => {
 // ── GET /api/auth/seed ─────────────────────────────────────────────────────────
 authRoutes.get('/seed', async (c) => {
   await seedStaffUsers(c.env.OCULOFLOW_KV, c.env.DB)
+  // Also apply migration 0016 schema changes (idempotent)
+  if (c.env.DB) {
+    const stmts = [
+      `ALTER TABLE portal_accounts ADD COLUMN salt TEXT`,
+      `ALTER TABLE portal_message_threads ADD COLUMN updated_at TEXT`,
+      `ALTER TABLE portal_message_threads ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE portal_messages ADD COLUMN from_patient INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE portal_messages ADD COLUMN status TEXT NOT NULL DEFAULT 'UNREAD'`,
+      `ALTER TABLE portal_messages ADD COLUMN read_at TEXT`,
+      `ALTER TABLE portal_messages ADD COLUMN attachment_note TEXT`,
+      `CREATE TABLE IF NOT EXISTS notification_logs (id TEXT PRIMARY KEY,channel TEXT NOT NULL,type TEXT NOT NULL,recipient TEXT NOT NULL,subject TEXT,body TEXT NOT NULL DEFAULT '',provider TEXT NOT NULL DEFAULT 'demo',external_id TEXT,success INTEGER NOT NULL DEFAULT 0,error TEXT,retries INTEGER NOT NULL DEFAULT 0,sent_at TEXT NOT NULL DEFAULT (datetime('now')),patient_id TEXT,patient_name TEXT)`,
+      `CREATE INDEX IF NOT EXISTS idx_notif_logs_sent ON notification_logs(sent_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_notif_logs_patient ON notification_logs(patient_id,sent_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_notif_logs_type ON notification_logs(type,sent_at DESC)`,
+    ]
+    const mig016: string[] = []
+    for (const sql of stmts) {
+      try { await c.env.DB.exec(sql); mig016.push('ok') }
+      catch (e: any) { mig016.push(String(e?.message ?? e).slice(0,40)) }
+    }
+    return c.json({ success: true, data: { seeded: true, migration016: mig016 } }, 200)
+  }
   return c.json({ success: true, data: { seeded: true } }, 200)
 })
 
