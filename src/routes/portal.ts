@@ -108,7 +108,7 @@ portalRoutes.get('/appointments', async (c) => {
   try {
     const session = await resolveSession(c)
     if (!session) return c.json<ApiResp>({ success: false, error: 'Unauthorized' }, 401)
-    const requests = await listAppointmentRequests(c.env.OCULOFLOW_KV, session.patientId)
+    const requests = await listAppointmentRequests(c.env.OCULOFLOW_KV, session.patientId, undefined, c.env.DB)
     return c.json<ApiResp>({ success: true, data: requests })
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
@@ -139,7 +139,8 @@ portalRoutes.post('/appointments', async (c) => {
         patientNotes: body.patientNotes,
         patientPhone: body.patientPhone,
         patientEmail: session.patientEmail,
-      }
+      },
+      c.env.DB
     )
     return c.json<ApiResp>({ success: true, data: req, message: 'Appointment request submitted' }, 201)
   } catch (err) {
@@ -152,7 +153,7 @@ portalRoutes.patch('/appointments/:id', async (c) => {
   try {
     const id      = c.req.param('id')
     const updates = await c.req.json()
-    const req     = await updateAppointmentRequest(c.env.OCULOFLOW_KV, id, updates)
+    const req     = await updateAppointmentRequest(c.env.OCULOFLOW_KV, id, updates, c.env.DB)
     if (!req) return c.json<ApiResp>({ success: false, error: 'Request not found' }, 404)
     return c.json<ApiResp>({ success: true, data: req, message: `Request ${updates.status ?? 'updated'}` })
   } catch (err) {
@@ -166,8 +167,8 @@ portalRoutes.get('/messages', async (c) => {
   try {
     const session = await resolveSession(c)
     if (!session) return c.json<ApiResp>({ success: false, error: 'Unauthorized' }, 401)
-    await ensureMessageSeed(c.env.OCULOFLOW_KV)
-    const threads = await listMessageThreads(c.env.OCULOFLOW_KV, session.patientId)
+    await ensureMessageSeed(c.env.OCULOFLOW_KV, c.env.DB)
+    const threads = await listMessageThreads(c.env.OCULOFLOW_KV, session.patientId, c.env.DB)
     return c.json<ApiResp>({ success: true, data: threads })
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
@@ -179,8 +180,8 @@ portalRoutes.get('/messages/:threadId', async (c) => {
     const session = await resolveSession(c)
     if (!session) return c.json<ApiResp>({ success: false, error: 'Unauthorized' }, 401)
     const threadId = c.req.param('threadId')
-    await markThreadRead(c.env.OCULOFLOW_KV, threadId)
-    const messages = await getThreadMessages(c.env.OCULOFLOW_KV, threadId)
+    await markThreadRead(c.env.OCULOFLOW_KV, threadId, c.env.DB)
+    const messages = await getThreadMessages(c.env.OCULOFLOW_KV, threadId, c.env.DB)
     return c.json<ApiResp>({ success: true, data: messages })
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
@@ -207,7 +208,7 @@ portalRoutes.post('/messages', async (c) => {
       senderName: session.patientName,
       threadId: body.threadId,
       attachmentNote: body.attachmentNote,
-    })
+    }, c.env.DB)
     return c.json<ApiResp>({ success: true, data: result, message: 'Message sent' }, 201)
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
@@ -224,7 +225,7 @@ portalRoutes.post('/messages/:threadId/reply', async (c) => {
     }
     // Get thread to copy patient info
     const { listMessageThreads: lt } = await import('../lib/portal')
-    const threads = await lt(c.env.OCULOFLOW_KV)
+    const threads = await lt(c.env.OCULOFLOW_KV, undefined, c.env.DB)
     const thread  = threads.find(t => t.threadId === threadId)
     if (!thread) return c.json<ApiResp>({ success: false, error: 'Thread not found' }, 404)
 
@@ -237,7 +238,7 @@ portalRoutes.post('/messages/:threadId/reply', async (c) => {
       fromPatient: false,
       senderName: body.senderName,
       threadId,
-    })
+    }, c.env.DB)
     return c.json<ApiResp>({ success: true, data: result, message: 'Reply sent' }, 201)
   } catch (err) {
     return c.json<ApiResp>({ success: false, error: String(err) }, 500)
@@ -394,7 +395,7 @@ portalRoutes.post('/auth/register', async (c) => {
       patientId,
       email: body.email,
       password: body.password,
-    })
+    }, c.env.DB)
     if (!result.success) return c.json<ApiResp>({ success: false, error: result.error }, 409)
     return c.json<ApiResp>({ success: true, data: result.account, message: 'Portal account created' }, 201)
   } catch (err) {
@@ -408,7 +409,7 @@ portalRoutes.post('/auth/password-login', async (c) => {
     if (!body.email || !body.password) {
       return c.json<ApiResp>({ success: false, error: 'email and password required' }, 400)
     }
-    const result = await portalPasswordLogin(c.env.OCULOFLOW_KV, body.email, body.password)
+    const result = await portalPasswordLogin(c.env.OCULOFLOW_KV, body.email, body.password, c.env.DB)
     if (!result.success) return c.json<ApiResp>({ success: false, error: result.error }, 401)
 
     // Ensure patient seed data exists before creating session
@@ -450,7 +451,7 @@ portalRoutes.post('/auth/password-set', async (c) => {
     if (!body.newPassword) return c.json<ApiResp>({ success: false, error: 'newPassword required' }, 400)
     if (body.newPassword.length < 8) return c.json<ApiResp>({ success: false, error: 'Password must be at least 8 characters' }, 400)
 
-    const result = await completePasswordReset(c.env.OCULOFLOW_KV, body)
+    const result = await completePasswordReset(c.env.OCULOFLOW_KV, body, c.env.DB)
     if (!result.success) return c.json<ApiResp>({ success: false, error: result.error }, 401)
     return c.json<ApiResp>({ success: true, message: 'Password updated — you can now log in with your email and new password' })
   } catch (err) {
@@ -462,7 +463,7 @@ portalRoutes.get('/auth/account', async (c) => {
   try {
     const session = await resolveSession(c)
     if (!session) return c.json<ApiResp>({ success: false, error: 'Session required' }, 401)
-    const account = await getPortalAccount(c.env.OCULOFLOW_KV, session.patientId)
+    const account = await getPortalAccount(c.env.OCULOFLOW_KV, session.patientId, c.env.DB)
     return c.json<ApiResp>({
       success: true,
       data: account ? {

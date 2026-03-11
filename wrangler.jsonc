@@ -19,6 +19,12 @@
       "database_id": "2f41b1ae-97d6-428e-88a4-35be330cc81c"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "OCULOFLOW_R2",
+      "bucket_name": "oculoflow-documents"
+    }
+  ],
   "vars": {
     "DEMO_MODE": "true",
     "PRACTICE_NAME": "Advanced Eye Care of Miami"

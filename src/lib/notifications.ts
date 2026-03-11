@@ -92,19 +92,49 @@ async function sendWithRetry(
 }
 
 // ─── Log delivery ─────────────────────────────────────────────────────────────
-async function logDelivery(kv: KVNamespace, entry: Omit<NotifLog, 'id' | 'sentAt'>): Promise<NotifLog> {
+async function logDelivery(
+  kv: KVNamespace,
+  entry: Omit<NotifLog, 'id' | 'sentAt'>,
+  db?: D1Database
+): Promise<NotifLog> {
   const log: NotifLog = { ...entry, id: uid(), sentAt: now() }
-  await kvPut(kv, K.log(log.id), log, NOTIF_TTL)
-  const idx = (await kvGet<string[]>(kv, K.logIdx())) ?? []
-  idx.unshift(log.id)
-  if (idx.length > 2000) idx.splice(2000)
-  await kvPut(kv, K.logIdx(), idx)
+
+  if (db) {
+    // Priority-3: write to D1 notification_logs
+    try {
+      const { dbRun } = await import('./db')
+      await dbRun(db,
+        `INSERT INTO notification_logs
+           (id, channel, type, recipient, subject, body, provider, external_id,
+            success, error, retries, sent_at, patient_id, patient_name)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          log.id, log.channel, log.type,
+          log.to, log.subject ?? null, log.body,
+          log.provider, log.externalId ?? null,
+          log.success ? 1 : 0, log.error ?? null,
+          log.retries, log.sentAt,
+          log.patientId ?? null, log.patientName ?? null,
+        ]
+      )
+    } catch (err) {
+      console.warn('[D1] Notification log write failed (non-fatal):', err)
+    }
+  } else {
+    // KV fallback
+    await kvPut(kv, K.log(log.id), log, NOTIF_TTL)
+    const idx = (await kvGet<string[]>(kv, K.logIdx())) ?? []
+    idx.unshift(log.id)
+    if (idx.length > 2000) idx.splice(2000)
+    await kvPut(kv, K.logIdx(), idx)
+  }
   return log
 }
 
 // ─── Bindings interface ───────────────────────────────────────────────────────
 export interface NotifBindings {
   OCULOFLOW_KV: KVNamespace
+  DB?: D1Database              // Priority-3: D1 notification_logs
   TWILIO_ACCOUNT_SID?: string
   TWILIO_AUTH_TOKEN?: string
   TWILIO_FROM_NUMBER?: string
@@ -126,6 +156,7 @@ export async function sendNotification(env: NotifBindings, opts: {
   patientName?: string
 }): Promise<NotifLog> {
   const kv = env.OCULOFLOW_KV
+  const db = env.DB
   const realSms   = isRealTwilio(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN)
   const realEmail = isRealSendGrid(env.SENDGRID_API_KEY)
 
@@ -143,7 +174,7 @@ export async function sendNotification(env: NotifBindings, opts: {
       externalId: result.messageId, success: result.success,
       error: result.error, retries: result.retries,
       patientId: opts.patientId, patientName: opts.patientName,
-    })
+    }, db)
   }
 
   // EMAIL
@@ -166,16 +197,51 @@ export async function sendNotification(env: NotifBindings, opts: {
     externalId: result.messageId, success: result.success,
     error: result.error, retries: result.retries,
     patientId: opts.patientId, patientName: opts.patientName,
-  })
+  }, db)
 }
 
 // ─── Delivery log query ───────────────────────────────────────────────────────
-export async function listNotifLogs(kv: KVNamespace, opts: {
-  limit?: number; type?: NotifType; channel?: NotifChannel; patientId?: string
-} = {}): Promise<NotifLog[]> {
-  const idx = (await kvGet<string[]>(kv, K.logIdx())) ?? []
+export async function listNotifLogs(
+  kv: KVNamespace,
+  opts: {
+    limit?: number; type?: NotifType; channel?: NotifChannel; patientId?: string
+    db?: D1Database
+  } = {}
+): Promise<NotifLog[]> {
+  if (opts.db) {
+    const { dbAll } = await import('./db')
+    const conditions: string[] = []
+    const params: (string | number)[] = []
+    if (opts.type)      { conditions.push('type = ?');       params.push(opts.type) }
+    if (opts.channel)   { conditions.push('channel = ?');    params.push(opts.channel) }
+    if (opts.patientId) { conditions.push('patient_id = ?'); params.push(opts.patientId) }
+    const where  = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+    const limit  = Math.min(opts.limit ?? 200, 500)
+    params.push(limit)
+    const rows = await dbAll<Record<string, unknown>>(opts.db,
+      `SELECT * FROM notification_logs ${where} ORDER BY sent_at DESC LIMIT ?`, params)
+    return rows.map(r => ({
+      id:          r.id as string,
+      channel:     r.channel as NotifLog['channel'],
+      type:        r.type as NotifLog['type'],
+      to:          r.recipient as string,
+      subject:     r.subject as string | undefined,
+      body:        r.body as string,
+      provider:    r.provider as NotifLog['provider'],
+      externalId:  r.external_id as string | undefined,
+      success:     (r.success as number) === 1,
+      error:       r.error as string | undefined,
+      retries:     r.retries as number,
+      sentAt:      r.sent_at as string,
+      patientId:   r.patient_id as string | undefined,
+      patientName: r.patient_name as string | undefined,
+    }))
+  }
+
+  // KV fallback
+  const idx   = (await kvGet<string[]>(kv, K.logIdx())) ?? []
   const slice = idx.slice(0, Math.min(opts.limit ?? 200, 500))
-  const logs = (await Promise.all(slice.map(id => kvGet<NotifLog>(kv, K.log(id))))).filter(Boolean) as NotifLog[]
+  const logs  = (await Promise.all(slice.map(id => kvGet<NotifLog>(kv, K.log(id))))).filter(Boolean) as NotifLog[]
   return logs.filter(l =>
     (!opts.type      || l.type      === opts.type)      &&
     (!opts.channel   || l.channel   === opts.channel)   &&

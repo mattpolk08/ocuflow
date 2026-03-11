@@ -100,6 +100,7 @@ export async function uploadDocument(
     paRequestId?: string
     messagingThreadId?: string
     superbillId?: string
+    db?: D1Database              // Priority-2: D1 for persistent metadata
   }
 ): Promise<DocUploadResult> {
   const id = uid()
@@ -153,22 +154,22 @@ export async function uploadDocument(
     uploadedBy: opts.uploadedBy, uploadedByName: opts.uploadedByName,
     description: opts.description, createdAt: now(),
   }
+  // Always write metadata to KV (legacy index) + D1 (primary store)
   await kvPut(kv, K.meta(id), doc, DOC_META_TTL)
 
-  // Update indexes
+  // Update KV indexes
   await addToIndex(kv, K.idx(), id)
-  if (opts.patientId)        await addToIndex(kv, K.patientIdx(opts.patientId), id)
-  if (opts.examId)           await addToIndex(kv, K.examIdx(opts.examId), id)
-  if (opts.paRequestId)      await addToIndex(kv, K.paIdx(opts.paRequestId), id)
-  if (opts.messagingThreadId)await addToIndex(kv, K.threadIdx(opts.messagingThreadId), id)
-  if (opts.superbillId)      await addToIndex(kv, K.sbIdx(opts.superbillId), id)
+  if (opts.patientId)         await addToIndex(kv, K.patientIdx(opts.patientId), id)
+  if (opts.examId)            await addToIndex(kv, K.examIdx(opts.examId), id)
+  if (opts.paRequestId)       await addToIndex(kv, K.paIdx(opts.paRequestId), id)
+  if (opts.messagingThreadId) await addToIndex(kv, K.threadIdx(opts.messagingThreadId), id)
+  if (opts.superbillId)       await addToIndex(kv, K.sbIdx(opts.superbillId), id)
 
-  // Also persist metadata to D1 if available (passed via opts)
-  if ((opts as Record<string, unknown>).db) {
-    const db = (opts as Record<string, unknown>).db as D1Database
+  // Priority-2: persist metadata to D1 (mandatory when db is provided)
+  if (opts.db) {
     try {
-      await dbRun(db,
-        `INSERT OR IGNORE INTO documents
+      await dbRun(opts.db,
+        `INSERT OR REPLACE INTO documents
            (id, patient_id, patient_name, exam_id, category, name, original_name,
             mime_type, size_bytes, storage_backend, storage_key, url,
             tags, uploaded_by, uploaded_by_name, created_at, updated_at)
@@ -182,7 +183,9 @@ export async function uploadDocument(
           doc.createdAt, doc.createdAt,
         ]
       )
-    } catch { /* non-fatal */ }
+    } catch (err) {
+      console.warn('[D1] Document metadata write failed (non-fatal):', err)
+    }
   }
 
   return { doc, backend: storageBackend, url: `/api/documents/${id}/download` }
@@ -192,9 +195,10 @@ export async function uploadDocument(
 export async function downloadDocument(
   kv: KVNamespace,
   r2: R2Bucket | null,
-  id: string
+  id: string,
+  db?: D1Database
 ): Promise<{ body: ReadableStream | Uint8Array; mimeType: string; fileName: string } | null> {
-  const meta = await kvGet<DocMeta>(kv, K.meta(id))
+  const meta = await getDocMeta(kv, id, db)  // Priority-2: D1-first metadata lookup
   if (!meta) return null
 
   if (meta.storageBackend === 'R2' && r2 && meta.r2Key) {
@@ -253,25 +257,48 @@ export async function listDocuments(kv: KVNamespace, opts: {
   return opts.category ? metas.filter(m => m.category === opts.category) : metas
 }
 
-export async function getDocMeta(kv: KVNamespace, id: string): Promise<DocMeta | null> {
+export async function getDocMeta(
+  kv: KVNamespace, id: string, db?: D1Database
+): Promise<DocMeta | null> {
+  if (db) {
+    const row = await dbGet<Record<string, unknown>>(db, 'SELECT * FROM documents WHERE id = ?', [id])
+    if (row) return {
+      id: row.id as string, category: row.category as DocCategory,
+      fileName: row.name as string, mimeType: row.mime_type as string,
+      sizeBytes: row.size_bytes as number,
+      storageBackend: row.storage_backend as DocStorageBackend,
+      r2Key: row.storage_key as string | undefined,
+      patientId: row.patient_id as string | undefined,
+      examId: row.exam_id as string | undefined,
+      uploadedBy: row.uploaded_by as string,
+      uploadedByName: row.uploaded_by_name as string,
+      createdAt: row.created_at as string,
+    }
+  }
   return kvGet<DocMeta>(kv, K.meta(id))
 }
 
-export async function deleteDocument(kv: KVNamespace, r2: R2Bucket | null, id: string): Promise<boolean> {
-  const meta = await kvGet<DocMeta>(kv, K.meta(id))
+export async function deleteDocument(
+  kv: KVNamespace, r2: R2Bucket | null, id: string, db?: D1Database
+): Promise<boolean> {
+  const meta = await getDocMeta(kv, id, db)
   if (!meta) return false
   if (meta.storageBackend === 'R2' && r2 && meta.r2Key) {
     await r2.delete(meta.r2Key).catch(() => {})
   }
+  // Remove from KV
   await kv.delete(K.meta(id))
   await kv.delete(K.data(id))
-  // Clean indexes
   await removeFromIndex(kv, K.idx(), id)
   if (meta.patientId)         await removeFromIndex(kv, K.patientIdx(meta.patientId), id)
   if (meta.examId)            await removeFromIndex(kv, K.examIdx(meta.examId), id)
-  if (meta.paRequestId)       await removeFromIndex(kv, K.paIdx(meta.paRequestId), id)
-  if (meta.messagingThreadId) await removeFromIndex(kv, K.threadIdx(meta.messagingThreadId), id)
-  if (meta.superbillId)       await removeFromIndex(kv, K.sbIdx(meta.superbillId), id)
+  if (meta.paRequestId)       await removeFromIndex(kv, K.paIdx(meta.paRequestId!), id)
+  if (meta.messagingThreadId) await removeFromIndex(kv, K.threadIdx(meta.messagingThreadId!), id)
+  if (meta.superbillId)       await removeFromIndex(kv, K.sbIdx(meta.superbillId!), id)
+  // Remove from D1
+  if (db) {
+    try { await dbRun(db, 'DELETE FROM documents WHERE id = ?', [id]) } catch { /* non-fatal */ }
+  }
   return true
 }
 
