@@ -43,7 +43,7 @@ export async function getRevenueSummary(
        GROUP BY payer_name ORDER BY charged DESC LIMIT 10`, [range.start, range.end]),
     dbAll<{ code: string; count: number; amount: number }>(db,
       `SELECT sli.cpt_code as code, COUNT(*) as count,
-              COALESCE(SUM(sli.charge), 0) as amount
+              COALESCE(SUM(sli.fee), 0) as amount
        FROM superbill_line_items sli
        JOIN superbills sb ON sli.superbill_id = sb.id
        WHERE sb.service_date BETWEEN ? AND ?

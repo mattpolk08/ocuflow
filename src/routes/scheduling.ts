@@ -172,6 +172,24 @@ scheduleRoutes.post('/appointment', requireRole('ADMIN', 'PROVIDER', 'FRONT_DESK
       return c.json<ApiResponse>({ success: false, error: 'This slot is no longer available' }, 409)
     }
 
+    // Map frontend short type codes to DB valid appointment types
+    const TYPE_MAP: Record<string, string> = {
+      'COMPREHENSIVE': 'COMPREHENSIVE_EYE_EXAM',
+      'CONTACT_LENS': 'CONTACT_LENS_FITTING',
+      'GLAUCOMA': 'GLAUCOMA_FOLLOWUP',
+      'DIABETIC': 'DIABETIC_EYE_EXAM',
+      'FOLLOWUP': 'FOLLOWUP',
+      'REFRACTION': 'REFRACTION_ONLY',
+      'URGENT': 'URGENT_CARE',
+      'PEDIATRIC': 'PEDIATRIC_EXAM',
+      'DRY_EYE': 'DRY_EYE_CONSULT',
+      'RETINA': 'RETINA_CONSULT',
+      'POST_OP': 'POST_OP',
+      'PRE_OP': 'PRE_OP',
+    }
+    if (body.appointmentType && TYPE_MAP[body.appointmentType]) {
+      body.appointmentType = TYPE_MAP[body.appointmentType]
+    }
     const appt = await createAppointment(c.env.OCULOFLOW_KV, body, c.env.DB)
     return c.json<ApiResponse>({
       success: true,
