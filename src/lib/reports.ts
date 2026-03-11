@@ -22,7 +22,7 @@ export async function getRevenueSummary(
 
   const [charged, paid, adj, byMonth, byPayer, topCpt] = await Promise.all([
     dbGet<{ v: number }>(db,
-      `SELECT COALESCE(SUM(total_billed), 0) as v FROM superbills
+      `SELECT COALESCE(SUM(total_charge), 0) as v FROM superbills
        WHERE service_date BETWEEN ? AND ?`, [range.start, range.end]),
     dbGet<{ v: number }>(db,
       `SELECT COALESCE(SUM(amount), 0) as v FROM payments
@@ -32,7 +32,7 @@ export async function getRevenueSummary(
        WHERE service_date BETWEEN ? AND ?`, [range.start, range.end]),
     dbAll<{ month: string; charged: number; paid: number }>(db,
       `SELECT strftime('%Y-%m', service_date) as month,
-              COALESCE(SUM(total_billed), 0) as charged
+              COALESCE(SUM(total_charge), 0) as charged
        FROM superbills WHERE service_date BETWEEN ? AND ?
        GROUP BY month ORDER BY month`, [range.start, range.end]),
     dbAll<{ payer: string; charged: number; count: number }>(db,
