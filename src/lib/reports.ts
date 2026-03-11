@@ -28,7 +28,7 @@ export async function getRevenueSummary(
       `SELECT COALESCE(SUM(amount), 0) as v FROM payments
        WHERE posted_at BETWEEN ? AND ?`, [range.start + 'T00:00:00Z', range.end + 'T23:59:59Z']),
     dbGet<{ v: number }>(db,
-      `SELECT COALESCE(SUM(total_adjustment), 0) as v FROM rcm_claims
+      `SELECT COALESCE(SUM(adjustment), 0) as v FROM rcm_claims
        WHERE service_date BETWEEN ? AND ?`, [range.start, range.end]),
     dbAll<{ month: string; charged: number; paid: number }>(db,
       `SELECT strftime('%Y-%m', service_date) as month,
@@ -144,7 +144,7 @@ export async function getArAging(kv: KVNamespace, db?: D1Database): Promise<ArAg
 
   const rows = await dbAll<{ aging_bucket: string; balance: number; count: number }>(db,
     `SELECT aging_bucket,
-            COALESCE(SUM(total_charged - total_paid - total_adjustment), 0) as balance,
+            COALESCE(SUM(total_charged - total_paid - adjustment), 0) as balance,
             COUNT(*) as count
      FROM rcm_claims
      WHERE status NOT IN ('PAID','VOIDED','WRITTEN_OFF')
