@@ -4,6 +4,8 @@
 // PDF generation: pure-JS (no external deps, Cloudflare Workers compatible)
 
 // ─── KV helpers ───────────────────────────────────────────────────────────────
+import { dbGet, dbAll, dbRun, now as dbNow } from './db'
+
 async function kvGet<T>(kv: KVNamespace, key: string): Promise<T | null> {
   const v = await kv.get(key, 'text'); return v ? JSON.parse(v) as T : null
 }
@@ -161,6 +163,28 @@ export async function uploadDocument(
   if (opts.messagingThreadId)await addToIndex(kv, K.threadIdx(opts.messagingThreadId), id)
   if (opts.superbillId)      await addToIndex(kv, K.sbIdx(opts.superbillId), id)
 
+  // Also persist metadata to D1 if available (passed via opts)
+  if ((opts as Record<string, unknown>).db) {
+    const db = (opts as Record<string, unknown>).db as D1Database
+    try {
+      await dbRun(db,
+        `INSERT OR IGNORE INTO documents
+           (id, patient_id, patient_name, exam_id, category, name, original_name,
+            mime_type, size_bytes, storage_backend, storage_key, url,
+            tags, uploaded_by, uploaded_by_name, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          id, doc.patientId ?? null, null, doc.examId ?? null,
+          doc.category, doc.fileName, doc.fileName,
+          doc.mimeType, doc.sizeBytes,
+          storageBackend, r2Key ?? null, `/api/documents/${id}/download`,
+          '[]', doc.uploadedBy, doc.uploadedByName,
+          doc.createdAt, doc.createdAt,
+        ]
+      )
+    } catch { /* non-fatal */ }
+  }
+
   return { doc, backend: storageBackend, url: `/api/documents/${id}/download` }
 }
 
@@ -193,7 +217,29 @@ export async function listDocuments(kv: KVNamespace, opts: {
   patientId?: string; examId?: string; paRequestId?: string
   messagingThreadId?: string; superbillId?: string
   category?: DocCategory; limit?: number
+  db?: D1Database
 } = {}): Promise<DocMeta[]> {
+  if (opts.db) {
+    const conditions: string[] = []; const params: unknown[] = []
+    if (opts.patientId)  { conditions.push('patient_id=?');  params.push(opts.patientId) }
+    if (opts.examId)     { conditions.push('exam_id=?');     params.push(opts.examId) }
+    if (opts.category)   { conditions.push('category=?');    params.push(opts.category) }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+    const rows = await dbAll<Record<string, unknown>>(opts.db, `SELECT * FROM documents ${where} ORDER BY created_at DESC LIMIT ?`, [...params, opts.limit ?? 100])
+    return rows.map(r => ({
+      id: r.id as string, category: r.category as DocCategory,
+      fileName: r.name as string, mimeType: r.mime_type as string,
+      sizeBytes: r.size_bytes as number,
+      storageBackend: r.storage_backend as DocStorageBackend,
+      r2Key: r.storage_key as string | undefined,
+      patientId: r.patient_id as string | undefined,
+      examId: r.exam_id as string | undefined,
+      uploadedBy: r.uploaded_by as string,
+      uploadedByName: r.uploaded_by_name as string,
+      createdAt: r.created_at as string,
+    }))
+  }
+
   let indexKey = K.idx()
   if (opts.patientId)         indexKey = K.patientIdx(opts.patientId)
   else if (opts.examId)       indexKey = K.examIdx(opts.examId)

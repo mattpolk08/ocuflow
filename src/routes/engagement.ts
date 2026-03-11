@@ -13,6 +13,7 @@ import { requireRole } from '../middleware/auth'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
+  DB: D1Database
   TWILIO_ACCOUNT_SID?: string
   TWILIO_AUTH_TOKEN?: string
   TWILIO_FROM_NUMBER?: string
@@ -27,14 +28,14 @@ const engagementRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>(
 
 // ── Ping / seed ───────────────────────────────────────────────────────────────
 engagementRoutes.get('/ping', async (c) => {
-  await ensureEngagementSeed(c.env.OCULOFLOW_KV)
+  await ensureEngagementSeed(c.env.OCULOFLOW_KV, c.env.DB)
   return c.json<Resp>({ success: true, data: { status: 'ok', module: 'engagement-9b' } })
 })
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 engagementRoutes.get('/dashboard', async (c) => {
   try {
-    const data = await getEngagementDashboard(c.env.OCULOFLOW_KV)
+    const data = await getEngagementDashboard(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<Resp>({ success: true, data })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
@@ -47,14 +48,14 @@ engagementRoutes.get('/care-gaps', async (c) => {
       status: status as CareGapStatus | undefined,
       priority: priority as string | undefined,
       gapType: gapType as any,
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
 engagementRoutes.get('/care-gaps/:id', async (c) => {
   try {
-    const gap = await getCareGap(c.env.OCULOFLOW_KV, c.req.param('id'))
+    const gap = await getCareGap(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
     if (!gap) return c.json<Resp>({ success: false, error: 'Care gap not found' }, 404)
     return c.json<Resp>({ success: true, data: gap })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
@@ -68,7 +69,7 @@ engagementRoutes.post('/care-gaps', requireRole('ADMIN', 'PROVIDER', 'NURSE'), a
     const gap = await createCareGap(c.env.OCULOFLOW_KV, {
       ...body, status: 'OPEN', outreachCount: 0,
       daysOverdue: body.daysOverdue ?? Math.floor((Date.now() - new Date(body.dueDate).getTime()) / 86400000),
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data: gap }, 201)
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
@@ -76,7 +77,7 @@ engagementRoutes.post('/care-gaps', requireRole('ADMIN', 'PROVIDER', 'NURSE'), a
 engagementRoutes.patch('/care-gaps/:id', requireRole('ADMIN', 'PROVIDER', 'NURSE'), async (c) => {
   try {
     const body = await c.req.json()
-    const gap = await updateCareGap(c.env.OCULOFLOW_KV, c.req.param('id'), body)
+    const gap = await updateCareGap(c.env.OCULOFLOW_KV, c.req.param('id'), body, c.env.DB)
     if (!gap) return c.json<Resp>({ success: false, error: 'Care gap not found' }, 404)
     return c.json<Resp>({ success: true, data: gap })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
@@ -87,7 +88,7 @@ engagementRoutes.post('/care-gaps/:id/outreach', async (c) => {
   try {
     const id   = c.req.param('id')
     const body = await c.req.json().catch(() => ({})) as { channel?: string; phone?: string }
-    const gap  = await getCareGap(c.env.OCULOFLOW_KV, id)
+    const gap  = await getCareGap(c.env.OCULOFLOW_KV, id, c.env.DB)
     if (!gap) return c.json<Resp>({ success: false, error: 'Care gap not found' }, 404)
 
     let smsSent = false
@@ -108,7 +109,7 @@ engagementRoutes.post('/care-gaps/:id/outreach', async (c) => {
       status: 'OUTREACH_SENT',
       outreachCount: (gap.outreachCount ?? 0) + 1,
       lastOutreachAt: new Date().toISOString(),
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data: updated, message: smsSent ? 'Outreach sent via SMS' : 'Outreach recorded' })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
@@ -117,7 +118,7 @@ engagementRoutes.post('/care-gaps/:id/outreach', async (c) => {
 engagementRoutes.get('/recalls', async (c) => {
   try {
     const { status } = c.req.query()
-    const data = await listRecalls(c.env.OCULOFLOW_KV, { status: status as RecallStatus | undefined })
+    const data = await listRecalls(c.env.OCULOFLOW_KV, { status: status as RecallStatus | undefined }, c.env.DB)
     return c.json<Resp>({ success: true, data })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
@@ -127,7 +128,7 @@ engagementRoutes.post('/recalls', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRO
     const body = await c.req.json()
     const missing = ['patientId', 'patientName', 'recallType', 'dueDate'].filter(k => !body[k])
     if (missing.length) return c.json<Resp>({ success: false, error: `Missing: ${missing.join(', ')}` }, 400)
-    const recall = await createRecall(c.env.OCULOFLOW_KV, { ...body, status: 'PENDING', attemptCount: 0 })
+    const recall = await createRecall(c.env.OCULOFLOW_KV, { ...body, status: 'PENDING', attemptCount: 0 }, c.env.DB)
     return c.json<Resp>({ success: true, data: recall }, 201)
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
@@ -135,7 +136,7 @@ engagementRoutes.post('/recalls', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRO
 engagementRoutes.patch('/recalls/:id', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRONT_DESK'), async (c) => {
   try {
     const body = await c.req.json()
-    const recall = await updateRecall(c.env.OCULOFLOW_KV, c.req.param('id'), body)
+    const recall = await updateRecall(c.env.OCULOFLOW_KV, c.req.param('id'), body, c.env.DB)
     if (!recall) return c.json<Resp>({ success: false, error: 'Recall not found' }, 404)
     return c.json<Resp>({ success: true, data: recall })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
@@ -151,10 +152,10 @@ engagementRoutes.post('/recalls/:id/contact', async (c) => {
       lastAttemptAt: new Date().toISOString(),
       lastAttemptChannel: (body.channel ?? 'SMS') as any,
       notes: body.note,
-    })
+    }, c.env.DB)
     if (!recall) return c.json<Resp>({ success: false, error: 'Recall not found' }, 404)
     // Re-fetch and increment properly
-    const updated = await updateRecall(c.env.OCULOFLOW_KV, c.req.param('id'), { attemptCount: (recall.attemptCount ?? 0) + 1 })
+    const updated = await updateRecall(c.env.OCULOFLOW_KV, c.req.param('id'), { attemptCount: (recall.attemptCount ?? 0) + 1 }, c.env.DB)
     return c.json<Resp>({ success: true, data: updated, message: 'Contact attempt recorded' })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
@@ -162,14 +163,14 @@ engagementRoutes.post('/recalls/:id/contact', async (c) => {
 // ── Surveys ───────────────────────────────────────────────────────────────────
 engagementRoutes.get('/surveys', async (c) => {
   try {
-    const data = await listSurveys(c.env.OCULOFLOW_KV)
+    const data = await listSurveys(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<Resp>({ success: true, data })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
 engagementRoutes.get('/surveys/:id', async (c) => {
   try {
-    const survey = await getSurvey(c.env.OCULOFLOW_KV, c.req.param('id'))
+    const survey = await getSurvey(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
     if (!survey) return c.json<Resp>({ success: false, error: 'Survey not found' }, 404)
     return c.json<Resp>({ success: true, data: survey })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
@@ -182,7 +183,7 @@ engagementRoutes.post('/surveys', requireRole('ADMIN', 'PROVIDER'), async (c) =>
     const survey = await createSurvey(c.env.OCULOFLOW_KV, {
       ...body, isActive: body.isActive ?? true,
       questions: body.questions ?? [], delayHours: body.delayHours ?? 24,
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data: survey }, 201)
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
@@ -190,7 +191,7 @@ engagementRoutes.post('/surveys', requireRole('ADMIN', 'PROVIDER'), async (c) =>
 engagementRoutes.patch('/surveys/:id', requireRole('ADMIN', 'PROVIDER'), async (c) => {
   try {
     const body = await c.req.json()
-    const survey = await updateSurvey(c.env.OCULOFLOW_KV, c.req.param('id'), body)
+    const survey = await updateSurvey(c.env.OCULOFLOW_KV, c.req.param('id'), body, c.env.DB)
     if (!survey) return c.json<Resp>({ success: false, error: 'Survey not found' }, 404)
     return c.json<Resp>({ success: true, data: survey })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
@@ -198,7 +199,7 @@ engagementRoutes.patch('/surveys/:id', requireRole('ADMIN', 'PROVIDER'), async (
 
 engagementRoutes.get('/surveys/:id/responses', async (c) => {
   try {
-    const data = await listSurveyResponses(c.env.OCULOFLOW_KV, c.req.param('id'))
+    const data = await listSurveyResponses(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
     return c.json<Resp>({ success: true, data })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
@@ -223,7 +224,7 @@ engagementRoutes.post('/surveys/:id/respond', async (c) => {
       followUpRequired: sentiment === 'NEGATIVE',
       followUpReason: sentiment === 'NEGATIVE' ? 'Low satisfaction score requires follow-up' : undefined,
       submittedAt: new Date().toISOString(),
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data: resp, message: 'Thank you for your feedback!' }, 201)
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
@@ -234,14 +235,14 @@ interface SurveyResponse { sentiment: 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE' }
 // ── Loyalty ───────────────────────────────────────────────────────────────────
 engagementRoutes.get('/loyalty', async (c) => {
   try {
-    const data = await listLoyaltyAccounts(c.env.OCULOFLOW_KV)
+    const data = await listLoyaltyAccounts(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<Resp>({ success: true, data })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
 engagementRoutes.get('/loyalty/:patientId', async (c) => {
   try {
-    const account = await getLoyaltyAccount(c.env.OCULOFLOW_KV, c.req.param('patientId'))
+    const account = await getLoyaltyAccount(c.env.OCULOFLOW_KV, c.req.param('patientId'), c.env.DB)
     if (!account) return c.json<Resp>({ success: false, error: 'Loyalty account not found' }, 404)
     return c.json<Resp>({ success: true, data: account })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
@@ -253,7 +254,7 @@ engagementRoutes.post('/loyalty/:patientId/points', requireRole('ADMIN', 'FRONT_
     if (!body.type || !body.points || !body.description) return c.json<Resp>({ success: false, error: 'type, points, description required' }, 400)
     const account = await addLoyaltyPoints(c.env.OCULOFLOW_KV, c.req.param('patientId'), body.patientName ?? 'Patient', {
       type: body.type, points: body.points, description: body.description, date: new Date().toISOString(),
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data: account })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })

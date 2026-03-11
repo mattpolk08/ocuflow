@@ -745,134 +745,149 @@ const SEED_RISK_SCORES: Array<Omit<RiskScore, 'id' | 'calculatedAt'>> = [
 ]
 
 // ── KV Seed ───────────────────────────────────────────────────────────────────
-export async function seedAiData(kv: KVNamespace): Promise<void> {
-  const seeded = await kv.get(K.seeded())
-  if (seeded) return
-
-  // Seed insights
-  const insightIds: string[] = []
-  for (const ins of SEED_INSIGHTS) {
-    await kv.put(K.insight(ins.id), JSON.stringify(ins))
-    insightIds.push(ins.id)
-  }
-  await kv.put(K.insightIdx(), JSON.stringify(insightIds))
-
-  // Seed risk scores
-  const riskIds: string[] = []
-  for (const rs of SEED_RISK_SCORES) {
-    const full: RiskScore = { id: uid('risk'), ...rs, calculatedAt: now() }
-    await kv.put(K.riskScore(full.id), JSON.stringify(full))
-    riskIds.push(full.id)
-  }
-  await kv.put(K.riskIdx(), JSON.stringify(riskIds))
-
-  // Init empty indexes
-  await kv.put(K.noteIdx(), JSON.stringify([]))
-  await kv.put(K.queryIdx(), JSON.stringify([]))
-
-  await kv.put(K.seeded(), '1')
+export async function seedAiData(kv: KVNamespace, db?: D1Database): Promise<void> {
+  // AI insights seeding done via migration 0015; no-op for KV path
 }
 
-// ── Queries ────────────────────────────────────────────────────────────────────
-export async function getAiDashboard(kv: KVNamespace): Promise<AiDashboard> {
-  await seedAiData(kv)
-  const insightIds: string[] = JSON.parse((await kv.get(K.insightIdx())) ?? '[]')
-  const riskIds: string[] = JSON.parse((await kv.get(K.riskIdx())) ?? '[]')
-
-  const insights: AiInsight[] = (await Promise.all(insightIds.map(id => kv.get(K.insight(id)))))
-    .filter(Boolean).map(v => JSON.parse(v!))
-
-  const risks: RiskScore[] = (await Promise.all(riskIds.map(id => kv.get(K.riskScore(id)))))
-    .filter(Boolean).map(v => JSON.parse(v!))
-
-  const active = insights.filter(i => !i.dismissed)
-  const critical = active.filter(i => i.priority === 'CRITICAL')
-
+// ── AI Dashboard ─────────────────────────────────────────────────────────────
+export async function getAiDashboard(kv: KVNamespace, db?: D1Database): Promise<AiDashboard> {
+  const insights = await listInsights(kv, undefined, undefined, false, db)
+  const risks    = await listRiskScores(kv, undefined, undefined, db)
+  const critical = insights.filter(i => i.priority === 'CRITICAL')
   const riskDist: { level: RiskLevel; count: number }[] = [
     { level: 'CRITICAL', count: risks.filter(r => r.level === 'CRITICAL').length },
-    { level: 'HIGH', count: risks.filter(r => r.level === 'HIGH').length },
+    { level: 'HIGH',     count: risks.filter(r => r.level === 'HIGH').length },
     { level: 'MODERATE', count: risks.filter(r => r.level === 'MODERATE').length },
-    { level: 'LOW', count: risks.filter(r => r.level === 'LOW').length },
+    { level: 'LOW',      count: risks.filter(r => r.level === 'LOW').length },
   ]
-
-  const topRisk = [...risks].sort((a, b) => b.score - a.score).slice(0, 5)
-
   return {
-    pendingInsights: active.length,
+    pendingInsights: insights.length,
     criticalAlerts: critical.length,
     icdSuggestionsToday: 12,
     notesGeneratedToday: 4,
     riskScoresComputed: risks.length,
-    interactionAlertsActive: insights.filter(i => i.type === 'DRUG_INTERACTION' && !i.dismissed).length,
-    recentInsights: active.slice(0, 5),
+    interactionAlertsActive: insights.filter(i => i.type === 'DRUG_INTERACTION').length,
+    recentInsights: insights.slice(0, 5),
     riskDistribution: riskDist,
-    topRiskPatients: topRisk,
+    topRiskPatients: [...risks].sort((a, b) => b.score - a.score).slice(0, 5),
   }
 }
 
-export async function listInsights(kv: KVNamespace, type?: string, priority?: string, dismissed?: boolean): Promise<AiInsight[]> {
-  await seedAiData(kv)
-  const ids: string[] = JSON.parse((await kv.get(K.insightIdx())) ?? '[]')
-  const all: AiInsight[] = (await Promise.all(ids.map(id => kv.get(K.insight(id)))))
-    .filter(Boolean).map(v => JSON.parse(v!))
-
-  return all.filter(i => {
-    if (type && i.type !== type) return false
-    if (priority && i.priority !== priority) return false
-    if (dismissed !== undefined && i.dismissed !== dismissed) return false
-    return true
-  })
+export async function listInsights(
+  kv: KVNamespace, type?: string, priority?: string, dismissed?: boolean, db?: D1Database
+): Promise<AiInsight[]> {
+  if (!db) return []
+  const { dbAll } = await import('./db')
+  const conditions: string[] = []; const params: unknown[] = []
+  if (type !== undefined)      { conditions.push('category=?');   params.push(type) }
+  if (priority !== undefined)  { conditions.push('severity=?');   params.push(priority) }
+  if (dismissed !== undefined) { conditions.push('dismissed=?');  params.push(dismissed ? 1 : 0) }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const rows = await dbAll<Record<string, unknown>>(db, `SELECT * FROM ai_insights ${where} ORDER BY created_at DESC LIMIT 100`, params)
+  return rows.map(r => ({
+    id:            r.id as string,
+    patientId:     r.patient_id as string,
+    patientName:   r.patient_name as string,
+    type:          r.category as string,
+    priority:      r.severity as string,
+    title:         r.title as string,
+    description:   r.description as string,
+    confidence:    r.confidence as number,
+    actionRequired: Boolean(r.action_required),
+    dismissed:     Boolean(r.dismissed),
+    dismissedBy:   r.dismissed_by as string | undefined,
+    dismissedAt:   r.dismissed_at as string | undefined,
+    source:        r.source as string,
+    metadata:      JSON.parse((r.metadata as string) || '{}'),
+    createdAt:     r.created_at as string,
+    updatedAt:     r.updated_at as string,
+  }))
 }
 
-export async function dismissInsight(kv: KVNamespace, id: string): Promise<AiInsight | null> {
-  const raw = await kv.get(K.insight(id))
-  if (!raw) return null
-  const insight: AiInsight = JSON.parse(raw)
-  insight.dismissed = true
-  insight.dismissedAt = now()
-  await kv.put(K.insight(id), JSON.stringify(insight))
-  return insight
+export async function dismissInsight(kv: KVNamespace, id: string, db?: D1Database): Promise<AiInsight | null> {
+  if (!db) return null
+  const { dbRun, now: dbNow } = await import('./db')
+  await dbRun(db, `UPDATE ai_insights SET dismissed=1, dismissed_at=?, updated_at=? WHERE id=?`, [dbNow(), dbNow(), id])
+  const all = await listInsights(kv, undefined, undefined, undefined, db)
+  return all.find(i => i.id === id) ?? null
 }
 
-export async function saveNote(kv: KVNamespace, note: GeneratedNote): Promise<void> {
-  await kv.put(K.noteLog(note.id), JSON.stringify(note))
-  const ids: string[] = JSON.parse((await kv.get(K.noteIdx())) ?? '[]')
-  ids.unshift(note.id)
-  await kv.put(K.noteIdx(), JSON.stringify(ids.slice(0, 100)))
+export async function saveNote(kv: KVNamespace, note: GeneratedNote, db?: D1Database): Promise<void> {
+  if (!db) return
+  const { dbRun, now: dbNow } = await import('./db')
+  const n = dbNow()
+  await dbRun(db,
+    `INSERT OR IGNORE INTO ai_generated_notes (id, exam_id, patient_id, provider_id, note_type, content, sections, word_count, created_by, created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [
+      note.id, note.request?.examId ?? null,
+      note.request?.patientId ?? '', note.request?.providerId ?? null,
+      note.noteType ?? 'SOAP', note.content ?? '',
+      JSON.stringify(note.sections ?? {}),
+      (note.content ?? '').split(' ').length,
+      note.request?.providerId ?? null, n,
+    ]
+  )
 }
 
-export async function listNotes(kv: KVNamespace, patientId?: string): Promise<GeneratedNote[]> {
-  await seedAiData(kv)
-  const ids: string[] = JSON.parse((await kv.get(K.noteIdx())) ?? '[]')
-  const all: GeneratedNote[] = (await Promise.all(ids.map(id => kv.get(K.noteLog(id)))))
-    .filter(Boolean).map(v => JSON.parse(v!))
-  return patientId ? all.filter(n => n.request.patientId === patientId) : all
+export async function listNotes(kv: KVNamespace, patientId?: string, db?: D1Database): Promise<GeneratedNote[]> {
+  if (!db) return []
+  const { dbAll } = await import('./db')
+  const rows = patientId
+    ? await dbAll<Record<string, unknown>>(db, `SELECT * FROM ai_generated_notes WHERE patient_id=? ORDER BY created_at DESC LIMIT 50`, [patientId])
+    : await dbAll<Record<string, unknown>>(db, `SELECT * FROM ai_generated_notes ORDER BY created_at DESC LIMIT 50`)
+  return rows.map(r => ({
+    id:        r.id as string,
+    noteType:  r.note_type as string,
+    content:   r.content as string,
+    sections:  JSON.parse((r.sections as string) || '{}'),
+    createdAt: r.created_at as string,
+    request:   { patientId: r.patient_id as string, examId: r.exam_id as string | undefined, providerId: r.provider_id as string | undefined },
+  }))
 }
 
-export async function saveRiskScore(kv: KVNamespace, risk: RiskScore): Promise<void> {
-  await kv.put(K.riskScore(risk.id), JSON.stringify(risk))
-  const ids: string[] = JSON.parse((await kv.get(K.riskIdx())) ?? '[]')
-  if (!ids.includes(risk.id)) { ids.unshift(risk.id); await kv.put(K.riskIdx(), JSON.stringify(ids)) }
+export async function saveRiskScore(kv: KVNamespace, risk: RiskScore, db?: D1Database): Promise<void> {
+  if (!db) return
+  const { dbRun, now: dbNow } = await import('./db')
+  await dbRun(db,
+    `INSERT OR REPLACE INTO ai_risk_scores (id, patient_id, patient_name, category, score, level, factors, recommendations, computed_at)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    [
+      risk.id, risk.patientId, risk.patientName, risk.category,
+      risk.score, risk.level,
+      JSON.stringify(risk.factors ?? []),
+      JSON.stringify(risk.recommendations ?? []),
+      dbNow(),
+    ]
+  )
 }
 
-export async function listRiskScores(kv: KVNamespace, patientId?: string, category?: string): Promise<RiskScore[]> {
-  await seedAiData(kv)
-  const ids: string[] = JSON.parse((await kv.get(K.riskIdx())) ?? '[]')
-  const all: RiskScore[] = (await Promise.all(ids.map(id => kv.get(K.riskScore(id)))))
-    .filter(Boolean).map(v => JSON.parse(v!))
-  return all.filter(r => {
-    if (patientId && r.patientId !== patientId) return false
-    if (category && r.category !== category) return false
-    return true
-  })
+export async function listRiskScores(
+  kv: KVNamespace, patientId?: string, category?: string, db?: D1Database
+): Promise<RiskScore[]> {
+  if (!db) return []
+  const { dbAll } = await import('./db')
+  const conditions: string[] = []; const params: unknown[] = []
+  if (patientId) { conditions.push('patient_id=?'); params.push(patientId) }
+  if (category)  { conditions.push('category=?');   params.push(category) }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const rows = await dbAll<Record<string, unknown>>(db, `SELECT * FROM ai_risk_scores ${where} ORDER BY computed_at DESC`, params)
+  return rows.map(r => ({
+    id:              r.id as string,
+    patientId:       r.patient_id as string,
+    patientName:     r.patient_name as string,
+    category:        r.category as string,
+    score:           r.score as number,
+    level:           r.level as RiskLevel,
+    factors:         JSON.parse((r.factors as string) || '[]'),
+    recommendations: JSON.parse((r.recommendations as string) || '[]'),
+    calculatedAt:    r.computed_at as string,
+  }))
 }
 
-export async function logQuery(kv: KVNamespace, entry: Omit<AiQueryLog, 'id' | 'timestamp'>): Promise<AiQueryLog> {
+export async function logQuery(kv: KVNamespace, entry: Omit<AiQueryLog, 'id' | 'timestamp'>, db?: D1Database): Promise<AiQueryLog> {
   const log: AiQueryLog = { id: uid('qlog'), ...entry, timestamp: now() }
-  await kv.put(K.queryLog(log.id), JSON.stringify(log))
-  const ids: string[] = JSON.parse((await kv.get(K.queryIdx())) ?? '[]')
-  ids.unshift(log.id)
-  await kv.put(K.queryIdx(), JSON.stringify(ids.slice(0, 200)))
+  // Query logs are ephemeral — no D1 persistence needed
   return log
 }
 

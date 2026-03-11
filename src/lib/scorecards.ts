@@ -209,55 +209,44 @@ const SEED_GOALS: ProviderGoal[] = [
 ]
 
 // ── Seed guard ─────────────────────────────────────────────────────────────────
-export async function ensureScorecardseed(kv: KVNamespace): Promise<void> {
-  const flag = await kv.get(K.seeded())
-  if (flag) return
-  await kv.put(K.goalIndex(), JSON.stringify(SEED_GOALS.map(g => g.id)))
-  await Promise.all(SEED_GOALS.map(g => kv.put(K.goal(g.id), JSON.stringify(g))))
-  await kv.put(K.seeded(), '1')
+export async function ensureScorecardseed(kv: KVNamespace, db?: D1Database): Promise<void> {
+  // Seeding done via migration 0015; no-op kept for backward-compat
 }
 
-// ── Provider scorecard (computed on-the-fly, goals loaded from KV) ─────────────
+// ── Provider scorecard (computed on-the-fly, goals loaded from D1) ─────────────
 export async function getProviderScorecard(
   kv: KVNamespace,
   providerId: string,
   range: DateRange = '30d',
+  db?: D1Database,
 ): Promise<ProviderScorecard | null> {
-  await ensureScorecardseed(kv)
   const prov = PROVIDERS.find(p => p.id === providerId)
   if (!prov) return null
 
-  // Build computed scorecard
   const seedNum = providerId.split('').reduce((a, c) => a + c.charCodeAt(0), 0) +
                   ['7d','30d','90d','ytd','all'].indexOf(range) * 1000
   const card = buildScorecard(prov, range, seedNum)
 
-  // Attach live goals from KV
-  const rawIdx = await kv.get(K.goalIndex())
-  if (rawIdx) {
-    const ids: string[] = JSON.parse(rawIdx)
-    const all = await Promise.all(ids.map(id => kv.get(K.goal(id))))
-    card.goals = all.filter(Boolean).map(r => JSON.parse(r!) as ProviderGoal)
-      .filter(g => g.providerId === providerId)
+  // Attach live goals from D1
+  if (db) {
+    card.goals = await listGoals(kv, providerId, db)
   }
   return card
 }
 
-// ── List all providers ────────────────────────────────────────────────────────
 export function listProviders() { return PROVIDERS }
 
-// ── Practice summary / leaderboard ────────────────────────────────────────────
 export async function getPracticeSummary(
   kv: KVNamespace,
   range: DateRange = '30d',
+  db?: D1Database,
 ): Promise<PracticeSummary> {
-  await ensureScorecardseed(kv)
   const cards = await Promise.all(
-    PROVIDERS.map(p => getProviderScorecard(kv, p.id, range))
+    PROVIDERS.map(p => getProviderScorecard(kv, p.id, range, db))
   ) as ProviderScorecard[]
 
   const leaderboard: LeaderboardEntry[] = cards
-    .map((c, i) => ({
+    .map((c) => ({
       rank: 0,
       providerId: c.providerId,
       providerName: c.providerName,
@@ -273,29 +262,17 @@ export async function getPracticeSummary(
     .sort((a, b) => b.overallScore - a.overallScore)
     .map((e, i) => ({ ...e, rank: i + 1 }))
 
-  const totalVisits   = cards.reduce((s, c) => s + c.volume.totalVisits, 0)
-  const totalRevenue  = cards.reduce((s, c) => s + c.revenue.totalCharged, 0)
-  const totalNewPt    = cards.reduce((s, c) => s + c.volume.newPatients, 0)
-  const avgSatisf     = Math.round(cards.reduce((s, c) => s + c.quality.patientSatisfactionScore, 0) / cards.length * 10) / 10
-  const avgColl       = Math.round(cards.reduce((s, c) => s + c.revenue.collectionRate, 0) / cards.length)
-  const avgExamMin    = Math.round(cards.reduce((s, c) => s + c.efficiency.avgExamMinutes, 0) / cards.length)
+  const totalVisits  = cards.reduce((s, c) => s + c.volume.totalVisits, 0)
+  const totalRevenue = cards.reduce((s, c) => s + c.revenue.totalCharged, 0)
+  const totalNewPt   = cards.reduce((s, c) => s + c.volume.newPatients, 0)
+  const avgSatisf    = Math.round(cards.reduce((s, c) => s + c.quality.patientSatisfactionScore, 0) / cards.length * 10) / 10
+  const avgColl      = Math.round(cards.reduce((s, c) => s + c.revenue.collectionRate, 0) / cards.length)
+  const avgExamMin   = Math.round(cards.reduce((s, c) => s + c.efficiency.avgExamMinutes, 0) / cards.length)
 
-  // Aggregate visit type counts
   const visitsByType: Record<string, number> = {}
-  cards.forEach(c => {
-    Object.entries(c.volume.visitsByType).forEach(([k, v]) => {
-      visitsByType[k] = (visitsByType[k] || 0) + v
-    })
-  })
-  // Aggregate revenue by payer
+  cards.forEach(c => Object.entries(c.volume.visitsByType).forEach(([k, v]) => { visitsByType[k] = (visitsByType[k] || 0) + v }))
   const revenueByPayer: Record<string, number> = {}
-  cards.forEach(c => {
-    Object.entries(c.revenue.revenueByPayer).forEach(([k, v]) => {
-      revenueByPayer[k] = (revenueByPayer[k] || 0) + v
-    })
-  })
-
-  // Practice-wide daily series (sum of all providers)
+  cards.forEach(c => Object.entries(c.revenue.revenueByPayer).forEach(([k, v]) => { revenueByPayer[k] = (revenueByPayer[k] || 0) + v }))
   const practiceByDay: DayPoint[] = cards[0].volume.visitsByDay.map((pt, i) => ({
     date: pt.date,
     value: cards.reduce((s, c) => s + (c.volume.visitsByDay[i]?.value || 0), 0),
@@ -310,45 +287,68 @@ export async function getPracticeSummary(
   }
 }
 
-// ── Goals CRUD ────────────────────────────────────────────────────────────────
-export async function listGoals(kv: KVNamespace, providerId?: string): Promise<ProviderGoal[]> {
-  await ensureScorecardseed(kv)
-  const rawIdx = await kv.get(K.goalIndex()); if (!rawIdx) return []
-  const ids: string[] = JSON.parse(rawIdx)
-  const all = await Promise.all(ids.map(id => kv.get(K.goal(id))))
-  let goals = all.filter(Boolean).map(r => JSON.parse(r!) as ProviderGoal)
-  if (providerId) goals = goals.filter(g => g.providerId === providerId)
-  return goals.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+// ── Goals CRUD (D1) ────────────────────────────────────────────────────────────
+export async function listGoals(kv: KVNamespace, providerId?: string, db?: D1Database): Promise<ProviderGoal[]> {
+  if (!db) return []
+  const { dbAll } = await import('./db')
+  const rows = providerId
+    ? await dbAll<Record<string, unknown>>(db, `SELECT * FROM provider_goals WHERE provider_id=? ORDER BY created_at DESC`, [providerId])
+    : await dbAll<Record<string, unknown>>(db, `SELECT * FROM provider_goals ORDER BY created_at DESC`)
+  return rows.map(r => ({
+    id:            r.id as string,
+    providerId:    r.provider_id as string,
+    providerName:  r.provider_name as string,
+    metric:        r.metric as string,
+    target:        r.target as number,
+    currentValue:  r.current_value as number,
+    unit:          r.unit as string | undefined,
+    period:        r.period as string,
+    status:        r.status as ProviderGoal['status'],
+    notes:         r.notes as string | undefined,
+    createdAt:     r.created_at as string,
+    updatedAt:     r.updated_at as string,
+  }))
 }
 
 export async function createGoal(
   kv: KVNamespace,
   data: Omit<ProviderGoal, 'id' | 'createdAt' | 'updatedAt'>,
+  db?: D1Database,
 ): Promise<ProviderGoal> {
-  await ensureScorecardseed(kv)
-  const id = uid('goal'); const n = now()
-  const goal: ProviderGoal = { ...data, id, createdAt: n, updatedAt: n }
-  const rawIdx = await kv.get(K.goalIndex()); const ids: string[] = rawIdx ? JSON.parse(rawIdx) : []
-  ids.unshift(id)
-  await kv.put(K.goalIndex(), JSON.stringify(ids))
-  await kv.put(K.goal(id), JSON.stringify(goal))
-  return goal
+  if (!db) throw new Error('D1 required')
+  const { dbRun, now: dbNow } = await import('./db')
+  const n = dbNow(); const id = uid('goal')
+  await dbRun(db,
+    `INSERT INTO provider_goals (id, provider_id, provider_name, metric, target, current_value, unit, period, status, notes, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, data.providerId, data.providerName, data.metric, data.target, data.currentValue ?? 0, data.unit ?? null, data.period, data.status ?? 'ON_TRACK', data.notes ?? null, n, n]
+  )
+  const goals = await listGoals(kv, data.providerId, db)
+  return goals.find(g => g.id === id)!
 }
 
 export async function updateGoal(
   kv: KVNamespace,
   id: string,
   patch: Partial<ProviderGoal>,
+  db?: D1Database,
 ): Promise<ProviderGoal | null> {
-  const raw = await kv.get(K.goal(id)); if (!raw) return null
-  const goal: ProviderGoal = { ...JSON.parse(raw), ...patch, id, updatedAt: now() }
-  await kv.put(K.goal(id), JSON.stringify(goal)); return goal
+  if (!db) return null
+  const { dbRun, now: dbNow } = await import('./db')
+  const sets: string[] = ['updated_at=?']; const vals: unknown[] = [dbNow()]
+  if (patch.target       !== undefined) { sets.push('target=?');        vals.push(patch.target) }
+  if (patch.currentValue !== undefined) { sets.push('current_value=?'); vals.push(patch.currentValue) }
+  if (patch.status       !== undefined) { sets.push('status=?');        vals.push(patch.status) }
+  if (patch.notes        !== undefined) { sets.push('notes=?');         vals.push(patch.notes) }
+  vals.push(id)
+  await dbRun(db, `UPDATE provider_goals SET ${sets.join(', ')} WHERE id=?`, vals)
+  const goals = await listGoals(kv, undefined, db)
+  return goals.find(g => g.id === id) ?? null
 }
 
-export async function deleteGoal(kv: KVNamespace, id: string): Promise<boolean> {
-  const raw = await kv.get(K.goal(id)); if (!raw) return false
-  const rawIdx = await kv.get(K.goalIndex()); if (!rawIdx) return false
-  const ids: string[] = JSON.parse(rawIdx)
-  await kv.put(K.goalIndex(), JSON.stringify(ids.filter(i => i !== id)))
-  await kv.delete(K.goal(id)); return true
+export async function deleteGoal(kv: KVNamespace, id: string, db?: D1Database): Promise<boolean> {
+  if (!db) return false
+  const { dbRun } = await import('./db')
+  await dbRun(db, `DELETE FROM provider_goals WHERE id=?`, [id])
+  return true
 }

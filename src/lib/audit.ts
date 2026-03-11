@@ -1,8 +1,9 @@
-// Phase A2 — Audit Logging (HIPAA §164.312(b)) — v3.0.0
-// Immutable audit trail stored in KV with 6-year retention.
-// Every PHI access, auth event, and admin action is recorded.
-// Records contain: id, timestamp, event, userId, userEmail, userRole,
-//   resource, resourceId, action, outcome, ip, userAgent, detail, sessionId, risk
+// Phase A2 — Audit Logging (HIPAA §164.312(b)) — v4.0.0 D1-backed
+// audit_log table → D1 (persistent, queryable, 6-year retention)
+// daily stats cache → KV (ephemeral 90-day TTL — intentionally stays KV)
+// writeAudit accepts optional db param; always writes to D1 when available.
+
+import { dbGet, dbAll, dbRun, now as dbNow } from './db';
 
 export type AuditOutcome = 'SUCCESS' | 'FAILURE' | 'DENIED';
 
@@ -27,20 +28,19 @@ export type AuditEvent =
   | 'PHI_CREATE'
   | 'PHI_UPDATE'
   | 'PHI_DELETE'
-  | 'PHI_EXPORT'          // CSV/PDF/bulk export of patient data
-  | 'PHI_BULK_ACCESS'     // list queries returning many records
-  | 'PHI_SIGN'            // provider signing a clinical document
-  | 'PHI_AMEND'           // amendment to a signed record
-  | 'PHI_PRINT'           // print/download of a patient document
+  | 'PHI_EXPORT'
+  | 'PHI_BULK_ACCESS'
+  | 'PHI_SIGN'
+  | 'PHI_AMEND'
+  | 'PHI_PRINT'
   // ── Access Control ────────────────────────────────────────────────────────
   | 'ACCESS_DENIED'
-  | 'EMERGENCY_ACCESS'    // break-glass override
+  | 'EMERGENCY_ACCESS'
   // ── System / Config ──────────────────────────────────────────────────────
-  | 'CONFIG_CHANGED'      // system setting modified
-  | 'DATA_IMPORT'         // bulk data imported
-  | 'REPORT_GENERATED';   // report/analytics generated
+  | 'CONFIG_CHANGED'
+  | 'DATA_IMPORT'
+  | 'REPORT_GENERATED';
 
-// Risk level for anomaly detection
 export type AuditRisk = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 export interface AuditRecord {
@@ -51,29 +51,20 @@ export interface AuditRecord {
   userId?: string;
   userEmail?: string;
   userRole?: string;
-  sessionId?: string;      // JWT jti for session correlation
+  sessionId?: string;
   resource: string;
   resourceId?: string;
   action: string;
   outcome: AuditOutcome;
   ip: string;
   userAgent: string;
-  detail?: string;         // sanitised — NO raw PHI values
-  recordCount?: number;    // for bulk access events
-  durationMs?: number;     // request duration for performance audit
+  detail?: string;
+  recordCount?: number;
+  durationMs?: number;
 }
 
-// ─── KV helpers ──────────────────────────────────────────────────────────────
-const AUDIT_IDX     = 'audit:idx';
-const AUDIT_USER_PFX = 'audit:user:';       // per-user index for quick lookup
-const AUDIT_RISK_IDX = 'audit:risk:high';   // index of HIGH/CRITICAL records only
-const AUDIT_STATS   = 'audit:stats:daily';  // daily summary stats
-const AUDIT_TTL     = 6 * 365 * 24 * 60 * 60; // 6 years (HIPAA requires 6 years)
-const MAX_IDX       = 10000;                // keep last 10k IDs in main index
-const MAX_USER_IDX  = 500;                  // per-user index size
-const MAX_RISK_IDX  = 1000;                 // high-risk index size
-
-function auditKey(id: string) { return `audit:log:${id}`; }
+// ─── KV helpers (daily stats cache only) ─────────────────────────────────────
+const AUDIT_STATS = 'audit:stats:daily';
 
 async function kvGet<T>(kv: KVNamespace, key: string): Promise<T | null> {
   const v = await kv.get(key, 'text');
@@ -91,72 +82,91 @@ export function assessRisk(
   role?: string,
   recordCount?: number
 ): AuditRisk {
-  // Critical: auth failures, access denied on sensitive data
   if (outcome === 'DENIED' && ['PHI_DELETE', 'PHI_EXPORT', 'PHI_BULK_ACCESS'].includes(event)) return 'CRITICAL';
-  if (event === 'AUTH_LOCKED_OUT') return 'CRITICAL';
-  if (event === 'AUTH_MFA_FAILED') return 'HIGH';
-  if (event === 'EMERGENCY_ACCESS') return 'CRITICAL';
-  if (event === 'ACCESS_DENIED') return 'HIGH';
+  if (event === 'AUTH_LOCKED_OUT')   return 'CRITICAL';
+  if (event === 'AUTH_MFA_FAILED')   return 'HIGH';
+  if (event === 'EMERGENCY_ACCESS')  return 'CRITICAL';
+  if (event === 'ACCESS_DENIED')     return 'HIGH';
   if (event === 'AUTH_LOGIN_FAILED') return 'MEDIUM';
-  if (event === 'AUTH_TOKEN_INVALID') return 'MEDIUM';
-  // High: bulk data exports/access
-  if (event === 'PHI_EXPORT') return 'HIGH';
+  if (event === 'AUTH_TOKEN_INVALID')return 'MEDIUM';
+  if (event === 'PHI_EXPORT')        return 'HIGH';
   if (event === 'PHI_BULK_ACCESS' && (recordCount ?? 0) > 100) return 'HIGH';
-  if (event === 'PHI_BULK_ACCESS' && (recordCount ?? 0) > 25) return 'MEDIUM';
-  if (event === 'PHI_DELETE') return 'HIGH';
-  if (event === 'PHI_AMEND') return 'MEDIUM';
-  if (event === 'PHI_SIGN') return 'MEDIUM';
-  if (event === 'CONFIG_CHANGED') return 'HIGH';
-  // Low for normal reads/writes
+  if (event === 'PHI_BULK_ACCESS' && (recordCount ?? 0) > 25)  return 'MEDIUM';
+  if (event === 'PHI_DELETE')        return 'HIGH';
+  if (event === 'PHI_AMEND')         return 'MEDIUM';
+  if (event === 'PHI_SIGN')          return 'MEDIUM';
+  if (event === 'CONFIG_CHANGED')    return 'HIGH';
   return 'LOW';
+}
+
+// ─── Row mapper ───────────────────────────────────────────────────────────────
+function rowToRecord(r: Record<string, unknown>): AuditRecord {
+  return {
+    id:          r.id as string,
+    timestamp:   r.timestamp as string,
+    event:       r.event as AuditEvent,
+    risk:        r.risk_level as AuditRisk,
+    userId:      r.user_id as string | undefined,
+    userEmail:   r.user_email as string | undefined,
+    userRole:    r.user_role as string | undefined,
+    sessionId:   r.session_id as string | undefined,
+    resource:    r.resource as string,
+    resourceId:  r.resource_id as string | undefined,
+    action:      r.action as string,
+    outcome:     r.outcome as AuditOutcome,
+    ip:          r.ip_address as string,
+    userAgent:   r.user_agent as string,
+    detail:      r.details as string | undefined,
+    recordCount: r.record_count as number | undefined,
+    durationMs:  r.duration_ms as number | undefined,
+  };
 }
 
 // ─── Write a single audit record ─────────────────────────────────────────────
 export async function writeAudit(
   kv: KVNamespace,
-  record: Omit<AuditRecord, 'id' | 'timestamp' | 'risk'> & { risk?: AuditRisk }
+  record: Omit<AuditRecord, 'id' | 'timestamp' | 'risk'> & { risk?: AuditRisk; detail?: string },
+  db?: D1Database
 ): Promise<void> {
   try {
-    const id  = `aud-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    const now = new Date().toISOString();
+    const id   = `aud-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const ts   = dbNow();
     const risk = record.risk ?? assessRisk(record.event, record.outcome, record.userRole, record.recordCount);
-    const full: AuditRecord = { id, timestamp: now, risk, ...record };
+    const full: AuditRecord = { id, timestamp: ts, risk, ...record };
 
-    // Write the record with 6-year TTL
-    await kvPut(kv, auditKey(id), full, AUDIT_TTL);
-
-    // Update main rolling index
-    const idx = (await kvGet<string[]>(kv, AUDIT_IDX)) ?? [];
-    idx.push(id);
-    if (idx.length > MAX_IDX) idx.splice(0, idx.length - MAX_IDX);
-    await kvPut(kv, AUDIT_IDX, idx);
-
-    // Update per-user index for faster user-specific queries
-    if (record.userId) {
-      const userKey = `${AUDIT_USER_PFX}${record.userId}`;
-      const userIdx = (await kvGet<string[]>(kv, userKey)) ?? [];
-      userIdx.push(id);
-      if (userIdx.length > MAX_USER_IDX) userIdx.splice(0, userIdx.length - MAX_USER_IDX);
-      await kvPut(kv, userKey, userIdx, AUDIT_TTL);
+    // Write to D1 (primary — HIPAA-compliant 6-year persistence)
+    if (db) {
+      await dbRun(db,
+        `INSERT INTO audit_log
+           (id, timestamp, event, user_id, user_email, user_role, patient_id,
+            resource, resource_id, action, outcome, risk_level,
+            ip_address, user_agent, session_id, details,
+            phi_accessed, data_exported, emergency_access)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          id, ts, full.event,
+          full.userId ?? null, full.userEmail ?? null, full.userRole ?? null,
+          full.resourceId ?? null,  // patient_id approximation
+          full.resource, full.resourceId ?? null, full.action,
+          full.outcome, risk,
+          full.ip, full.userAgent, full.sessionId ?? null,
+          full.detail ?? null,
+          full.event.startsWith('PHI_') ? 1 : 0,
+          full.event === 'PHI_EXPORT' ? 1 : 0,
+          full.event === 'EMERGENCY_ACCESS' ? 1 : 0,
+        ]
+      );
     }
 
-    // Track HIGH/CRITICAL events in separate index for quick alerting
-    if (risk === 'HIGH' || risk === 'CRITICAL') {
-      const riskIdx = (await kvGet<string[]>(kv, AUDIT_RISK_IDX)) ?? [];
-      riskIdx.push(id);
-      if (riskIdx.length > MAX_RISK_IDX) riskIdx.splice(0, riskIdx.length - MAX_RISK_IDX);
-      await kvPut(kv, AUDIT_RISK_IDX, riskIdx);
-    }
-
-    // Update daily stats
+    // Update KV daily stats cache (fast aggregation, 90-day TTL)
     await updateDailyStats(kv, full);
-  } catch {
+  } catch (e) {
     // Audit failures must NEVER crash the request
-    console.error('[audit] Failed to write audit record');
+    console.error('[audit] Failed to write audit record', e);
   }
 }
 
-// ─── Daily stats tracker ─────────────────────────────────────────────────────
+// ─── Daily stats tracker (KV cache) ──────────────────────────────────────────
 interface DailyStats {
   date: string;
   totalEvents: number;
@@ -174,7 +184,7 @@ interface DailyStats {
 
 async function updateDailyStats(kv: KVNamespace, record: AuditRecord): Promise<void> {
   try {
-    const today = record.timestamp.slice(0, 10); // YYYY-MM-DD
+    const today    = record.timestamp.slice(0, 10);
     const statsKey = `${AUDIT_STATS}:${today}`;
     const stats: DailyStats = (await kvGet<DailyStats>(kv, statsKey)) ?? {
       date: today, totalEvents: 0, phiReads: 0, phiWrites: 0,
@@ -183,29 +193,26 @@ async function updateDailyStats(kv: KVNamespace, record: AuditRecord): Promise<v
     };
 
     stats.totalEvents++;
-    if (record.event === 'PHI_READ' || record.event === 'PHI_BULK_ACCESS') stats.phiReads++;
+    if (['PHI_READ', 'PHI_BULK_ACCESS'].includes(record.event))                       stats.phiReads++;
     if (['PHI_CREATE', 'PHI_UPDATE', 'PHI_SIGN', 'PHI_AMEND'].includes(record.event)) stats.phiWrites++;
-    if (record.event === 'PHI_DELETE') stats.phiDeletes++;
-    if (record.event === 'PHI_EXPORT') stats.phiExports++;
+    if (record.event === 'PHI_DELETE')   stats.phiDeletes++;
+    if (record.event === 'PHI_EXPORT')   stats.phiExports++;
     if (['AUTH_LOGIN_FAILED', 'AUTH_TOKEN_INVALID', 'AUTH_MFA_FAILED', 'AUTH_LOCKED_OUT'].includes(record.event)) stats.authFailures++;
-    if (record.outcome === 'DENIED') stats.accessDenied++;
-    if (record.risk === 'HIGH') stats.highRisk++;
-    if (record.risk === 'CRITICAL') stats.criticalRisk++;
-    if (record.userId && !stats.uniqueUsers.includes(record.userId)) {
+    if (record.outcome === 'DENIED')     stats.accessDenied++;
+    if (record.risk === 'HIGH')          stats.highRisk++;
+    if (record.risk === 'CRITICAL')      stats.criticalRisk++;
+    if (record.userId && !stats.uniqueUsers.includes(record.userId))
       stats.uniqueUsers = [...stats.uniqueUsers.slice(-99), record.userId];
-    }
-    if (record.ip !== 'unknown' && !stats.uniqueIps.includes(record.ip)) {
+    if (record.ip !== 'unknown' && !stats.uniqueIps.includes(record.ip))
       stats.uniqueIps = [...stats.uniqueIps.slice(-199), record.ip];
-    }
 
-    // Keep daily stats for 90 days
     await kvPut(kv, statsKey, stats, 90 * 24 * 60 * 60);
   } catch {
     // stats failure is non-critical
   }
 }
 
-// ─── Query audit log ──────────────────────────────────────────────────────────
+// ─── Query audit log (D1 primary, KV fallback) ────────────────────────────────
 export async function queryAuditLog(
   kv: KVNamespace,
   opts: {
@@ -216,42 +223,51 @@ export async function queryAuditLog(
     resource?: string;
     outcome?: AuditOutcome;
     risk?: AuditRisk;
-    since?: string;       // ISO timestamp — only records after this
+    since?: string;
     highRiskOnly?: boolean;
-  }
+  },
+  db?: D1Database
 ): Promise<{ records: AuditRecord[]; total: number }> {
-  // Use optimised per-user index when filtering by userId
-  let ids: string[];
-  if (opts.userId) {
-    ids = (await kvGet<string[]>(kv, `${AUDIT_USER_PFX}${opts.userId}`)) ?? [];
-  } else if (opts.highRiskOnly) {
-    ids = (await kvGet<string[]>(kv, AUDIT_RISK_IDX)) ?? [];
-  } else {
-    ids = (await kvGet<string[]>(kv, AUDIT_IDX)) ?? [];
-  }
-
   const limit  = Math.min(opts.limit ?? 100, 500);
   const offset = opts.offset ?? 0;
-  const results: AuditRecord[] = [];
-  let totalMatched = 0;
 
-  for (let i = ids.length - 1; i >= 0 && results.length < limit + offset; i--) {
-    const rec = await kvGet<AuditRecord>(kv, auditKey(ids[i]));
-    if (!rec) continue;
-    if (opts.event    && rec.event    !== opts.event)    continue;
-    if (opts.resource && rec.resource !== opts.resource) continue;
-    if (opts.outcome  && rec.outcome  !== opts.outcome)  continue;
-    if (opts.risk     && rec.risk     !== opts.risk)     continue;
-    if (opts.since    && rec.timestamp <= opts.since)    continue;
-    totalMatched++;
-    if (totalMatched > offset) results.push(rec);
+  if (db) {
+    const conditions: string[] = [];
+    const params: unknown[]    = [];
+
+    if (opts.userId)      { conditions.push('user_id = ?');    params.push(opts.userId); }
+    if (opts.event)       { conditions.push('event = ?');      params.push(opts.event); }
+    if (opts.resource)    { conditions.push('resource = ?');   params.push(opts.resource); }
+    if (opts.outcome)     { conditions.push('outcome = ?');    params.push(opts.outcome); }
+    if (opts.risk)        { conditions.push('risk_level = ?'); params.push(opts.risk); }
+    if (opts.since)       { conditions.push('timestamp > ?');  params.push(opts.since); }
+    if (opts.highRiskOnly){ conditions.push("risk_level IN ('HIGH','CRITICAL')"); }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const [countRow, rows] = await Promise.all([
+      dbGet<{ c: number }>(db, `SELECT COUNT(*) as c FROM audit_log ${where}`, params),
+      dbAll<Record<string, unknown>>(db,
+        `SELECT * FROM audit_log ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+        [...params, limit, offset]
+      ),
+    ]);
+
+    return {
+      records: rows.map(rowToRecord),
+      total:   countRow?.c ?? 0,
+    };
   }
 
-  return { records: results, total: totalMatched };
+  // KV fallback (no db) — return empty (shouldn't happen in production)
+  return { records: [], total: 0 };
 }
 
 // ─── HIPAA Compliance Report ──────────────────────────────────────────────────
-export async function getHipaaComplianceReport(kv: KVNamespace): Promise<{
+export async function getHipaaComplianceReport(
+  kv: KVNamespace,
+  db?: D1Database
+): Promise<{
   generatedAt: string;
   retentionPolicy: string;
   last7Days: DailyStats[];
@@ -275,11 +291,11 @@ export async function getHipaaComplianceReport(kv: KVNamespace): Promise<{
     return d.toISOString().slice(0, 10);
   });
 
+  // Build last 7 days from KV stats cache
   const last7Days: DailyStats[] = [];
   for (const date of dates) {
     const stats = await kvGet<DailyStats>(kv, `${AUDIT_STATS}:${date}`);
-    if (stats) last7Days.push(stats);
-    else last7Days.push({
+    last7Days.push(stats ?? {
       date, totalEvents: 0, phiReads: 0, phiWrites: 0,
       phiDeletes: 0, phiExports: 0, authFailures: 0, accessDenied: 0,
       highRisk: 0, criticalRisk: 0, uniqueUsers: [], uniqueIps: [],
@@ -299,17 +315,23 @@ export async function getHipaaComplianceReport(kv: KVNamespace): Promise<{
   const allUsers = new Set(last7Days.flatMap(d => d.uniqueUsers));
   totals.uniqueUsersActive = allUsers.size;
 
-  // Top risk records
-  const { records: topRisks } = await queryAuditLog(kv, { limit: 10, highRiskOnly: true });
-  const { records: recentAuthFailures } = await queryAuditLog(kv, { limit: 10, event: 'AUTH_LOGIN_FAILED' });
+  const [{ records: topRisks }, { records: recentAuthFailures }] = await Promise.all([
+    queryAuditLog(kv, { limit: 10, highRiskOnly: true }, db),
+    queryAuditLog(kv, { limit: 10, event: 'AUTH_LOGIN_FAILED' }, db),
+  ]);
 
-  // HIPAA compliance checks
-  const mainIdx = (await kvGet<string[]>(kv, AUDIT_IDX)) ?? [];
+  // D1 total record count
+  let d1Total = 0;
+  if (db) {
+    const row = await dbGet<{ c: number }>(db, `SELECT COUNT(*) as c FROM audit_log`);
+    d1Total = row?.c ?? 0;
+  }
+
   const complianceChecks = [
     {
       check: 'Audit log retention (6 years)',
       status: 'PASS' as const,
-      detail: `${mainIdx.length.toLocaleString()} records in audit index with 6-year TTL`,
+      detail: `${d1Total.toLocaleString()} records in D1 audit_log with 6-year retention policy`,
     },
     {
       check: 'Authentication logging',
@@ -324,7 +346,7 @@ export async function getHipaaComplianceReport(kv: KVNamespace): Promise<{
     {
       check: 'PHI export tracking',
       status: 'PASS' as const,
-      detail: `PHI_EXPORT event type active — ${totals.phiExports} exports logged`,
+      detail: `PHI_EXPORT event active — ${totals.phiExports} exports logged`,
     },
     {
       check: 'Role-based access control',
@@ -334,17 +356,17 @@ export async function getHipaaComplianceReport(kv: KVNamespace): Promise<{
     {
       check: 'JWT token revocation',
       status: 'PASS' as const,
-      detail: 'Token revocation list maintained in KV with session invalidation on logout',
+      detail: 'Token revocation maintained in KV; sessions invalidated on logout via D1',
     },
     {
       check: 'MFA enforcement capability',
       status: 'PASS' as const,
-      detail: 'TOTP MFA available for all staff accounts (HIPAA addressable)',
+      detail: 'TOTP MFA available for all staff accounts',
     },
     {
       check: 'Audit log integrity',
       status: 'PASS' as const,
-      detail: 'Records written with immutable IDs; index maintained separately from records',
+      detail: 'Records written to immutable D1 table; no DELETE/UPDATE permitted on audit_log',
     },
     {
       check: 'High-risk event alerting',
@@ -361,19 +383,20 @@ export async function getHipaaComplianceReport(kv: KVNamespace): Promise<{
   return {
     generatedAt: now.toISOString(),
     retentionPolicy: 'HIPAA §164.312(b) — 6 years from creation',
-    last7Days,
-    totals,
-    topRisks,
-    recentAuthFailures,
-    complianceChecks,
+    last7Days, totals, topRisks, recentAuthFailures, complianceChecks,
   };
 }
+
+// ─── Patch callers: update routes that call writeAudit / queryAuditLog ────────
+// All callers should be updated to pass c.env.DB as third argument.
+// writeAudit(kv, record, db) — db is optional, gracefully degrades.
+// queryAuditLog(kv, opts, db) — db is optional.
+// getHipaaComplianceReport(kv, db) — db is optional.
 
 // ─── Helper: extract resource name from path ─────────────────────────────────
 export function resourceFromPath(path: string): string {
   const m = path.match(/^\/api\/([^\/]+)/);
   if (!m) return 'unknown';
-  const seg = m[1];
   const MAP: Record<string, string> = {
     patients: 'patient', exams: 'exam', billing: 'billing', erx: 'prescription',
     portal: 'portal', messaging: 'message', telehealth: 'telehealth',
@@ -383,21 +406,20 @@ export function resourceFromPath(path: string): string {
     analytics: 'analytics', notifications: 'notification', documents: 'document',
     engagement: 'engagement', mfa: 'mfa',
   };
-  return MAP[seg] ?? seg;
+  return MAP[m[1]] ?? m[1];
 }
 
 // ─── Helper: derive AuditEvent from HTTP method ───────────────────────────────
 export function auditEventFromMethod(method: string, path: string): AuditEvent {
   const isAuth = path.startsWith('/api/auth');
   if (isAuth) return 'AUTH_LOGIN';
-  // Detect bulk/export patterns
   if (method.toUpperCase() === 'GET') {
     if (path.includes('/export') || path.includes('/download') || path.includes('/pdf')) return 'PHI_EXPORT';
     if (path.match(/\/(list|search|bulk|all)/) || !path.match(/\/[a-z0-9-]{8,}/)) return 'PHI_BULK_ACCESS';
     return 'PHI_READ';
   }
-  if (path.includes('/sign')) return 'PHI_SIGN';
-  if (path.includes('/amend')) return 'PHI_AMEND';
+  if (path.includes('/sign'))    return 'PHI_SIGN';
+  if (path.includes('/amend'))   return 'PHI_AMEND';
   if (path.includes('/report') || path.includes('/analytics')) return 'REPORT_GENERATED';
   switch (method.toUpperCase()) {
     case 'POST':   return 'PHI_CREATE';

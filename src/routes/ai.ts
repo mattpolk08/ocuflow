@@ -14,7 +14,8 @@ import {
   icd10Catalog, drugInteractions, clinicalGuidelines,
 } from '../lib/ai'
 
-type Bindings = { OCULOFLOW_KV: KVNamespace }
+type Bindings = { OCULOFLOW_KV: KVNamespace
+  DB: D1Database }
 type Variables = { auth: import('../types/auth').AuthContext }
 type Resp = { success: boolean; data?: unknown; message?: string; error?: string }
 
@@ -23,7 +24,7 @@ const aiRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 // ── Ping / Seed ───────────────────────────────────────────────────────────────
 aiRoutes.get('/ping', async (c) => {
   try {
-    await seedAiData(c.env.OCULOFLOW_KV)
+    await seedAiData(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<Resp>({ success: true, data: { status: 'ok', module: 'ai-cds' } })
   } catch (e: any) {
     return c.json<Resp>({ success: false, error: e.message }, 500)
@@ -33,7 +34,7 @@ aiRoutes.get('/ping', async (c) => {
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 aiRoutes.get('/dashboard', async (c) => {
   try {
-    const data = await getAiDashboard(c.env.OCULOFLOW_KV)
+    const data = await getAiDashboard(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<Resp>({ success: true, data })
   } catch (e: any) {
     return c.json<Resp>({ success: false, error: e.message }, 500)
@@ -98,7 +99,7 @@ aiRoutes.post('/icd10/suggest', requireRole('ADMIN', 'PROVIDER', 'NURSE'), async
       outputSummary: `${suggestions.length} suggestions (top: ${suggestions[0]?.icdCode.code ?? 'none'})`,
       userId: 'system', userName: 'System',
       durationMs: result.processingMs,
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data: result })
   } catch (e: any) {
     return c.json<Resp>({ success: false, error: e.message }, 500)
@@ -121,14 +122,14 @@ aiRoutes.post('/notes/generate', requireRole('ADMIN', 'PROVIDER', 'NURSE'), asyn
       diagnoses: body.diagnoses ?? [],
       existingNote: body.existingNote,
     })
-    await saveNote(c.env.OCULOFLOW_KV, note)
+    await saveNote(c.env.OCULOFLOW_KV, note, c.env.DB)
     await logQuery(c.env.OCULOFLOW_KV, {
       queryType: 'NOTE_GENERATION',
       input: { patientId: body.patientId, chiefComplaint: body.chiefComplaint },
       outputSummary: `${note.wordCount} words, ${note.sections.length} sections`,
       userId: 'system', userName: 'System',
       durationMs: Date.now() - t0,
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data: note }, 201)
   } catch (e: any) {
     return c.json<Resp>({ success: false, error: e.message }, 500)
@@ -138,7 +139,7 @@ aiRoutes.post('/notes/generate', requireRole('ADMIN', 'PROVIDER', 'NURSE'), asyn
 aiRoutes.get('/notes', async (c) => {
   try {
     const { patientId } = c.req.query()
-    const notes = await listNotes(c.env.OCULOFLOW_KV, patientId)
+    const notes = await listNotes(c.env.OCULOFLOW_KV, patientId, c.env.DB)
     return c.json<Resp>({ success: true, data: notes })
   } catch (e: any) {
     return c.json<Resp>({ success: false, error: e.message }, 500)
@@ -225,7 +226,7 @@ aiRoutes.get('/guidelines/by-icd/:code', (c) => {
 aiRoutes.get('/risk', async (c) => {
   try {
     const { patientId, category } = c.req.query()
-    const scores = await listRiskScores(c.env.OCULOFLOW_KV, patientId, category)
+    const scores = await listRiskScores(c.env.OCULOFLOW_KV, patientId, category, c.env.DB)
     return c.json<Resp>({ success: true, data: scores })
   } catch (e: any) {
     return c.json<Resp>({ success: false, error: e.message }, 500)
@@ -248,14 +249,14 @@ aiRoutes.post('/risk/compute', requireRole('ADMIN', 'PROVIDER'), async (c) => {
     }
     const t0 = Date.now()
     const score = computeRiskScore(patientId, patientName, category as RiskCategory)
-    await saveRiskScore(c.env.OCULOFLOW_KV, score)
+    await saveRiskScore(c.env.OCULOFLOW_KV, score, c.env.DB)
     await logQuery(c.env.OCULOFLOW_KV, {
       queryType: 'RISK_CALC',
       input: { patientId, category },
       outputSummary: `${score.level} risk, score ${score.score}/100`,
       userId: 'system', userName: 'System',
       durationMs: Date.now() - t0,
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data: score }, 201)
   } catch (e: any) {
     return c.json<Resp>({ success: false, error: e.message }, 500)
@@ -275,7 +276,7 @@ aiRoutes.get('/insights', async (c) => {
   try {
     const { type, priority, dismissed } = c.req.query()
     const showDismissed = dismissed === 'true' ? true : dismissed === 'false' ? false : undefined
-    const insights = await listInsights(c.env.OCULOFLOW_KV, type, priority, showDismissed)
+    const insights = await listInsights(c.env.OCULOFLOW_KV, type, priority, showDismissed, c.env.DB)
     return c.json<Resp>({ success: true, data: insights })
   } catch (e: any) {
     return c.json<Resp>({ success: false, error: e.message }, 500)
@@ -284,7 +285,7 @@ aiRoutes.get('/insights', async (c) => {
 
 aiRoutes.patch('/insights/:id/dismiss', requireRole('ADMIN', 'PROVIDER'), async (c) => {
   try {
-    const insight = await dismissInsight(c.env.OCULOFLOW_KV, c.req.param('id'))
+    const insight = await dismissInsight(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
     if (!insight) return c.json<Resp>({ success: false, error: 'Insight not found' }, 404)
     return c.json<Resp>({ success: true, data: insight, message: 'Insight dismissed' })
   } catch (e: any) {
@@ -323,7 +324,7 @@ aiRoutes.post('/guidelines/lookup', async (c) => {
       outputSummary: `${results.length} guidelines found`,
       userId: 'system', userName: 'System',
       durationMs: Date.now() - t0,
-    })
+    }, c.env.DB)
 
     return c.json<Resp>({ success: true, data: { results, count: results.length, queryMs: Date.now() - t0 } })
   } catch (e: any) {
