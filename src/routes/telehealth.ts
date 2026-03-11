@@ -14,7 +14,8 @@ import {
 import type { VisitStatus, VisitType, Urgency } from '../types/telehealth'
 import { requireRole } from '../middleware/auth'
 
-type Bindings = { OCULOFLOW_KV: KVNamespace }
+type Bindings = { OCULOFLOW_KV: KVNamespace
+  DB: D1Database }
 type Variables = { auth: import('../types/auth').AuthContext }
 type Resp     = { success: boolean; data?: unknown; message?: string; error?: string }
 
@@ -22,14 +23,14 @@ const telehealthRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>(
 
 // ── Ping / seed ────────────────────────────────────────────────────────────────
 telehealthRoutes.get('/ping', async (c) => {
-  await ensureTelehealthSeed(c.env.OCULOFLOW_KV)
+  await ensureTelehealthSeed(c.env.OCULOFLOW_KV, c.env.DB)
   return c.json<Resp>({ success: true, data: { status: 'ok', module: 'telehealth' } })
 })
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 telehealthRoutes.get('/dashboard', async (c) => {
   try {
-    const data = await getTelehealthDashboard(c.env.OCULOFLOW_KV)
+    const data = await getTelehealthDashboard(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<Resp>({ success: true, data })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
@@ -38,7 +39,7 @@ telehealthRoutes.get('/dashboard', async (c) => {
 telehealthRoutes.get('/visits', async (c) => {
   try {
     const { filter, providerId } = c.req.query()
-    const visits = await listVisits(c.env.OCULOFLOW_KV, filter, providerId)
+    const visits = await listVisits(c.env.OCULOFLOW_KV, filter, providerId, c.env.DB)
     return c.json<Resp>({ success: true, data: visits })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
@@ -46,7 +47,7 @@ telehealthRoutes.get('/visits', async (c) => {
 // ── Get single visit ──────────────────────────────────────────────────────────
 telehealthRoutes.get('/visits/:id', async (c) => {
   try {
-    const visit = await getVisit(c.env.OCULOFLOW_KV, c.req.param('id'))
+    const visit = await getVisit(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
     if (!visit) return c.json<Resp>({ success: false, error: 'Visit not found' }, 404)
     return c.json<Resp>({ success: true, data: visit })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
@@ -61,7 +62,7 @@ telehealthRoutes.post('/visits', requireRole('ADMIN', 'PROVIDER', 'NURSE', 'FRON
     const visit = await createVisit(c.env.OCULOFLOW_KV, {
       ...body,
       status: 'INTAKE_PENDING' as VisitStatus,
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data: visit, message: 'Visit created' }, 201)
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
@@ -72,7 +73,7 @@ telehealthRoutes.patch('/visits/:id/status', requireRole('ADMIN', 'PROVIDER', 'N
     const { status } = await c.req.json()
     const validStatuses: VisitStatus[] = ['INTAKE_PENDING','INTAKE_COMPLETE','UNDER_REVIEW','AWAITING_INFO','COMPLETED','CANCELLED']
     if (!validStatuses.includes(status)) return c.json<Resp>({ success: false, error: 'Invalid status' }, 400)
-    const visit = await updateVisitStatus(c.env.OCULOFLOW_KV, c.req.param('id'), status)
+    const visit = await updateVisitStatus(c.env.OCULOFLOW_KV, c.req.param('id'), status, c.env.DB)
     if (!visit) return c.json<Resp>({ success: false, error: 'Visit not found' }, 404)
     return c.json<Resp>({ success: true, data: visit, message: `Status updated to ${status}` })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
@@ -83,7 +84,7 @@ telehealthRoutes.patch('/visits/:id/assign', requireRole('ADMIN', 'PROVIDER'), a
   try {
     const { providerId, providerName } = await c.req.json()
     if (!providerId || !providerName) return c.json<Resp>({ success: false, error: 'Missing providerId or providerName' }, 400)
-    const visit = await assignVisit(c.env.OCULOFLOW_KV, c.req.param('id'), providerId, providerName)
+    const visit = await assignVisit(c.env.OCULOFLOW_KV, c.req.param('id'), providerId, providerName, c.env.DB)
     if (!visit) return c.json<Resp>({ success: false, error: 'Visit not found' }, 404)
     return c.json<Resp>({ success: true, data: visit, message: `Assigned to ${providerName}` })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
@@ -111,7 +112,7 @@ telehealthRoutes.post('/visits/:id/questionnaire', async (c) => {
       photoUrls: body.photoUrls || [],
       submittedAt: new Date().toISOString(),
       answers: body.answers || [],
-    })
+    }, c.env.DB)
     if (!visit) return c.json<Resp>({ success: false, error: 'Visit not found' }, 404)
     return c.json<Resp>({ success: true, data: visit, message: 'Questionnaire submitted' })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
@@ -137,7 +138,7 @@ telehealthRoutes.post('/visits/:id/review', requireRole('ADMIN', 'PROVIDER'), as
       referralTo: body.referralTo,
       patientInstructions: body.patientInstructions,
       internalNotes: body.internalNotes || '',
-    }, body.sign === true)
+    }, body.sign === true, c.env.DB)
     if (!visit) return c.json<Resp>({ success: false, error: 'Visit not found' }, 404)
     return c.json<Resp>({ success: true, data: visit, message: body.sign ? 'Review signed & completed' : 'Review saved' })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
@@ -168,7 +169,7 @@ telehealthRoutes.patch('/visits/:id/info-request/:irId', async (c) => {
 // ── Visit messages ────────────────────────────────────────────────────────────
 telehealthRoutes.get('/visits/:id/messages', async (c) => {
   try {
-    const visit = await getVisit(c.env.OCULOFLOW_KV, c.req.param('id'))
+    const visit = await getVisit(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
     if (!visit) return c.json<Resp>({ success: false, error: 'Visit not found' }, 404)
     return c.json<Resp>({ success: true, data: visit.messages })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }

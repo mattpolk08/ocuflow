@@ -9,7 +9,8 @@ import {
   VALID_PA_STATUSES, VALID_SERVICE_TYPES, VALID_URGENCY,
 } from '../lib/priorauth';
 
-type Bindings = { OCULOFLOW_KV: KVNamespace };
+type Bindings = { OCULOFLOW_KV: KVNamespace
+  DB: D1Database };
 type Variables = { auth: import('../types/auth').AuthContext };
 export const paRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -20,7 +21,7 @@ paRoutes.get('/ping', (c) =>
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 paRoutes.get('/dashboard', async (c) => {
-  const stats = await getPADashboard(c.env.OCULOFLOW_KV);
+  const stats = await getPADashboard(c.env.OCULOFLOW_KV, c.env.DB);
   return c.json<PAResp>({ success: true, data: stats });
 });
 
@@ -29,13 +30,13 @@ paRoutes.get('/requests', async (c) => {
   const { status, patientId, providerId, serviceType, urgency } = c.req.query();
   const requests = await listPARequests(c.env.OCULOFLOW_KV, {
     status, patientId, providerId, serviceType, urgency,
-  });
+  }, c.env.DB);
   return c.json<PAResp>({ success: true, data: { requests, count: requests.length } });
 });
 
 // ── Get Single PA Request ─────────────────────────────────────────────────────
 paRoutes.get('/requests/:id', async (c) => {
-  const req = await getPARequest(c.env.OCULOFLOW_KV, c.req.param('id'));
+  const req = await getPARequest(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB);
   if (!req) return c.json<PAResp>({ success: false, error: 'PA request not found' }, 404);
   return c.json<PAResp>({ success: true, data: req });
 });
@@ -53,7 +54,7 @@ paRoutes.post('/requests', requireRole('ADMIN', 'PROVIDER', 'BILLING', 'NURSE'),
   if (body.serviceType && !VALID_SERVICE_TYPES.includes(body.serviceType)) {
     return c.json<PAResp>({ success: false, error: `Invalid serviceType. Valid: ${VALID_SERVICE_TYPES.join(', ')}` }, 400);
   }
-  const req = await createPARequest(c.env.OCULOFLOW_KV, body);
+  const req = await createPARequest(c.env.OCULOFLOW_KV, body, c.env.DB);
   return c.json<PAResp>({ success: true, data: req }, 201);
 });
 
@@ -67,7 +68,7 @@ paRoutes.patch('/requests/:id/status', requireRole('ADMIN', 'PROVIDER', 'BILLING
   if (!VALID_PA_STATUSES.includes(status)) {
     return c.json<PAResp>({ success: false, error: `Invalid status. Valid: ${VALID_PA_STATUSES.join(', ')}` }, 400);
   }
-  const req = await updatePAStatus(c.env.OCULOFLOW_KV, c.req.param('id'), status as PAStatus, { changedBy, reason, notes, authNumber });
+  const req = await updatePAStatus(c.env.OCULOFLOW_KV, c.req.param('id'), status as PAStatus, { changedBy, reason, notes, authNumber }, c.env.DB);
   if (!req) return c.json<PAResp>({ success: false, error: 'PA request not found' }, 404);
   return c.json<PAResp>({ success: true, data: req });
 });
@@ -86,7 +87,7 @@ paRoutes.post('/requests/:id/documents', async (c) => {
     uploadedBy,
     sizeKb: sizeKb ?? 0,
     url: url ?? `/documents/${name}`,
-  });
+  }, c.env.DB);
   if (!req) return c.json<PAResp>({ success: false, error: 'PA request not found' }, 404);
   return c.json<PAResp>({ success: true, data: req }, 201);
 });
@@ -103,7 +104,7 @@ paRoutes.post('/requests/:id/notes', async (c) => {
     authorRole: authorRole ?? 'Staff',
     content,
     isInternal: isInternal !== false,
-  });
+  }, c.env.DB);
   if (!req) return c.json<PAResp>({ success: false, error: 'PA request not found' }, 404);
   return c.json<PAResp>({ success: true, data: req }, 201);
 });
@@ -125,7 +126,7 @@ paRoutes.post('/requests/:id/appeal', requireRole('ADMIN', 'PROVIDER', 'BILLING'
     reason,
     additionalDocs: body.additionalDocs ?? [],
     outcome: 'PENDING',
-  });
+  }, c.env.DB);
   if (!req) return c.json<PAResp>({ success: false, error: 'PA request not found' }, 404);
   return c.json<PAResp>({ success: true, data: req }, 201);
 });

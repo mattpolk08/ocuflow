@@ -16,6 +16,7 @@ import { requireRole } from '../middleware/auth'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
+  DB: D1Database
   TWILIO_ACCOUNT_SID?: string
   TWILIO_AUTH_TOKEN?: string
   TWILIO_FROM_NUMBER?: string
@@ -51,7 +52,7 @@ function getEmailConfig(env: Bindings) {
 
 // ── Seed / ping ────────────────────────────────────────────────────────────────
 remindersRoutes.get('/ping', async (c) => {
-  await ensureCommsSeed(c.env.OCULOFLOW_KV)
+  await ensureCommsSeed(c.env.OCULOFLOW_KV, c.env.DB)
   const smsReady   = !!c.env.TWILIO_ACCOUNT_SID && !c.env.TWILIO_ACCOUNT_SID.startsWith('ACxx')
   const emailReady = !!c.env.SENDGRID_API_KEY   && !c.env.SENDGRID_API_KEY.startsWith('SG.xx')
   return c.json<Resp>({ success: true, data: {
@@ -99,7 +100,7 @@ remindersRoutes.post('/test-email', requireRole('ADMIN'), async (c) => {
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 remindersRoutes.get('/dashboard', async (c) => {
   try {
-    const data = await getCommsDashboard(c.env.OCULOFLOW_KV)
+    const data = await getCommsDashboard(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<Resp>({ success: true, data })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
@@ -107,14 +108,14 @@ remindersRoutes.get('/dashboard', async (c) => {
 // ── Templates ─────────────────────────────────────────────────────────────────
 remindersRoutes.get('/templates', async (c) => {
   try {
-    const templates = await listTemplates(c.env.OCULOFLOW_KV)
+    const templates = await listTemplates(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<Resp>({ success: true, data: templates })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
 remindersRoutes.get('/templates/:id', async (c) => {
   try {
-    const tpl = await getTemplate(c.env.OCULOFLOW_KV, c.req.param('id'))
+    const tpl = await getTemplate(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
     if (!tpl) return c.json<Resp>({ success: false, error: 'Template not found' }, 404)
     return c.json<Resp>({ success: true, data: tpl })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
@@ -125,7 +126,7 @@ remindersRoutes.post('/templates', requireRole('ADMIN', 'FRONT_DESK'), async (c)
     const body = await c.req.json()
     const missing = ['name', 'type', 'channel', 'body'].filter(k => !body[k])
     if (missing.length) return c.json<Resp>({ success: false, error: `Missing: ${missing.join(', ')}` }, 400)
-    const tpl = await createTemplate(c.env.OCULOFLOW_KV, { ...body, isActive: body.isActive ?? true })
+    const tpl = await createTemplate(c.env.OCULOFLOW_KV, { ...body, isActive: body.isActive ?? true }, c.env.DB)
     return c.json<Resp>({ success: true, data: tpl, message: 'Template created' }, 201)
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
@@ -133,7 +134,7 @@ remindersRoutes.post('/templates', requireRole('ADMIN', 'FRONT_DESK'), async (c)
 remindersRoutes.patch('/templates/:id', requireRole('ADMIN', 'FRONT_DESK'), async (c) => {
   try {
     const body = await c.req.json()
-    const tpl = await updateTemplate(c.env.OCULOFLOW_KV, c.req.param('id'), body)
+    const tpl = await updateTemplate(c.env.OCULOFLOW_KV, c.req.param('id'), body, c.env.DB)
     if (!tpl) return c.json<Resp>({ success: false, error: 'Template not found' }, 404)
     return c.json<Resp>({ success: true, data: tpl, message: 'Template updated' })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
@@ -142,7 +143,7 @@ remindersRoutes.patch('/templates/:id', requireRole('ADMIN', 'FRONT_DESK'), asyn
 // Preview a template with sample variables
 remindersRoutes.post('/templates/:id/preview', async (c) => {
   try {
-    const tpl = await getTemplate(c.env.OCULOFLOW_KV, c.req.param('id'))
+    const tpl = await getTemplate(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
     if (!tpl) return c.json<Resp>({ success: false, error: 'Template not found' }, 404)
     const vars = await c.req.json()
     const sampleVars = {
@@ -160,14 +161,14 @@ remindersRoutes.get('/messages', async (c) => {
     const { patientId, status, messageType, limit } = c.req.query()
     const msgs = await listMessages(c.env.OCULOFLOW_KV, {
       patientId, status, messageType, limit: limit ? parseInt(limit) : undefined,
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data: msgs })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
 remindersRoutes.get('/messages/:id', async (c) => {
   try {
-    const msg = await getMessage(c.env.OCULOFLOW_KV, c.req.param('id'))
+    const msg = await getMessage(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
     if (!msg) return c.json<Resp>({ success: false, error: 'Message not found' }, 404)
     return c.json<Resp>({ success: true, data: msg })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
@@ -183,7 +184,7 @@ remindersRoutes.post('/messages/send', requireRole('ADMIN', 'FRONT_DESK', 'NURSE
       ...body,
       smsConfig:   getSmsConfig(c.env),
       emailConfig: getEmailConfig(c.env),
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data: msg, message: `Message ${msg.status === 'DELIVERED' ? 'sent successfully' : 'failed to send'}` }, 201)
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
@@ -213,7 +214,7 @@ remindersRoutes.post('/messages/:id/response', async (c) => {
 // ── Reminder Rules ────────────────────────────────────────────────────────────
 remindersRoutes.get('/rules', async (c) => {
   try {
-    const rules = await listRules(c.env.OCULOFLOW_KV)
+    const rules = await listRules(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<Resp>({ success: true, data: rules })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
@@ -274,14 +275,14 @@ remindersRoutes.post('/no-shows/:id/followup', async (c) => {
 // ── Campaigns ─────────────────────────────────────────────────────────────────
 remindersRoutes.get('/campaigns', async (c) => {
   try {
-    const campaigns = await listCampaigns(c.env.OCULOFLOW_KV)
+    const campaigns = await listCampaigns(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<Resp>({ success: true, data: campaigns })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
 
 remindersRoutes.get('/campaigns/:id', async (c) => {
   try {
-    const campaign = await getCampaign(c.env.OCULOFLOW_KV, c.req.param('id'))
+    const campaign = await getCampaign(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
     if (!campaign) return c.json<Resp>({ success: false, error: 'Campaign not found' }, 404)
     return c.json<Resp>({ success: true, data: campaign })
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
@@ -296,7 +297,7 @@ remindersRoutes.post('/campaigns', requireRole('ADMIN', 'FRONT_DESK'), async (c)
       ...body,
       status: 'DRAFT', recipients: body.recipients ?? [],
       recipientCount: (body.recipients ?? []).length,
-    })
+    }, c.env.DB)
     return c.json<Resp>({ success: true, data: campaign, message: 'Campaign created' }, 201)
   } catch (err) { return c.json<Resp>({ success: false, error: String(err) }, 500) }
 })
@@ -314,7 +315,7 @@ remindersRoutes.patch('/campaigns/:id/status', requireRole('ADMIN', 'FRONT_DESK'
 // Simulate sending a campaign (DRAFT → RUNNING → COMPLETED)
 remindersRoutes.post('/campaigns/:id/launch', requireRole('ADMIN'), async (c) => {
   try {
-    const campaign = await getCampaign(c.env.OCULOFLOW_KV, c.req.param('id'))
+    const campaign = await getCampaign(c.env.OCULOFLOW_KV, c.req.param('id'), c.env.DB)
     if (!campaign) return c.json<Resp>({ success: false, error: 'Campaign not found' }, 404)
     if (campaign.status !== 'DRAFT' && campaign.status !== 'SCHEDULED') {
       return c.json<Resp>({ success: false, error: `Cannot launch campaign in ${campaign.status} status` }, 400)
@@ -322,7 +323,7 @@ remindersRoutes.post('/campaigns/:id/launch', requireRole('ADMIN'), async (c) =>
     // Mark running
     await updateCampaignStatus(c.env.OCULOFLOW_KV, c.req.param('id'), 'RUNNING')
     // Simulate sends for each recipient
-    const tpl = await getTemplate(c.env.OCULOFLOW_KV, campaign.templateId)
+    const tpl = await getTemplate(c.env.OCULOFLOW_KV, campaign.templateId, c.env.DB)
     let sent = 0, delivered = 0
     for (const r of campaign.recipients) {
       const msg = await sendMessage(c.env.OCULOFLOW_KV, {
@@ -330,7 +331,7 @@ remindersRoutes.post('/campaigns/:id/launch', requireRole('ADMIN'), async (c) =>
         patientPhone: r.patientPhone, channel: campaign.channel as CommChannel,
         messageType: campaign.messageType as MessageType, templateId: campaign.templateId,
         body: tpl ? fillTemplate(tpl.body, { patient_name: r.patientName, date: '', time: '', provider: '', location: '', reason: '' }) : `Campaign: ${campaign.name}`,
-      })
+      }, c.env.DB)
       r.status   = msg.status as any
       r.messageId = msg.id
       sent++; if (msg.status === 'DELIVERED') delivered++

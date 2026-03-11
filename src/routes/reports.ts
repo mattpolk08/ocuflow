@@ -17,7 +17,8 @@ import {
   getPatientStats,
 } from '../lib/reports'
 
-type Bindings = { OCULOFLOW_KV: KVNamespace }
+type Bindings = { OCULOFLOW_KV: KVNamespace
+  DB: D1Database }
 
 const reports = new Hono<{ Bindings: Bindings }>()
 
@@ -32,7 +33,7 @@ function parseRange(raw?: string): DateRange {
 reports.get('/dashboard', async (c) => {
   try {
     const range = parseRange(c.req.query('range'))
-    const data  = await getReportsDashboard(c.env.OCULOFLOW_KV, range)
+    const data  = await getReportsDashboard(c.env.OCULOFLOW_KV, range, c.env.DB)
     return c.json<ApiResponse<ReportsDashboard>>({ success: true, data })
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
@@ -43,7 +44,7 @@ reports.get('/dashboard', async (c) => {
 reports.get('/revenue', async (c) => {
   try {
     const range = parseRange(c.req.query('range'))
-    const data  = await getRevenueSummary(c.env.OCULOFLOW_KV, range)
+    const data  = await getRevenueSummary(c.env.OCULOFLOW_KV, range, c.env.DB)
     return c.json<ApiResponse<typeof data>>({ success: true, data })
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
@@ -54,7 +55,7 @@ reports.get('/revenue', async (c) => {
 reports.get('/providers', async (c) => {
   try {
     const range = parseRange(c.req.query('range'))
-    const data  = await getProviderStats(c.env.OCULOFLOW_KV, range)
+    const data  = await getProviderStats(c.env.OCULOFLOW_KV, range, c.env.DB)
     return c.json<ApiResponse<typeof data>>({ success: true, data })
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
@@ -65,7 +66,7 @@ reports.get('/providers', async (c) => {
 reports.get('/payer-mix', async (c) => {
   try {
     const range = parseRange(c.req.query('range'))
-    const data  = await getPayerMix(c.env.OCULOFLOW_KV, range)
+    const data  = await getPayerMix(c.env.OCULOFLOW_KV, range, c.env.DB)
     return c.json<ApiResponse<typeof data>>({ success: true, data })
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
@@ -75,7 +76,7 @@ reports.get('/payer-mix', async (c) => {
 // ── GET /api/reports/ar-aging ─────────────────────────────────────────────────
 reports.get('/ar-aging', async (c) => {
   try {
-    const data = await getArAging(c.env.OCULOFLOW_KV)
+    const data = await getArAging(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<ApiResponse<typeof data>>({ success: true, data })
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
@@ -86,7 +87,7 @@ reports.get('/ar-aging', async (c) => {
 reports.get('/appointments', async (c) => {
   try {
     const range = parseRange(c.req.query('range'))
-    const data  = await getAppointmentStats(c.env.OCULOFLOW_KV, range)
+    const data  = await getAppointmentStats(c.env.OCULOFLOW_KV, range, c.env.DB)
     return c.json<ApiResponse<typeof data>>({ success: true, data })
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
@@ -97,7 +98,7 @@ reports.get('/appointments', async (c) => {
 reports.get('/exams', async (c) => {
   try {
     const range = parseRange(c.req.query('range'))
-    const data  = await getExamStats(c.env.OCULOFLOW_KV, range)
+    const data  = await getExamStats(c.env.OCULOFLOW_KV, range, c.env.DB)
     return c.json<ApiResponse<typeof data>>({ success: true, data })
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
@@ -107,7 +108,7 @@ reports.get('/exams', async (c) => {
 // ── GET /api/reports/patients ─────────────────────────────────────────────────
 reports.get('/patients', async (c) => {
   try {
-    const data = await getPatientStats(c.env.OCULOFLOW_KV)
+    const data = await getPatientStats(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<ApiResponse<typeof data>>({ success: true, data })
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)

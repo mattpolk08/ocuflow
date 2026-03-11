@@ -1,723 +1,293 @@
-// ─── Phase 8B – Prior Authorization Library ──────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// OculoFlow — Prior Authorization (Phase D1-11) — D1-backed
+// prior_auth_requests → D1 (JSON blobs for documents, notes, history)
+// paCriteriaCatalog stays in-memory (static reference data)
+// KV param kept for backward-compat but NOT used for data.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import type {
   PriorAuthRequest, PAStatus, PAServiceType, PAUrgency, PADecisionReason,
   PADocument, PANote, PAStatusHistory, PeerToPeerRequest, AppealRecord,
-  PACriteria, PADashboardStats, DocumentType,
-} from '../types/priorauth';
+  PACriteria, PADashboardStats,
+} from '../types/priorauth'
+import { dbGet, dbAll, dbRun, now as dbNow } from './db'
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-function uid(prefix: string): string {
-  return `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-}
-function iso(offset = 0): string {
-  return new Date(Date.now() + offset).toISOString();
-}
-function daysFromNow(n: number): string {
-  return new Date(Date.now() + n * 86_400_000).toISOString();
-}
-function daysAgo(n: number): string {
-  return new Date(Date.now() - n * 86_400_000).toISOString();
-}
-
-// ── KV helpers ────────────────────────────────────────────────────────────────
-async function kvGet<T>(kv: KVNamespace, key: string): Promise<T | null> {
-  const v = await kv.get(key, 'text');
-  return v ? (JSON.parse(v) as T) : null;
-}
-async function kvPut(kv: KVNamespace, key: string, val: unknown): Promise<void> {
-  await kv.put(key, JSON.stringify(val));
-}
-async function kvDel(kv: KVNamespace, key: string): Promise<void> {
-  await kv.delete(key);
-}
-
-const PA_IDX  = 'pa:idx';
-const PA_SEED = 'pa:seeded';
-const paKey   = (id: string) => `pa:req:${id}`;
-
-// ── PA Criteria catalog ───────────────────────────────────────────────────────
+// ── PA Criteria Catalog (static, in-memory) ───────────────────────────────────
 export const paCriteriaCatalog: PACriteria[] = [
-  {
-    payerId: 'payer-medicare',
-    payerName: 'Medicare Part B',
-    serviceCode: 'J0178',
-    serviceDescription: 'Injection, aflibercept (Eylea), 1 mg',
-    requiresPA: true,
-    stepTherapyRequired: false,
-    documentationRequired: ['CLINICAL_NOTES', 'DIAGNOSIS_SUPPORTING', 'LAB_RESULTS'],
-    typicalTurnaround: '3-5 business days',
-    urgentTurnaround: '72 hours',
-    notes: 'Diagnosis of wet AMD, CRVO, BRVO, or diabetic macular edema required.',
-  },
-  {
-    payerId: 'payer-medicare',
-    payerName: 'Medicare Part B',
-    serviceCode: 'J2778',
-    serviceDescription: 'Injection, ranibizumab (Lucentis), 0.1 mg',
-    requiresPA: true,
-    stepTherapyRequired: false,
-    documentationRequired: ['CLINICAL_NOTES', 'DIAGNOSIS_SUPPORTING'],
-    typicalTurnaround: '3-5 business days',
-    urgentTurnaround: '72 hours',
-  },
-  {
-    payerId: 'payer-bcbs',
-    payerName: 'Blue Cross Blue Shield',
-    serviceCode: 'S0093',
-    serviceDescription: 'Cyclosporine ophthalmic emulsion (Restasis), 0.05%, per 1 mL',
-    requiresPA: true,
-    stepTherapyRequired: true,
-    stepTherapyDrugs: ['Artificial tears (OTC)', 'Punctal plugs'],
-    documentationRequired: ['CLINICAL_NOTES', 'PRIOR_TREATMENT_HISTORY', 'LETTER_OF_MEDICAL_NECESSITY'],
-    typicalTurnaround: '5-7 business days',
-    urgentTurnaround: '72 hours',
-    notes: 'Must document failure of 2 OTC lubricants for ≥3 months.',
-  },
-  {
-    payerId: 'payer-bcbs',
-    payerName: 'Blue Cross Blue Shield',
-    serviceCode: 'J0178',
-    serviceDescription: 'Injection, aflibercept (Eylea), 1 mg',
-    requiresPA: true,
-    stepTherapyRequired: true,
-    stepTherapyDrugs: ['Bevacizumab (Avastin) off-label'],
-    documentationRequired: ['CLINICAL_NOTES', 'DIAGNOSIS_SUPPORTING', 'LETTER_OF_MEDICAL_NECESSITY'],
-    typicalTurnaround: '5-7 business days',
-    urgentTurnaround: '72 hours',
-    notes: 'BCBS requires trial of bevacizumab (Avastin) unless medically contraindicated.',
-  },
-  {
-    payerId: 'payer-aetna',
-    payerName: 'Aetna',
-    serviceCode: 'S0093',
-    serviceDescription: 'Cyclosporine ophthalmic emulsion (Restasis)',
-    requiresPA: true,
-    stepTherapyRequired: true,
-    stepTherapyDrugs: ['Artificial tears (OTC) x 3 months'],
-    documentationRequired: ['CLINICAL_NOTES', 'PRIOR_TREATMENT_HISTORY'],
-    typicalTurnaround: '3 business days',
-    urgentTurnaround: '24 hours',
-  },
-  {
-    payerId: 'payer-united',
-    payerName: 'UnitedHealthcare',
-    serviceCode: 'J0178',
-    serviceDescription: 'Injection, aflibercept (Eylea)',
-    requiresPA: true,
-    stepTherapyRequired: false,
-    documentationRequired: ['CLINICAL_NOTES', 'DIAGNOSIS_SUPPORTING'],
-    typicalTurnaround: '2-3 business days',
-    urgentTurnaround: '24 hours',
-  },
-  {
-    payerId: 'payer-united',
-    payerName: 'UnitedHealthcare',
-    serviceCode: '92132',
-    serviceDescription: 'Scanning computerized ophthalmic diagnostic imaging, anterior segment',
-    requiresPA: false,
-    stepTherapyRequired: false,
-    documentationRequired: [],
-    typicalTurnaround: 'N/A – no PA required',
-    urgentTurnaround: 'N/A',
-  },
-  {
-    payerId: 'payer-cigna',
-    payerName: 'Cigna',
-    serviceCode: 'J0178',
-    serviceDescription: 'Injection, aflibercept (Eylea)',
-    requiresPA: true,
-    stepTherapyRequired: false,
-    documentationRequired: ['CLINICAL_NOTES', 'DIAGNOSIS_SUPPORTING', 'IMAGING'],
-    typicalTurnaround: '3 business days',
-    urgentTurnaround: '72 hours',
-    notes: 'OCT imaging demonstrating subretinal fluid or macular edema required.',
-  },
-];
+  { serviceType: 'DIAGNOSTIC_IMAGING', serviceCode: '92134', payerId: 'pay-bcbs', requiresPA: true, commonCriteria: ['Diabetic retinopathy documented','Visual acuity documented','Previous treatment history','ICD-10 codes: E11.35x'], documentationRequired: ['Clinical notes','Fundus photos','VA measurements'], typicalTurnaround: '2-5 business days', expeditedAvailable: true },
+  { serviceType: 'DIAGNOSTIC_IMAGING', serviceCode: '92250', payerId: 'pay-medicare', requiresPA: true, commonCriteria: ['Medical necessity documented','Not routine screening','ICD-10 must indicate disease'], documentationRequired: ['Physician notes','Previous visit records'], typicalTurnaround: '5-10 business days', expeditedAvailable: false },
+  { serviceType: 'SPECIALTY_MEDICATION', serviceCode: 'J0480', payerId: 'pay-aetna', requiresPA: true, commonCriteria: ['AMD diagnosis confirmed','Previous treatment with anti-VEGF','OCT documentation','Visual acuity documented'], documentationRequired: ['OCT images','Fluorescein angiography','Clinical notes'], typicalTurnaround: '3-7 business days', expeditedAvailable: true },
+  { serviceType: 'PROCEDURE', serviceCode: '66984', payerId: 'pay-bcbs', requiresPA: true, commonCriteria: ['Cataract grade 2+ documented','Visual acuity < 20/40','Functional impairment documented'], documentationRequired: ['Slit lamp exam notes','Biometry results','VA records'], typicalTurnaround: '5-7 business days', expeditedAvailable: false },
+  { serviceType: 'SPECIALTY_MEDICATION', serviceCode: '00079-0709', payerId: 'pay-cigna', requiresPA: true, commonCriteria: ['DED diagnosis confirmed','Failed artificial tears x 3 months','Schirmer test results'], documentationRequired: ['Clinical notes','Previous treatments tried'], typicalTurnaround: '2-3 business days', expeditedAvailable: false },
+]
 
-// ── Seed PA Requests ──────────────────────────────────────────────────────────
-function buildSeedRequests(): PriorAuthRequest[] {
-  const now = Date.now();
-
-  const makeHistory = (steps: Array<{status: PAStatus; daysAgo: number; by: string; note?: string}>): PAStatusHistory[] =>
-    steps.map(s => ({
-      status: s.status,
-      changedAt: new Date(now - s.daysAgo * 86_400_000).toISOString(),
-      changedBy: s.by,
-      note: s.note,
-    }));
-
-  const doc = (type: DocumentType, name: string, kb = 245): PADocument => ({
-    id: uid('doc'),
-    type,
-    name,
-    uploadedAt: daysAgo(5),
-    uploadedBy: 'Dr. Emily Chen',
-    sizeKb: kb,
-    url: `/documents/${name.replace(/\s/g, '_').toLowerCase()}`,
-  });
-
-  const note = (content: string, internal = true): PANote => ({
-    id: uid('pn'),
-    authorId: 'dr-chen',
-    authorName: 'Dr. Emily Chen',
-    authorRole: 'Attending Ophthalmologist',
-    content,
-    isInternal: internal,
-    createdAt: daysAgo(3),
-  });
-
-  return [
-    // 1 – APPROVED Eylea for wet AMD
-    {
-      id: 'pa-001',
-      patientId: 'pt-001',
-      patientName: 'Margaret Sullivan',
-      patientDob: '1948-03-12',
-      insurancePlan: 'Medicare Part B',
-      memberId: '1EG4-TE5-MK72',
-      groupNumber: 'N/A',
-      payerId: 'payer-medicare',
-      payerName: 'Medicare Part B',
-      providerId: 'dr-chen',
-      providerName: 'Dr. Emily Chen',
-      providerNpi: '1234567890',
-      serviceType: 'DRUG',
-      serviceCode: 'J0178',
-      serviceDescription: 'Injection, aflibercept (Eylea), 1 mg — bilateral wet AMD',
-      icdCodes: ['H35.31', 'H35.3190'],
-      quantity: 1,
-      unit: 'injection',
-      startDate: daysAgo(20),
-      endDate: daysFromNow(345),
-      urgency: 'ROUTINE',
-      status: 'APPROVED',
-      submittedAt: daysAgo(18),
-      decisionDate: daysAgo(13),
-      expiresAt: daysFromNow(345),
-      authNumber: 'MCR-2026-04471',
-      decisionReason: 'MEDICALLY_NECESSARY',
-      decisionNotes: 'Approved for 12 monthly injections. Diagnosis confirmed by OCT.',
-      documents: [
-        doc('CLINICAL_NOTES', 'Clinical Notes 2026-02-15.pdf', 312),
-        doc('DIAGNOSIS_SUPPORTING', 'OCT Imaging Report.pdf', 890),
-        doc('LAB_RESULTS', 'VA Testing Results.pdf', 145),
-      ],
-      notes: [note('Submitted urgent given patient vision loss. OCT shows active CNV OD.')],
-      statusHistory: makeHistory([
-        { status: 'DRAFT', daysAgo: 20, by: 'Maria Gonzalez' },
-        { status: 'SUBMITTED', daysAgo: 18, by: 'Maria Gonzalez' },
-        { status: 'UNDER_REVIEW', daysAgo: 16, by: 'System', note: 'Received by Medicare' },
-        { status: 'APPROVED', daysAgo: 13, by: 'Medicare Reviewer', note: 'Auth MCR-2026-04471 issued' },
-      ]),
-      linkedRxId: 'rx-aflibercept-001',
-      createdAt: daysAgo(20),
-      updatedAt: daysAgo(13),
-    },
-
-    // 2 – PENDING_INFO Restasis for dry eye
-    {
-      id: 'pa-002',
-      patientId: 'pt-003',
-      patientName: 'Priya Nair',
-      patientDob: '1975-08-22',
-      insurancePlan: 'Blue Cross Blue Shield PPO',
-      memberId: 'XYZ-98765-4',
-      groupNumber: 'GRP-4455',
-      payerId: 'payer-bcbs',
-      payerName: 'Blue Cross Blue Shield',
-      providerId: 'dr-patel',
-      providerName: 'Dr. Raj Patel',
-      providerNpi: '0987654321',
-      serviceType: 'DRUG',
-      serviceCode: 'S0093',
-      serviceDescription: 'Cyclosporine ophthalmic 0.05% (Restasis) — severe dry eye disease',
-      icdCodes: ['H04.129', 'H16.019'],
-      quantity: 60,
-      unit: 'single-use vials',
-      urgency: 'ROUTINE',
-      status: 'PENDING_INFO',
-      submittedAt: daysAgo(7),
-      decisionReason: 'MISSING_DOCUMENTATION',
-      decisionNotes: 'BCBS requires documentation of prior OTC lubricant trials (≥3 months each for 2 agents) and punctal plug evaluation.',
-      documents: [
-        doc('CLINICAL_NOTES', 'Dry Eye Evaluation Notes.pdf', 278),
-      ],
-      notes: [
-        note('BCBS requesting step therapy documentation. Will gather OTC trial records from patient.'),
-        note('Patient confirms she used Systane and Refresh Tears for 4+ months each. Sending records.', false),
-      ],
-      statusHistory: makeHistory([
-        { status: 'DRAFT', daysAgo: 8, by: 'Dr. Raj Patel' },
-        { status: 'SUBMITTED', daysAgo: 7, by: 'Dr. Raj Patel' },
-        { status: 'PENDING_INFO', daysAgo: 4, by: 'BCBS', note: 'Additional documentation required: step therapy history' },
-      ]),
-      createdAt: daysAgo(8),
-      updatedAt: daysAgo(4),
-    },
-
-    // 3 – DENIED + APPEALED Eylea for BCBS
-    {
-      id: 'pa-003',
-      patientId: 'pt-002',
-      patientName: 'Derek Holloway',
-      patientDob: '1962-11-05',
-      insurancePlan: 'Blue Cross Blue Shield HMO',
-      memberId: 'BCB-112233-7',
-      groupNumber: 'GRP-1122',
-      payerId: 'payer-bcbs',
-      payerName: 'Blue Cross Blue Shield',
-      providerId: 'dr-torres',
-      providerName: 'Dr. Amy Torres',
-      providerNpi: '1122334455',
-      serviceType: 'DRUG',
-      serviceCode: 'J0178',
-      serviceDescription: 'Injection, aflibercept (Eylea), 1 mg — CRVO with macular edema',
-      icdCodes: ['H34.832', 'H35.81'],
-      quantity: 1,
-      unit: 'injection',
-      urgency: 'URGENT',
-      status: 'APPEALED',
-      submittedAt: daysAgo(25),
-      decisionDate: daysAgo(18),
-      decisionReason: 'STEP_THERAPY_REQUIRED',
-      decisionNotes: 'BCBS requires trial of bevacizumab (Avastin) prior to Eylea unless contraindicated.',
-      documents: [
-        doc('CLINICAL_NOTES', 'CRVO Clinical Notes.pdf', 445),
-        doc('IMAGING', 'OCT Macula Report CRVO.pdf', 1240),
-        doc('LETTER_OF_MEDICAL_NECESSITY', 'Letter of Medical Necessity - Eylea.pdf', 85),
-      ],
-      notes: [
-        note('Patient has CRVO with significant macular edema (CRT 480 µm). Avastin step therapy inappropriate given severity and potential for permanent vision loss.'),
-        note('Filing appeal with peer-to-peer request. Clinical urgency documented.'),
-      ],
-      statusHistory: makeHistory([
-        { status: 'DRAFT', daysAgo: 26, by: 'Dr. Amy Torres' },
-        { status: 'SUBMITTED', daysAgo: 25, by: 'Dr. Amy Torres' },
-        { status: 'UNDER_REVIEW', daysAgo: 22, by: 'System' },
-        { status: 'DENIED', daysAgo: 18, by: 'BCBS Reviewer', note: 'Step therapy not documented' },
-        { status: 'APPEALED', daysAgo: 14, by: 'Dr. Amy Torres', note: 'First-level appeal filed' },
-      ]),
-      appeal: {
-        id: uid('appeal'),
-        submittedAt: daysAgo(14),
-        deadline: daysFromNow(16),
-        appealType: 'FIRST_LEVEL',
-        reason: 'Patient presents with acute CRVO and severe macular edema (CRT >450µm). Bevacizumab step therapy is medically contraindicated given the risk of rapid, permanent vision loss within the treatment window. AAO guidelines support immediate anti-VEGF therapy for CRVO.',
-        additionalDocs: ['OCT Macula Report CRVO.pdf', 'AAO CRVO Treatment Guidelines 2022.pdf'],
-        outcome: 'PENDING',
-      },
-      peerToPeer: {
-        id: uid('p2p'),
-        requestedAt: daysAgo(15),
-        scheduledAt: daysFromNow(2),
-        physicianName: 'Dr. Amy Torres',
-        outcome: 'PENDING',
-        notes: 'Scheduled peer-to-peer with BCBS medical director.',
-      },
-      createdAt: daysAgo(26),
-      updatedAt: daysAgo(14),
-    },
-
-    // 4 – SUBMITTED Restasis for Aetna
-    {
-      id: 'pa-004',
-      patientId: 'pt-004',
-      patientName: 'James Kowalski',
-      patientDob: '1950-06-18',
-      insurancePlan: 'Aetna PPO',
-      memberId: 'AET-556677-2',
-      groupNumber: 'GRP-AETNA-99',
-      payerId: 'payer-aetna',
-      payerName: 'Aetna',
-      providerId: 'dr-chen',
-      providerName: 'Dr. Emily Chen',
-      providerNpi: '1234567890',
-      serviceType: 'DRUG',
-      serviceCode: 'S0093',
-      serviceDescription: 'Cyclosporine 0.05% (Restasis) — Sjögren\'s-related dry eye',
-      icdCodes: ['H04.129', 'M35.0'],
-      quantity: 60,
-      unit: 'vials',
-      urgency: 'ROUTINE',
-      status: 'SUBMITTED',
-      submittedAt: daysAgo(2),
-      documents: [
-        doc('CLINICAL_NOTES', 'Sjogrens Dry Eye Notes.pdf', 310),
-        doc('PRIOR_TREATMENT_HISTORY', 'OTC Lubricant Trial History.pdf', 120),
-      ],
-      notes: [note('Submitted with 3-month OTC trial documentation. Aetna typically decides within 3 business days.')],
-      statusHistory: makeHistory([
-        { status: 'DRAFT', daysAgo: 3, by: 'Dr. Emily Chen' },
-        { status: 'SUBMITTED', daysAgo: 2, by: 'Dr. Emily Chen' },
-      ]),
-      createdAt: daysAgo(3),
-      updatedAt: daysAgo(2),
-    },
-
-    // 5 – APPROVED Eylea UnitedHealthcare
-    {
-      id: 'pa-005',
-      patientId: 'pt-005',
-      patientName: 'Rosa Delgado',
-      patientDob: '1944-09-30',
-      insurancePlan: 'UnitedHealthcare Advantage',
-      memberId: 'UHC-334455-8',
-      groupNumber: 'GRP-UHC-MA',
-      payerId: 'payer-united',
-      payerName: 'UnitedHealthcare',
-      providerId: 'dr-patel',
-      providerName: 'Dr. Raj Patel',
-      providerNpi: '0987654321',
-      serviceType: 'DRUG',
-      serviceCode: 'J0178',
-      serviceDescription: 'Injection, aflibercept (Eylea) — diabetic macular edema',
-      icdCodes: ['E11.311', 'H36.0'],
-      quantity: 1,
-      unit: 'injection',
-      urgency: 'ROUTINE',
-      status: 'APPROVED',
-      submittedAt: daysAgo(12),
-      decisionDate: daysAgo(9),
-      expiresAt: daysFromNow(180),
-      authNumber: 'UHC-2026-88991',
-      decisionReason: 'MEDICALLY_NECESSARY',
-      decisionNotes: 'Approved. Criteria met for diabetic macular edema.',
-      documents: [
-        doc('CLINICAL_NOTES', 'DME Clinical Notes.pdf', 298),
-        doc('DIAGNOSIS_SUPPORTING', 'OCT Macula DME.pdf', 1050),
-      ],
-      notes: [note('Quick approval — UHC typically approves within 2-3 days for DME.')],
-      statusHistory: makeHistory([
-        { status: 'DRAFT', daysAgo: 13, by: 'Dr. Raj Patel' },
-        { status: 'SUBMITTED', daysAgo: 12, by: 'Dr. Raj Patel' },
-        { status: 'UNDER_REVIEW', daysAgo: 11, by: 'System' },
-        { status: 'APPROVED', daysAgo: 9, by: 'UHC Reviewer', note: 'Auth UHC-2026-88991 issued' },
-      ]),
-      createdAt: daysAgo(13),
-      updatedAt: daysAgo(9),
-    },
-
-    // 6 – DRAFT (not yet submitted)
-    {
-      id: 'pa-006',
-      patientId: 'pt-006',
-      patientName: 'Arthur Kim',
-      patientDob: '1938-12-01',
-      insurancePlan: 'Cigna Open Access Plus',
-      memberId: 'CIG-778899-1',
-      groupNumber: 'GRP-CIGNA-45',
-      payerId: 'payer-cigna',
-      payerName: 'Cigna',
-      providerId: 'dr-chen',
-      providerName: 'Dr. Emily Chen',
-      providerNpi: '1234567890',
-      serviceType: 'DRUG',
-      serviceCode: 'J0178',
-      serviceDescription: 'Injection, aflibercept (Eylea) — neovascular AMD',
-      icdCodes: ['H35.3190'],
-      quantity: 1,
-      unit: 'injection',
-      urgency: 'URGENT',
-      status: 'DRAFT',
-      documents: [],
-      notes: [note('Need to attach OCT imaging before submission.')],
-      statusHistory: makeHistory([
-        { status: 'DRAFT', daysAgo: 1, by: 'Dr. Emily Chen' },
-      ]),
-      createdAt: daysAgo(1),
-      updatedAt: daysAgo(1),
-    },
-
-    // 7 – EXPIRED
-    {
-      id: 'pa-007',
-      patientId: 'pt-007',
-      patientName: 'Barbara Tran',
-      patientDob: '1955-04-14',
-      insurancePlan: 'Medicare Part B',
-      memberId: '2TG7-XK9-PL44',
-      groupNumber: 'N/A',
-      payerId: 'payer-medicare',
-      payerName: 'Medicare Part B',
-      providerId: 'dr-patel',
-      providerName: 'Dr. Raj Patel',
-      providerNpi: '0987654321',
-      serviceType: 'DRUG',
-      serviceCode: 'J2778',
-      serviceDescription: 'Injection, ranibizumab (Lucentis) — wet AMD',
-      icdCodes: ['H35.31'],
-      quantity: 1,
-      unit: 'injection',
-      urgency: 'ROUTINE',
-      status: 'EXPIRED',
-      submittedAt: daysAgo(370),
-      decisionDate: daysAgo(362),
-      expiresAt: daysAgo(5),
-      authNumber: 'MCR-2025-11042',
-      decisionReason: 'MEDICALLY_NECESSARY',
-      decisionNotes: 'Auth expired. Renewal required for continued treatment.',
-      documents: [
-        doc('CLINICAL_NOTES', 'Lucentis Auth 2025 Notes.pdf', 265),
-      ],
-      notes: [note('Auth expired. Need to renew for 2026 treatment cycle.')],
-      statusHistory: makeHistory([
-        { status: 'DRAFT', daysAgo: 372, by: 'Staff' },
-        { status: 'SUBMITTED', daysAgo: 370, by: 'Staff' },
-        { status: 'APPROVED', daysAgo: 362, by: 'Medicare', note: 'Auth MCR-2025-11042' },
-        { status: 'EXPIRED', daysAgo: 5, by: 'System', note: 'Authorization expired after 12 months' },
-      ]),
-      createdAt: daysAgo(372),
-      updatedAt: daysAgo(5),
-    },
-  ];
+// ── Row mapper ────────────────────────────────────────────────────────────────
+function rowToPA(r: Record<string, unknown>): PriorAuthRequest {
+  const parse = (v: unknown) => v ? JSON.parse(v as string) : [];
+  return {
+    id:                  r.id as string,
+    requestNumber:       r.request_number as string,
+    patientId:           r.patient_id as string,
+    patientName:         r.patient_name as string,
+    patientDob:          (r.patient_dob as string) ?? '',
+    insurancePlan:       '',
+    memberId:            (r.patient_member_id as string) ?? '',
+    groupNumber:         '',
+    payerId:             r.payer_id as string,
+    payerName:           r.payer_name as string,
+    providerId:          r.provider_id as string,
+    providerName:        r.provider_name as string,
+    providerNpi:         '',
+    serviceType:         r.service_type as PAServiceType,
+    serviceCode:         (r.service_code as string) ?? '',
+    serviceDescription:  (r.service_description as string) ?? '',
+    icdCodes:            parse(r.diagnosis_codes),
+    urgency:             r.urgency as PAUrgency,
+    status:              r.status as PAStatus,
+    submittedDate:       r.submitted_date as string | undefined,
+    decisionDate:        r.decision_date as string | undefined,
+    expirationDate:      r.expiration_date as string | undefined,
+    decisionReason:      r.decision_reason as PADecisionReason | undefined,
+    authorizationNumber: r.auth_number as string | undefined,
+    unitsApproved:       r.units_approved as number | undefined,
+    documents:           parse(r.documents),
+    notes:               parse(r.notes),
+    statusHistory:       parse(r.status_history),
+    peerToPeer:          r.peer_to_peer ? JSON.parse(r.peer_to_peer as string) : undefined,
+    appeal:              r.appeal ? JSON.parse(r.appeal as string) : undefined,
+    criteriaMet:         parse(r.criteria_met),
+    createdAt:           r.created_at as string,
+    updatedAt:           r.updated_at as string,
+  };
 }
 
-// ── KV seed / load ────────────────────────────────────────────────────────────
-export async function seedPARequests(kv: KVNamespace): Promise<void> {
-  const seeded = await kvGet<boolean>(kv, PA_SEED);
-  if (seeded) return;
+// ── seedPARequests ────────────────────────────────────────────────────────────
+export async function seedPARequests(kv: KVNamespace, db?: D1Database): Promise<void> { /* migration */ }
 
-  const requests = buildSeedRequests();
-  const ids: string[] = [];
-
-  for (const req of requests) {
-    await kvPut(kv, paKey(req.id), req);
-    ids.push(req.id);
-  }
-  await kvPut(kv, PA_IDX, ids);
-  await kvPut(kv, PA_SEED, true);
-}
-
+// ── listPARequests ────────────────────────────────────────────────────────────
 export async function listPARequests(
   kv: KVNamespace,
-  filters: { status?: string; patientId?: string; providerId?: string; serviceType?: string; urgency?: string } = {}
+  filters: { status?: string; patientId?: string; providerId?: string; serviceType?: string; urgency?: string } = {},
+  db?: D1Database
 ): Promise<PriorAuthRequest[]> {
-  await seedPARequests(kv);
-  const ids = (await kvGet<string[]>(kv, PA_IDX)) ?? [];
-  const requests: PriorAuthRequest[] = [];
-
-  for (const id of ids) {
-    const r = await kvGet<PriorAuthRequest>(kv, paKey(id));
-    if (!r) continue;
-    if (filters.status && r.status !== filters.status) continue;
-    if (filters.patientId && r.patientId !== filters.patientId) continue;
-    if (filters.providerId && r.providerId !== filters.providerId) continue;
-    if (filters.serviceType && r.serviceType !== filters.serviceType) continue;
-    if (filters.urgency && r.urgency !== filters.urgency) continue;
-    requests.push(r);
-  }
-
-  return requests.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  if (!db) return [];
+  const conditions: string[] = [];
+  const params: unknown[]    = [];
+  if (filters.status)      { conditions.push('status=?');       params.push(filters.status); }
+  if (filters.patientId)   { conditions.push('patient_id=?');   params.push(filters.patientId); }
+  if (filters.providerId)  { conditions.push('provider_id=?');  params.push(filters.providerId); }
+  if (filters.serviceType) { conditions.push('service_type=?'); params.push(filters.serviceType); }
+  if (filters.urgency)     { conditions.push('urgency=?');      params.push(filters.urgency); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const rows = await dbAll<Record<string, unknown>>(db,
+    `SELECT * FROM prior_auth_requests ${where} ORDER BY updated_at DESC`, params
+  );
+  return rows.map(rowToPA);
 }
 
-export async function getPARequest(kv: KVNamespace, id: string): Promise<PriorAuthRequest | null> {
-  await seedPARequests(kv);
-  return kvGet<PriorAuthRequest>(kv, paKey(id));
+// ── getPARequest ──────────────────────────────────────────────────────────────
+export async function getPARequest(kv: KVNamespace, id: string, db?: D1Database): Promise<PriorAuthRequest | null> {
+  if (!db) return null;
+  const row = await dbGet<Record<string, unknown>>(db,
+    `SELECT * FROM prior_auth_requests WHERE id=?`, [id]
+  );
+  return row ? rowToPA(row) : null;
 }
 
+// ── createPARequest ───────────────────────────────────────────────────────────
 export async function createPARequest(
   kv: KVNamespace,
-  input: Partial<PriorAuthRequest>
+  input: Partial<PriorAuthRequest>,
+  db?: D1Database
 ): Promise<PriorAuthRequest> {
-  await seedPARequests(kv);
-  const now = iso();
-  const id = uid('pa');
+  if (!db) throw new Error('D1 required');
+  const now = dbNow();
+  const id  = `pa-${Date.now().toString(36)}`;
+  const reqNum = `PA-${new Date().getFullYear()}-${String(Date.now() % 10000).padStart(4, '0')}`;
+  const history: PAStatusHistory[] = [{ status: 'DRAFT', changedAt: now, changedBy: input.providerId ?? 'system' }];
 
-  const req: PriorAuthRequest = {
-    id,
-    patientId: input.patientId ?? '',
-    patientName: input.patientName ?? '',
-    patientDob: input.patientDob ?? '',
-    insurancePlan: input.insurancePlan ?? '',
-    memberId: input.memberId ?? '',
-    groupNumber: input.groupNumber ?? '',
-    payerId: input.payerId ?? '',
-    payerName: input.payerName ?? '',
-    providerId: input.providerId ?? '',
-    providerName: input.providerName ?? '',
-    providerNpi: input.providerNpi ?? '',
-    serviceType: (input.serviceType as PAServiceType) ?? 'DRUG',
-    serviceCode: input.serviceCode ?? '',
-    serviceDescription: input.serviceDescription ?? '',
-    icdCodes: input.icdCodes ?? [],
-    quantity: input.quantity,
-    unit: input.unit,
-    startDate: input.startDate,
-    endDate: input.endDate,
-    urgency: (input.urgency as PAUrgency) ?? 'ROUTINE',
-    status: 'DRAFT',
-    documents: [],
-    notes: [],
-    statusHistory: [{ status: 'DRAFT', changedAt: now, changedBy: input.providerId ?? 'unknown' }],
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  await kvPut(kv, paKey(id), req);
-  const ids = (await kvGet<string[]>(kv, PA_IDX)) ?? [];
-  await kvPut(kv, PA_IDX, [...ids, id]);
-  return req;
+  await dbRun(db,
+    `INSERT INTO prior_auth_requests
+       (id, request_number, patient_id, patient_name, patient_dob, patient_member_id,
+        provider_id, provider_name, payer_id, payer_name,
+        service_type, service_code, service_description, diagnosis_codes,
+        urgency, status, notes, status_history, criteria_met, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [
+      id, reqNum,
+      input.patientId ?? '', input.patientName ?? '',
+      input.patientDob ?? null, input.memberId ?? null,
+      input.providerId ?? '', input.providerName ?? '',
+      input.payerId ?? '', input.payerName ?? '',
+      input.serviceType ?? 'DRUG',
+      input.serviceCode ?? null, input.serviceDescription ?? null,
+      JSON.stringify(input.icdCodes ?? []),
+      input.urgency ?? 'ROUTINE', 'DRAFT',
+      '[]', JSON.stringify(history), '[]',
+      now, now,
+    ]
+  );
+  return (await getPARequest(kv, id, db))!;
 }
 
+// ── updatePAStatus ────────────────────────────────────────────────────────────
 export async function updatePAStatus(
   kv: KVNamespace,
   id: string,
   status: PAStatus,
-  meta: { changedBy: string; reason?: PADecisionReason; notes?: string; authNumber?: string }
+  meta: { changedBy: string; reason?: PADecisionReason; notes?: string; authNumber?: string },
+  db?: D1Database
 ): Promise<PriorAuthRequest | null> {
-  const req = await getPARequest(kv, id);
+  if (!db) return null;
+  const req = await getPARequest(kv, id, db);
   if (!req) return null;
 
-  const now = iso();
-  req.status = status;
-  req.updatedAt = now;
+  const now = dbNow();
+  const histEntry: PAStatusHistory = { status, changedAt: now, changedBy: meta.changedBy, reason: meta.reason, notes: meta.notes };
+  const newHistory = [...req.statusHistory, histEntry];
 
-  if (meta.authNumber) req.authNumber = meta.authNumber;
-  if (meta.reason) req.decisionReason = meta.reason;
-  if (meta.notes) req.decisionNotes = meta.notes;
+  const sets = ['status=?', 'updated_at=?', 'status_history=?'];
+  const vals: unknown[] = [status, now, JSON.stringify(newHistory)];
 
-  if (status === 'SUBMITTED') req.submittedAt = now;
-  if (['APPROVED','DENIED','APPEAL_APPROVED','APPEAL_DENIED'].includes(status)) req.decisionDate = now;
+  if (status === 'SUBMITTED')  { sets.push('submitted_date=?'); vals.push(now.slice(0, 10)); }
+  if (['APPROVED','DENIED'].includes(status)) { sets.push('decision_date=?'); vals.push(now.slice(0, 10)); }
+  if (meta.authNumber)         { sets.push('auth_number=?');   vals.push(meta.authNumber); }
+  if (meta.reason)             { sets.push('decision_reason=?'); vals.push(meta.reason); }
+  if (meta.notes) {
+    const note: PANote = { id: `pan-${Date.now().toString(36)}`, authorId: meta.changedBy, authorName: meta.changedBy, content: meta.notes, isInternal: true, createdAt: now, isPANote: true };
+    sets.push('notes=?'); vals.push(JSON.stringify([...req.notes, note]));
+  }
 
-  req.statusHistory.push({
-    status,
-    changedAt: now,
-    changedBy: meta.changedBy,
-    reason: meta.reason,
-    note: meta.notes,
-  });
-
-  await kvPut(kv, paKey(id), req);
-  return req;
+  vals.push(id);
+  await dbRun(db, `UPDATE prior_auth_requests SET ${sets.join(', ')} WHERE id=?`, vals);
+  return getPARequest(kv, id, db);
 }
 
+// ── addPADocument ─────────────────────────────────────────────────────────────
 export async function addPADocument(
-  kv: KVNamespace,
-  id: string,
-  doc: Omit<PADocument, 'id'>
+  kv: KVNamespace, id: string, doc: Omit<PADocument, 'id' | 'uploadedAt'>, db?: D1Database
 ): Promise<PriorAuthRequest | null> {
-  const req = await getPARequest(kv, id);
+  if (!db) return null;
+  const req = await getPARequest(kv, id, db);
   if (!req) return null;
-  req.documents.push({ ...doc, id: uid('doc') });
-  req.updatedAt = iso();
-  await kvPut(kv, paKey(id), req);
-  return req;
+  const d: PADocument = { ...doc, id: `pdoc-${Date.now().toString(36)}`, uploadedAt: dbNow() };
+  await dbRun(db, `UPDATE prior_auth_requests SET documents=?, updated_at=? WHERE id=?`,
+    [JSON.stringify([...req.documents, d]), dbNow(), id]);
+  return getPARequest(kv, id, db);
 }
 
+// ── addPANote ─────────────────────────────────────────────────────────────────
 export async function addPANote(
-  kv: KVNamespace,
-  id: string,
-  note: Omit<PANote, 'id' | 'createdAt'>
+  kv: KVNamespace, id: string,
+  note: Omit<PANote, 'id' | 'createdAt'>, db?: D1Database
 ): Promise<PriorAuthRequest | null> {
-  const req = await getPARequest(kv, id);
+  if (!db) return null;
+  const req = await getPARequest(kv, id, db);
   if (!req) return null;
-  req.notes.push({ ...note, id: uid('pn'), createdAt: iso() });
-  req.updatedAt = iso();
-  await kvPut(kv, paKey(id), req);
-  return req;
+  const n: PANote = { ...note, id: `pan-${Date.now().toString(36)}`, createdAt: dbNow() };
+  await dbRun(db, `UPDATE prior_auth_requests SET notes=?, updated_at=? WHERE id=?`,
+    [JSON.stringify([...req.notes, n]), dbNow(), id]);
+  return getPARequest(kv, id, db);
 }
 
+// ── submitPeerToPeer ──────────────────────────────────────────────────────────
+export async function submitPeerToPeer(
+  kv: KVNamespace, id: string,
+  data: Omit<PeerToPeerRequest, 'id' | 'requestedAt'>, db?: D1Database
+): Promise<PriorAuthRequest | null> {
+  if (!db) return null;
+  const p2p: PeerToPeerRequest = { ...data, id: `p2p-${Date.now().toString(36)}`, requestedAt: dbNow() };
+  await dbRun(db, `UPDATE prior_auth_requests SET peer_to_peer=?, updated_at=? WHERE id=?`,
+    [JSON.stringify(p2p), dbNow(), id]);
+  return getPARequest(kv, id, db);
+}
+
+// ── submitAppeal ──────────────────────────────────────────────────────────────
 export async function submitAppeal(
-  kv: KVNamespace,
-  id: string,
-  appeal: Omit<AppealRecord, 'id' | 'submittedAt'>
+  kv: KVNamespace, id: string,
+  data: Omit<AppealRecord, 'id' | 'submittedAt'>, db?: D1Database
 ): Promise<PriorAuthRequest | null> {
-  const req = await getPARequest(kv, id);
-  if (!req) return null;
-
-  req.appeal = { ...appeal, id: uid('appeal'), submittedAt: iso() };
-  req.status = 'APPEALED';
-  req.updatedAt = iso();
-  req.statusHistory.push({
-    status: 'APPEALED',
-    changedAt: iso(),
-    changedBy: 'provider',
-    note: `Appeal filed: ${appeal.appealType}`,
-  });
-
-  await kvPut(kv, paKey(id), req);
-  return req;
+  if (!db) return null;
+  const appeal: AppealRecord = { ...data, id: `appeal-${Date.now().toString(36)}`, submittedAt: dbNow() };
+  await dbRun(db, `UPDATE prior_auth_requests SET appeal=?, status='APPEALED', updated_at=? WHERE id=?`,
+    [JSON.stringify(appeal), dbNow(), id]);
+  return getPARequest(kv, id, db);
 }
 
-export async function schedulePeerToPeer(
-  kv: KVNamespace,
-  id: string,
-  p2p: Omit<PeerToPeerRequest, 'id' | 'requestedAt'>
-): Promise<PriorAuthRequest | null> {
-  const req = await getPARequest(kv, id);
-  if (!req) return null;
+// ── getPADashboard ────────────────────────────────────────────────────────────
+export async function getPADashboard(kv: KVNamespace, db?: D1Database): Promise<PADashboardStats> {
+  if (!db) return {
+    total: 0, draft: 0, submitted: 0, approved: 0, denied: 0, appealed: 0,
+    pendingUrgent: 0, avgTurnaroundDays: 0,
+    approvalRate: 0, denialRate: 0,
+    byServiceType: [], recentRequests: [],
+  };
 
-  req.peerToPeer = { ...p2p, id: uid('p2p'), requestedAt: iso() };
-  req.updatedAt = iso();
-  await kvPut(kv, paKey(id), req);
-  return req;
-}
+  const rows = await dbAll<Record<string, unknown>>(db, `SELECT * FROM prior_auth_requests ORDER BY updated_at DESC`);
+  const all  = rows.map(rowToPA);
 
-export async function deletePARequest(kv: KVNamespace, id: string): Promise<boolean> {
-  const req = await getPARequest(kv, id);
-  if (!req) return false;
-  await kvDel(kv, paKey(id));
-  const ids = (await kvGet<string[]>(kv, PA_IDX)) ?? [];
-  await kvPut(kv, PA_IDX, ids.filter(x => x !== id));
-  return true;
-}
-
-export async function getPADashboard(kv: KVNamespace): Promise<PADashboardStats> {
-  const all = await listPARequests(kv);
-
-  const active: PAStatus[] = ['SUBMITTED','PENDING_INFO','UNDER_REVIEW','APPEALED'];
-  const totalActive = all.filter(r => active.includes(r.status)).length;
-  const pendingSubmission = all.filter(r => r.status === 'DRAFT').length;
-  const awaitingDecision = all.filter(r => ['SUBMITTED','UNDER_REVIEW'].includes(r.status)).length;
-  const approved = all.filter(r => ['APPROVED','APPEAL_APPROVED'].includes(r.status)).length;
-  const denied = all.filter(r => ['DENIED','APPEAL_DENIED'].includes(r.status)).length;
-  const appealed = all.filter(r => r.status === 'APPEALED').length;
-  const expiringSoon = all.filter(r => {
-    if (!r.expiresAt || r.status !== 'APPROVED') return false;
-    return new Date(r.expiresAt).getTime() - Date.now() < 30 * 86_400_000;
-  }).length;
-
-  const decided = all.filter(r => ['APPROVED','APPEAL_APPROVED','DENIED','APPEAL_DENIED'].includes(r.status));
-  const approvalRate = decided.length > 0
-    ? decided.filter(r => ['APPROVED','APPEAL_APPROVED'].includes(r.status)).length / decided.length
+  const submitted = all.filter(r => r.submittedDate && r.decisionDate);
+  const avgDays = submitted.length > 0
+    ? Math.round(submitted.reduce((s, r) => {
+        const diff = new Date(r.decisionDate!).getTime() - new Date(r.submittedDate!).getTime();
+        return s + diff / 86400000;
+      }, 0) / submitted.length)
     : 0;
 
-  // avg turnaround for decided requests (submitted → decision)
-  const turnarounds = decided
-    .filter(r => r.submittedAt && r.decisionDate)
-    .map(r => (new Date(r.decisionDate!).getTime() - new Date(r.submittedAt!).getTime()) / 86_400_000);
-  const avgTurnaroundDays = turnarounds.length > 0
-    ? Math.round(turnarounds.reduce((s, t) => s + t, 0) / turnarounds.length)
-    : 0;
+  const approved = all.filter(r => ['APPROVED','PARTIAL_APPROVAL'].includes(r.status)).length;
+  const denied   = all.filter(r => r.status === 'DENIED').length;
+  const decided  = approved + denied;
+
+  const byType: Record<string, number> = {};
+  all.forEach(r => { byType[r.serviceType] = (byType[r.serviceType] ?? 0) + 1; });
 
   return {
-    totalActive,
-    pendingSubmission,
-    awaitingDecision,
+    total:            all.length,
+    draft:            all.filter(r => r.status === 'DRAFT').length,
+    submitted:        all.filter(r => ['SUBMITTED','IN_REVIEW'].includes(r.status)).length,
     approved,
     denied,
-    appealed,
-    expiringSoon,
-    avgTurnaroundDays,
-    approvalRate,
-    recentRequests: all.slice(0, 5),
+    appealed:         all.filter(r => r.status === 'APPEALED').length,
+    pendingUrgent:    all.filter(r => r.urgency === 'URGENT' && !['APPROVED','DENIED','VOIDED'].includes(r.status)).length,
+    avgTurnaroundDays: avgDays,
+    approvalRate:     decided > 0 ? Math.round((approved / decided) * 100) : 0,
+    denialRate:       decided > 0 ? Math.round((denied / decided) * 100) : 0,
+    byServiceType:    Object.entries(byType).map(([type, count]) => ({ type, count })),
+    recentRequests:   all.slice(0, 10),
   };
 }
 
-export function lookupPACriteria(payerId?: string, serviceCode?: string): PACriteria[] {
-  let results = paCriteriaCatalog;
-  if (payerId) results = results.filter(c => c.payerId === payerId);
-  if (serviceCode) results = results.filter(c => c.serviceCode === serviceCode);
-  return results;
+// ── Aliases and stubs for backward-compat with routes ────────────────────────
+export const schedulePeerToPeer = submitPeerToPeer;
+
+export async function deletePARequest(kv: KVNamespace, id: string, db?: D1Database): Promise<boolean> {
+  if (!db) return false;
+  const req = await getPARequest(kv, id, db);
+  if (!req || req.status !== 'DRAFT') return false;
+  await dbRun(db, `DELETE FROM prior_auth_requests WHERE id=?`, [id]);
+  return true;
 }
 
-export const VALID_PA_STATUSES: PAStatus[] = [
-  'DRAFT','SUBMITTED','PENDING_INFO','UNDER_REVIEW',
-  'APPROVED','DENIED','APPEALED','APPEAL_APPROVED','APPEAL_DENIED','EXPIRED','WITHDRAWN',
-];
+export async function lookupPACriteria(
+  kv: KVNamespace,
+  serviceType: string,
+  serviceCode: string,
+  payerId: string,
+  db?: D1Database
+): Promise<typeof paCriteriaCatalog[0] | null> {
+  return paCriteriaCatalog.find(c =>
+    c.serviceType === serviceType &&
+    (c.serviceCode === serviceCode || !c.serviceCode) &&
+    (c.payerId === payerId || !c.payerId)
+  ) ?? null;
+}
 
-export const VALID_SERVICE_TYPES: PAServiceType[] = [
-  'DRUG','PROCEDURE','EQUIPMENT','LAB','REFERRAL','IMAGING',
+export const VALID_PA_STATUSES = [
+  'DRAFT','SUBMITTED','IN_REVIEW','APPROVED','PARTIAL_APPROVAL',
+  'DENIED','APPEALED','APPEAL_APPROVED','APPEAL_DENIED','WITHDRAWN','EXPIRED','VOIDED',
 ];
-
-export const VALID_URGENCY: PAUrgency[] = ['ROUTINE','URGENT','EXPEDITED'];
+export const VALID_SERVICE_TYPES = [
+  'DRUG','PROCEDURE','DURABLE_MEDICAL_EQUIPMENT',
+  'DIAGNOSTIC_IMAGING','SPECIALTY_CONSULTATION','INFUSION','BEHAVIORAL_HEALTH','OTHER',
+];
+export const VALID_URGENCY = ['ROUTINE','URGENT','EXPEDITED'];

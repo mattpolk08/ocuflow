@@ -32,14 +32,14 @@ const analyticsRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 // ── Ping / seed ───────────────────────────────────────────────────────────────
 analyticsRoutes.get('/ping', async (c) => {
-  await ensureAnalyticsSeed(c.env.OCULOFLOW_KV)
+  await ensureAnalyticsSeed(c.env.OCULOFLOW_KV, c.env.DB)
   return c.json<Resp>({ success: true, data: { status: 'ok', module: 'analytics-10a' } })
 })
 
 // ── GET /dashboard ─────────────────────────────────────────────────────────────
 analyticsRoutes.get('/dashboard', requireAuth, requireRole('BILLING', 'ADMIN'), async (c) => {
   try {
-    const dashboard = await getAnalyticsDashboard(c.env.OCULOFLOW_KV)
+    const dashboard = await getAnalyticsDashboard(c.env.OCULOFLOW_KV, c.env.DB)
     const auth = c.var.auth
     await writeAudit(c.env.OCULOFLOW_KV, {
       event: 'PHI_READ',
@@ -58,8 +58,8 @@ analyticsRoutes.get('/dashboard', requireAuth, requireRole('BILLING', 'ADMIN'), 
 // ── GET /kpi ────────────────────────────────────────────────────────────────────
 analyticsRoutes.get('/kpi', requireAuth, requireRole('BILLING', 'ADMIN'), async (c) => {
   try {
-    await ensureAnalyticsSeed(c.env.OCULOFLOW_KV)
-    const periods = await listKpiPeriods(c.env.OCULOFLOW_KV)
+    await ensureAnalyticsSeed(c.env.OCULOFLOW_KV, c.env.DB)
+    const periods = await listKpiPeriods(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<Resp>({ success: true, data: periods })
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
@@ -69,9 +69,9 @@ analyticsRoutes.get('/kpi', requireAuth, requireRole('BILLING', 'ADMIN'), async 
 // ── GET /kpi/:period ────────────────────────────────────────────────────────────
 analyticsRoutes.get('/kpi/:period', requireAuth, requireRole('BILLING', 'ADMIN'), async (c) => {
   try {
-    await ensureAnalyticsSeed(c.env.OCULOFLOW_KV)
+    await ensureAnalyticsSeed(c.env.OCULOFLOW_KV, c.env.DB)
     const period = c.req.param('period')
-    const kpi = await getKpiSnapshot(c.env.OCULOFLOW_KV, period)
+    const kpi = await getKpiSnapshot(c.env.OCULOFLOW_KV, period, c.env.DB)
     if (!kpi) return c.json<Resp>({ success: false, error: 'Period not found' }, 404)
     return c.json<Resp>({ success: true, data: kpi })
   } catch (err) {
@@ -82,12 +82,12 @@ analyticsRoutes.get('/kpi/:period', requireAuth, requireRole('BILLING', 'ADMIN')
 // ── GET /kpi-compare ───────────────────────────────────────────────────────────
 analyticsRoutes.get('/kpi-compare', requireAuth, requireRole('BILLING', 'ADMIN'), async (c) => {
   try {
-    await ensureAnalyticsSeed(c.env.OCULOFLOW_KV)
+    await ensureAnalyticsSeed(c.env.OCULOFLOW_KV, c.env.DB)
     const current = c.req.query('current') ?? '2026-03'
     const prior   = c.req.query('prior')   ?? '2026-02'
     const [curKpi, priKpi] = await Promise.all([
-      getKpiSnapshot(c.env.OCULOFLOW_KV, current),
-      getKpiSnapshot(c.env.OCULOFLOW_KV, prior),
+      getKpiSnapshot(c.env.OCULOFLOW_KV, current, c.env.DB),
+      getKpiSnapshot(c.env.OCULOFLOW_KV, prior, c.env.DB),
     ])
     if (!curKpi || !priKpi) return c.json<Resp>({ success: false, error: 'One or both periods not found' }, 404)
 
@@ -111,8 +111,8 @@ analyticsRoutes.get('/kpi-compare', requireAuth, requireRole('BILLING', 'ADMIN')
 // ── GET /payers ─────────────────────────────────────────────────────────────────
 analyticsRoutes.get('/payers', requireAuth, requireRole('BILLING', 'ADMIN'), async (c) => {
   try {
-    await ensureAnalyticsSeed(c.env.OCULOFLOW_KV)
-    const payers = await listPayerContracts(c.env.OCULOFLOW_KV)
+    await ensureAnalyticsSeed(c.env.OCULOFLOW_KV, c.env.DB)
+    const payers = await listPayerContracts(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<Resp>({ success: true, data: payers })
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
@@ -124,7 +124,7 @@ analyticsRoutes.patch('/payers/:id', requireAuth, requireRole('ADMIN'), async (c
   try {
     const id = c.req.param('id')
     const patch = await c.req.json()
-    const updated = await updatePayerContract(c.env.OCULOFLOW_KV, id, patch)
+    const updated = await updatePayerContract(c.env.OCULOFLOW_KV, id, patch, c.env.DB)
     if (!updated) return c.json<Resp>({ success: false, error: 'Payer not found' }, 404)
     return c.json<Resp>({ success: true, data: updated })
   } catch (err) {
@@ -135,9 +135,9 @@ analyticsRoutes.patch('/payers/:id', requireAuth, requireRole('ADMIN'), async (c
 // ── GET /providers ──────────────────────────────────────────────────────────────
 analyticsRoutes.get('/providers', requireAuth, requireRole('BILLING', 'ADMIN'), async (c) => {
   try {
-    await ensureAnalyticsSeed(c.env.OCULOFLOW_KV)
+    await ensureAnalyticsSeed(c.env.OCULOFLOW_KV, c.env.DB)
     const period = c.req.query('period')
-    const providers = await listProviderProductivity(c.env.OCULOFLOW_KV, period)
+    const providers = await listProviderProductivity(c.env.OCULOFLOW_KV, period, c.env.DB)
     return c.json<Resp>({ success: true, data: providers })
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
@@ -147,8 +147,8 @@ analyticsRoutes.get('/providers', requireAuth, requireRole('BILLING', 'ADMIN'), 
 // ── GET /population ─────────────────────────────────────────────────────────────
 analyticsRoutes.get('/population', requireAuth, requireRole('BILLING', 'ADMIN', 'PROVIDER'), async (c) => {
   try {
-    await ensureAnalyticsSeed(c.env.OCULOFLOW_KV)
-    const trends = await listPopulationTrends(c.env.OCULOFLOW_KV)
+    await ensureAnalyticsSeed(c.env.OCULOFLOW_KV, c.env.DB)
+    const trends = await listPopulationTrends(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<Resp>({ success: true, data: trends })
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
@@ -158,8 +158,8 @@ analyticsRoutes.get('/population', requireAuth, requireRole('BILLING', 'ADMIN', 
 // ── GET /recall ─────────────────────────────────────────────────────────────────
 analyticsRoutes.get('/recall', requireAuth, requireRole('BILLING', 'ADMIN'), async (c) => {
   try {
-    await ensureAnalyticsSeed(c.env.OCULOFLOW_KV)
-    const metrics = await listRecallMetrics(c.env.OCULOFLOW_KV)
+    await ensureAnalyticsSeed(c.env.OCULOFLOW_KV, c.env.DB)
+    const metrics = await listRecallMetrics(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<Resp>({ success: true, data: metrics })
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
@@ -169,8 +169,8 @@ analyticsRoutes.get('/recall', requireAuth, requireRole('BILLING', 'ADMIN'), asy
 // ── GET /forecast ───────────────────────────────────────────────────────────────
 analyticsRoutes.get('/forecast', requireAuth, requireRole('BILLING', 'ADMIN'), async (c) => {
   try {
-    await ensureAnalyticsSeed(c.env.OCULOFLOW_KV)
-    const forecast = await getLatestForecast(c.env.OCULOFLOW_KV)
+    await ensureAnalyticsSeed(c.env.OCULOFLOW_KV, c.env.DB)
+    const forecast = await getLatestForecast(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json<Resp>({ success: true, data: forecast })
   } catch (err) {
     return c.json<Resp>({ success: false, error: String(err) }, 500)
