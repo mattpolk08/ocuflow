@@ -19,12 +19,9 @@
       "database_id": "2f41b1ae-97d6-428e-88a4-35be330cc81c"
     }
   ],
-  "r2_buckets": [
-    {
-      "binding": "OCULOFLOW_R2",
-      "bucket_name": "oculoflow-documents"
-    }
-  ],
+  // R2 binding is configured in the Cloudflare Pages dashboard (Settings → Functions → R2 bucket bindings)
+  // binding name: OCULOFLOW_R2  →  bucket: oculoflow-documents
+  // Do NOT declare r2_buckets here — wrangler pages deploy will error if the bucket doesn't exist yet.
   "vars": {
     "DEMO_MODE": "true",
     "PRACTICE_NAME": "Advanced Eye Care of Miami"
