@@ -359,3 +359,64 @@ authRoutes.post('/unlock-dev', async (c) => {
 })
 
 export default authRoutes
+
+// ── POST /api/auth/run-migration-016  (admin only — one-shot migration) ────────
+authRoutes.post('/run-migration-016', async (c) => {
+  const db = c.env.DB
+  if (!db) return c.json({ success: false, error: 'DB not bound' }, 500)
+
+  const statements = [
+    // portal_accounts: add salt column
+    `ALTER TABLE portal_accounts ADD COLUMN salt TEXT`,
+    // portal_message_threads: add updated_at and message_count
+    `ALTER TABLE portal_message_threads ADD COLUMN updated_at TEXT`,
+    `ALTER TABLE portal_message_threads ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0`,
+    // portal_messages: add columns for full PortalMessage support
+    `ALTER TABLE portal_messages ADD COLUMN from_patient INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE portal_messages ADD COLUMN status TEXT NOT NULL DEFAULT 'UNREAD'`,
+    `ALTER TABLE portal_messages ADD COLUMN read_at TEXT`,
+    `ALTER TABLE portal_messages ADD COLUMN attachment_note TEXT`,
+    // notification_logs table
+    `CREATE TABLE IF NOT EXISTS notification_logs (
+      id           TEXT PRIMARY KEY,
+      channel      TEXT NOT NULL,
+      type         TEXT NOT NULL,
+      recipient    TEXT NOT NULL,
+      subject      TEXT,
+      body         TEXT NOT NULL DEFAULT '',
+      provider     TEXT NOT NULL DEFAULT 'demo',
+      external_id  TEXT,
+      success      INTEGER NOT NULL DEFAULT 0,
+      error        TEXT,
+      retries      INTEGER NOT NULL DEFAULT 0,
+      sent_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      patient_id   TEXT,
+      patient_name TEXT
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_notif_logs_sent    ON notification_logs(sent_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_notif_logs_patient ON notification_logs(patient_id, sent_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_notif_logs_type    ON notification_logs(type, sent_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_notif_logs_success ON notification_logs(success)`,
+  ]
+
+  const results: Array<{ sql: string; status: string; error?: string }> = []
+  for (const sql of statements) {
+    try {
+      await db.exec(sql)
+      results.push({ sql: sql.slice(0, 60), status: 'ok' })
+    } catch (e: any) {
+      // "duplicate column" errors are expected if migration already ran
+      const msg = String(e?.message ?? e)
+      const isIdempotent = msg.includes('duplicate column') ||
+        msg.includes('already exists') || msg.includes('table_already_exists')
+      results.push({ sql: sql.slice(0, 60), status: isIdempotent ? 'skipped (already applied)' : 'error', error: isIdempotent ? undefined : msg })
+    }
+  }
+
+  const errors = results.filter(r => r.status === 'error')
+  return c.json({
+    success: errors.length === 0,
+    message: errors.length === 0 ? 'Migration 0016 applied successfully' : `${errors.length} statements failed`,
+    results,
+  })
+})
