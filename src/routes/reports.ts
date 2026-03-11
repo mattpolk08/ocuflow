@@ -28,6 +28,20 @@ function parseRange(raw?: string): DateRange {
   return valid.includes(raw as DateRange) ? (raw as DateRange) : '30d'
 }
 
+// ── Convert DateRange string to {start, end} ISO date pair ────────────────────
+function rangeToDates(range: DateRange): { start: string; end: string } {
+  const today = new Date().toISOString().slice(0, 10)
+  const [year, month] = today.split('-')
+  switch (range) {
+    case '7d':  { const d = new Date(); d.setDate(d.getDate() - 7);  return { start: d.toISOString().slice(0, 10), end: today } }
+    case '30d': { const d = new Date(); d.setDate(d.getDate() - 30); return { start: d.toISOString().slice(0, 10), end: today } }
+    case '90d': { const d = new Date(); d.setDate(d.getDate() - 90); return { start: d.toISOString().slice(0, 10), end: today } }
+    case 'ytd': return { start: `${year}-01-01`, end: today }
+    case 'all': return { start: '2000-01-01', end: today }
+    default:    return { start: `${year}-${month}-01`, end: today }
+  }
+}
+
 // ── GET /api/reports/dashboard?range=30d ─────────────────────────────────────
 // Full dashboard payload — all sections in one call
 reports.get('/dashboard', async (c) => {
@@ -44,7 +58,7 @@ reports.get('/dashboard', async (c) => {
 reports.get('/revenue', async (c) => {
   try {
     const range = parseRange(c.req.query('range'))
-    const data  = await getRevenueSummary(c.env.OCULOFLOW_KV, range, c.env.DB)
+    const data  = await getRevenueSummary(c.env.OCULOFLOW_KV, rangeToDates(range), c.env.DB)
     return c.json<ApiResponse<typeof data>>({ success: true, data })
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
@@ -55,7 +69,7 @@ reports.get('/revenue', async (c) => {
 reports.get('/providers', async (c) => {
   try {
     const range = parseRange(c.req.query('range'))
-    const data  = await getProviderStats(c.env.OCULOFLOW_KV, range, c.env.DB)
+    const data  = await getProviderStats(c.env.OCULOFLOW_KV, rangeToDates(range), c.env.DB)
     return c.json<ApiResponse<typeof data>>({ success: true, data })
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
@@ -66,7 +80,7 @@ reports.get('/providers', async (c) => {
 reports.get('/payer-mix', async (c) => {
   try {
     const range = parseRange(c.req.query('range'))
-    const data  = await getPayerMix(c.env.OCULOFLOW_KV, range, c.env.DB)
+    const data  = await getPayerMix(c.env.OCULOFLOW_KV, rangeToDates(range), c.env.DB)
     return c.json<ApiResponse<typeof data>>({ success: true, data })
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
@@ -87,7 +101,7 @@ reports.get('/ar-aging', async (c) => {
 reports.get('/appointments', async (c) => {
   try {
     const range = parseRange(c.req.query('range'))
-    const data  = await getAppointmentStats(c.env.OCULOFLOW_KV, range, c.env.DB)
+    const data  = await getAppointmentStats(c.env.OCULOFLOW_KV, rangeToDates(range), c.env.DB)
     return c.json<ApiResponse<typeof data>>({ success: true, data })
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
@@ -98,7 +112,7 @@ reports.get('/appointments', async (c) => {
 reports.get('/exams', async (c) => {
   try {
     const range = parseRange(c.req.query('range'))
-    const data  = await getExamStats(c.env.OCULOFLOW_KV, range, c.env.DB)
+    const data  = await getExamStats(c.env.OCULOFLOW_KV, rangeToDates(range), c.env.DB)
     return c.json<ApiResponse<typeof data>>({ success: true, data })
   } catch (e: any) {
     return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
