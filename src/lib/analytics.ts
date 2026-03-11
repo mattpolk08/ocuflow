@@ -168,11 +168,11 @@ async function buildKpiFromD1(period: string, db: D1Database): Promise<KpiSnapsh
               SUM(CASE WHEN status='COMPLETE' THEN 1 ELSE 0 END) as complete,
               SUM(CASE WHEN status='NO_SHOW' THEN 1 ELSE 0 END) as noshow,
               SUM(CASE WHEN status='CANCELLED' THEN 1 ELSE 0 END) as cancel
-       FROM appointments WHERE date BETWEEN ? AND ?`, [start, end]),
+       FROM appointments WHERE appointment_date BETWEEN ? AND ?`, [start, end]),
     dbGet<{ total: number; new_pt: number }>(db,
       `SELECT COUNT(DISTINCT patient_id) as total,
               SUM(CASE WHEN strftime('%Y-%m', created_at)=? THEN 1 ELSE 0 END) as new_pt
-       FROM appointments WHERE date BETWEEN ? AND ?`, [period, start, end]),
+       FROM appointments WHERE appointment_date BETWEEN ? AND ?`, [period, start, end]),
     dbGet<{ outstanding: number }>(db,
       `SELECT COALESCE(SUM(total_charged - total_paid - total_adjustment), 0) as outstanding
        FROM rcm_claims WHERE status NOT IN ('PAID','VOIDED','WRITTEN_OFF')`)

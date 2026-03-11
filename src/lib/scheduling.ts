@@ -270,11 +270,11 @@ export async function createAppointment(kv: KVNamespace, input: AppointmentCreat
 
   if (db) {
     await dbRun(db, `INSERT INTO appointments
-      (id, organization_id, patient_id, patient_name, provider_id, provider_name, appt_date, appointment_date, start_time, end_time, appointment_type, status, room_id, reason, notes, confirmation_code, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, organization_id, patient_id, patient_name, provider_id, provider_name, appt_date, appointment_date, start_time, end_time, appointment_type, type_label, status, room_id, reason, notes, confirmation_code, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [appt.id, appt.organizationId, appt.patientId, appt.patientName,
        appt.providerId, appt.providerName, appt.date, appt.date, appt.startTime, appt.endTime,
-       appt.appointmentType || null, appt.status, appt.roomId || null,
+       appt.appointmentType || null, appt.appointmentType || null, appt.status, appt.roomId || null,
        appt.reason || null, appt.notes || null, appt.confirmationCode, appt.createdAt, appt.updatedAt])
   }
   return appt

@@ -166,15 +166,15 @@ export async function getAppointmentStats(
   if (!db) return { total: 0, completed: 0, cancelled: 0, noShow: 0, scheduled: 0, utilizationRate: 0, byType: [], byDay: [] };
 
   const [total, completed, cancelled, noshow, byType, byDay] = await Promise.all([
-    dbGet<{ c: number }>(db, `SELECT COUNT(*) as c FROM appointments WHERE date BETWEEN ? AND ?`, [range.start, range.end]),
-    dbGet<{ c: number }>(db, `SELECT COUNT(*) as c FROM appointments WHERE date BETWEEN ? AND ? AND status='COMPLETE'`, [range.start, range.end]),
-    dbGet<{ c: number }>(db, `SELECT COUNT(*) as c FROM appointments WHERE date BETWEEN ? AND ? AND status='CANCELLED'`, [range.start, range.end]),
-    dbGet<{ c: number }>(db, `SELECT COUNT(*) as c FROM appointments WHERE date BETWEEN ? AND ? AND status='NO_SHOW'`, [range.start, range.end]),
+    dbGet<{ c: number }>(db, `SELECT COUNT(*) as c FROM appointments WHERE appointment_date BETWEEN ? AND ?`, [range.start, range.end]),
+    dbGet<{ c: number }>(db, `SELECT COUNT(*) as c FROM appointments WHERE appointment_date BETWEEN ? AND ? AND status='COMPLETE'`, [range.start, range.end]),
+    dbGet<{ c: number }>(db, `SELECT COUNT(*) as c FROM appointments WHERE appointment_date BETWEEN ? AND ? AND status='CANCELLED'`, [range.start, range.end]),
+    dbGet<{ c: number }>(db, `SELECT COUNT(*) as c FROM appointments WHERE appointment_date BETWEEN ? AND ? AND status='NO_SHOW'`, [range.start, range.end]),
     dbAll<{ type: string; count: number }>(db,
-      `SELECT type, COUNT(*) as count FROM appointments WHERE date BETWEEN ? AND ? GROUP BY type ORDER BY count DESC`,
+      `SELECT appointment_type as type, COUNT(*) as count FROM appointments WHERE appointment_date BETWEEN ? AND ? GROUP BY type ORDER BY count DESC`,
       [range.start, range.end]),
     dbAll<{ day: string; count: number }>(db,
-      `SELECT date as day, COUNT(*) as count FROM appointments WHERE date BETWEEN ? AND ? GROUP BY date ORDER BY date`,
+      `SELECT appointment_date as day, COUNT(*) as count FROM appointments WHERE appointment_date BETWEEN ? AND ? GROUP BY appointment_date ORDER BY appointment_date`,
       [range.start, range.end]),
   ]);
 
