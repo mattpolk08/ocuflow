@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin — OculoFlow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" />
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+    /* Nav */
+    .nav-item { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 8px;
+                font-size: 12px; font-weight: 500; color: #94a3b8; text-decoration: none; cursor: pointer;
+                transition: all .15s ease; white-space: nowrap; }
+    .nav-item:hover  { background: rgba(51,65,85,.6); color: #f1f5f9; }
+    .nav-item.active { background: rgba(59,130,246,.15); color: #60a5fa; }
+
+    /* Sidebar tabs */
+    .sidebar-tab { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px;
+                   font-size: 13px; font-weight: 500; color: #64748b; cursor: pointer;
+                   transition: all .15s ease; border: 1px solid transparent; }
+    .sidebar-tab:hover { background: #1e293b; color: #cbd5e1; }
+    .sidebar-tab.active { background: rgba(59,130,246,.12); border-color: rgba(59,130,246,.25); color: #60a5fa; }
+
+    /* Cards */
+    .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; padding: 24px; }
+    .card-sm { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 16px; }
+
+    /* Form fields */
+    .field-label { font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+    .field-input { width: 100%; background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+                   padding: 8px 12px; font-size: 13px; color: #e2e8f0; outline: none;
+                   transition: border-color .15s; }
+    .field-input:focus { border-color: #3b82f6; }
+    .field-input::placeholder { color: #475569; }
+
+    /* Buttons */
+    .btn-primary { background: #3b82f6; color: #fff; border: none; border-radius: 8px;
+                   padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+                   transition: background .15s; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-secondary { background: #1e293b; color: #94a3b8; border: 1px solid #334155; border-radius: 8px;
+                     padding: 8px 16px; font-size: 13px; font-weight: 500; cursor: pointer;
+                     transition: all .15s; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-secondary:hover { background: #273344; color: #e2e8f0; }
+    .btn-danger { background: rgba(239,68,68,.15); color: #f87171; border: 1px solid rgba(239,68,68,.3); border-radius: 8px;
+                  padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; }
+    .btn-danger:hover { background: rgba(239,68,68,.25); }
+    .btn-success { background: rgba(16,185,129,.15); color: #34d399; border: 1px solid rgba(16,185,129,.3); border-radius: 8px;
+                   padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; }
+
+    /* Toggle switch */
+    .toggle-track { width: 44px; height: 24px; border-radius: 12px; background: #334155;
+                    cursor: pointer; transition: background .2s; position: relative; flex-shrink: 0; }
+    .toggle-track.on { background: #3b82f6; }
+    .toggle-thumb { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+                    border-radius: 9px; background: #fff; transition: left .2s; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+    .toggle-track.on .toggle-thumb { left: 23px; }
+
+    /* User role badge */
+    .role-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px;
+                  font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+    .role-ADMIN    { background: rgba(239,68,68,.15);   color: #f87171; }
+    .role-PROVIDER { background: rgba(59,130,246,.15);  color: #60a5fa; }
+    .role-NURSE    { background: rgba(16,185,129,.15);  color: #34d399; }
+    .role-FRONT_DESK { background: rgba(245,158,11,.15); color: #fbbf24; }
+    .role-BILLING  { background: rgba(168,85,247,.15);  color: #c084fc; }
+    .role-OPTICAL  { background: rgba(6,182,212,.15);   color: #22d3ee; }
+
+    /* Table */
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table th { padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 700;
+                     color: #64748b; text-transform: uppercase; letter-spacing: .05em;
+                     border-bottom: 1px solid #1e293b; }
+    .data-table td { padding: 12px; font-size: 13px; color: #cbd5e1; border-bottom: 1px solid #0f172a; }
+    .data-table tr:hover td { background: #1e293b30; }
+
+    /* Module category pill */
+    .cat-core     { background: rgba(59,130,246,.12); color: #60a5fa; }
+    .cat-clinical { background: rgba(16,185,129,.12); color: #34d399; }
+    .cat-billing  { background: rgba(168,85,247,.12); color: #c084fc; }
+    .cat-reporting{ background: rgba(245,158,11,.12); color: #fbbf24; }
+    .cat-patient  { background: rgba(6,182,212,.12);  color: #22d3ee; }
+    .cat-admin    { background: rgba(239,68,68,.12);  color: #f87171; }
+    .cat-pill { display: inline-flex; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+
+    /* Toast */
+    #toast { transition: opacity .3s, transform .3s; opacity: 0; transform: translateY(12px); pointer-events: none; }
+    #toast.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+
+    /* Status dot */
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .status-dot.active { background: #34d399; }
+    .status-dot.inactive { background: #ef4444; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+
+  <!-- ── Top Navigation ───────────────────────────────────────────────────── -->
+  <nav class="bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4 py-2 flex items-center gap-2 z-50 sticky top-0" style="min-height:52px">
+    <a href="/dashboard" class="flex items-center gap-2 mr-3 text-blue-400 font-bold text-sm whitespace-nowrap">
+      <div class="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center">
+        <i class="fas fa-eye text-white text-xs"></i>
+      </div>
+      OculoFlow
+    </a>
+
+    <div class="flex items-center gap-1 flex-wrap flex-1 overflow-hidden">
+      <a href="/dashboard"  class="nav-item"><i class="fas fa-gauge-high"></i>Dashboard</a>
+      <a href="/patients"   class="nav-item"><i class="fas fa-users"></i>Patients</a>
+      <a href="/schedule"   class="nav-item"><i class="fas fa-calendar-check"></i>Schedule</a>
+      <a href="/billing"    class="nav-item"><i class="fas fa-file-invoice-dollar"></i>Billing</a>
+      <a href="/reports"    class="nav-item"><i class="fas fa-chart-bar"></i>Reports</a>
+      <a href="/admin"      class="nav-item active"><i class="fas fa-gear"></i>Admin</a>
+    </div>
+
+    <div class="flex items-center gap-2 ml-auto" data-nav-actions>
+      <div data-auth-avatar class="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center text-xs font-bold text-white cursor-pointer" title="Admin">AD</div>
+    </div>
+  </nav>
+
+  <!-- ── Main Layout ─────────────────────────────────────────────────────── -->
+  <div class="flex flex-1 overflow-hidden" style="height: calc(100vh - 52px)">
+
+    <!-- Sidebar -->
+    <aside class="w-56 bg-slate-900/60 border-r border-slate-800 flex flex-col p-3 gap-1 overflow-y-auto flex-shrink-0">
+      <p class="text-xs font-bold text-slate-600 uppercase tracking-widest px-2 py-1 mt-1">Administration</p>
+      <button class="sidebar-tab active" data-tab="overview" onclick="switchTab('overview', this)">
+        <i class="fas fa-gauge-high w-4 text-center text-blue-400"></i> Overview
+      </button>
+      <button class="sidebar-tab" data-tab="practice" onclick="switchTab('practice', this)">
+        <i class="fas fa-hospital w-4 text-center text-slate-500"></i> Practice Settings
+      </button>
+      <button class="sidebar-tab" data-tab="locations" onclick="switchTab('locations', this)">
+        <i class="fas fa-location-dot w-4 text-center text-slate-500"></i> Locations
+      </button>
+      <button class="sidebar-tab" data-tab="users" onclick="switchTab('users', this)">
+        <i class="fas fa-users w-4 text-center text-slate-500"></i> User Management
+      </button>
+      <button class="sidebar-tab" data-tab="modules" onclick="switchTab('modules', this)">
+        <i class="fas fa-toggle-on w-4 text-center text-slate-500"></i> Module Settings
+      </button>
+    </aside>
+
+    <!-- Content -->
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <!-- ── OVERVIEW ───────────────────────────────────────────────────── -->
+      <div id="tab-overview">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <h1 class="text-xl font-bold text-white">Admin Control Center</h1>
+            <p class="text-sm text-slate-500 mt-0.5">Manage practice settings, users, locations, and feature modules</p>
+          </div>
+          <span class="text-xs text-slate-600 font-mono" id="overview-version">v3.2.0</span>
+        </div>
+
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="overview-stats">
+          <div class="card-sm">
+            <p class="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">Practice Name</p>
+            <p class="text-sm font-bold text-white truncate" id="ov-practice-name">Loading…</p>
+          </div>
+          <div class="card-sm">
+            <p class="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">Active Locations</p>
+            <p class="text-2xl font-bold text-blue-400" id="ov-locations">—</p>
+          </div>
+          <div class="card-sm">
+            <p class="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">Active Staff</p>
+            <p class="text-2xl font-bold text-emerald-400" id="ov-users">—</p>
+          </div>
+          <div class="card-sm">
+            <p class="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">Enabled Modules</p>
+            <p class="text-2xl font-bold text-violet-400" id="ov-modules">—</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="card">
+            <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
+              <i class="fas fa-bolt text-amber-400"></i> Quick Actions
+            </h3>
+            <div class="flex flex-col gap-2">
+              <button class="btn-secondary w-full justify-start" onclick="switchTab('users', document.querySelector('[data-tab=users]'))">
+                <i class="fas fa-user-plus text-emerald-400"></i> Add New Staff User
+              </button>
+              <button class="btn-secondary w-full justify-start" onclick="switchTab('locations', document.querySelector('[data-tab=locations]'))">
+                <i class="fas fa-location-dot text-blue-400"></i> Manage Locations
+              </button>
+              <button class="btn-secondary w-full justify-start" onclick="switchTab('modules', document.querySelector('[data-tab=modules]'))">
+                <i class="fas fa-toggle-on text-violet-400"></i> Configure Modules
+              </button>
+              <button class="btn-secondary w-full justify-start" onclick="switchTab('practice', document.querySelector('[data-tab=practice]'))">
+                <i class="fas fa-pencil text-slate-400"></i> Edit Practice Info
+              </button>
+            </div>
+          </div>
+          <div class="card">
+            <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
+              <i class="fas fa-info-circle text-blue-400"></i> System Info
+            </h3>
+            <div class="space-y-2 text-sm">
+              <div class="flex justify-between">
+                <span class="text-slate-500">EHR Version</span>
+                <span class="text-white font-mono font-semibold" id="sys-version">3.2.0</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">Platform</span>
+                <span class="text-white">Cloudflare Pages + D1</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">Deployment</span>
+                <span class="text-emerald-400 font-semibold"><i class="fas fa-circle text-xs mr-1"></i>Live</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">HIPAA Audit</span>
+                <span class="text-emerald-400 font-semibold">Enabled</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── PRACTICE SETTINGS ─────────────────────────────────────────── -->
+      <div id="tab-practice" class="hidden">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <h1 class="text-xl font-bold text-white">Practice Settings</h1>
+            <p class="text-sm text-slate-500 mt-0.5">Configure practice information, NPI, billing details</p>
+          </div>
+          <button class="btn-primary" onclick="saveSettings()">
+            <i class="fas fa-save"></i> Save Changes
+          </button>
+        </div>
+
+        <div id="settings-form" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="card md:col-span-2">
+            <h3 class="text-sm font-bold text-white mb-4 flex items-center gap-2">
+              <i class="fas fa-hospital text-blue-400"></i> Practice Information
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p class="field-label">Practice Name</p>
+                <input class="field-input" id="s-practice_name" placeholder="Practice name" />
+              </div>
+              <div>
+                <p class="field-label">NPI Number</p>
+                <input class="field-input" id="s-practice_npi" placeholder="10-digit NPI" maxlength="10" />
+              </div>
+              <div>
+                <p class="field-label">Phone</p>
+                <input class="field-input" id="s-practice_phone" placeholder="(xxx) xxx-xxxx" />
+              </div>
+              <div>
+                <p class="field-label">Fax</p>
+                <input class="field-input" id="s-practice_fax" placeholder="(xxx) xxx-xxxx" />
+              </div>
+              <div>
+                <p class="field-label">Email</p>
+                <input class="field-input" id="s-practice_email" type="email" placeholder="info@practice.com" />
+              </div>
+              <div>
+                <p class="field-label">Website</p>
+                <input class="field-input" id="s-practice_website" placeholder="https://..." />
+              </div>
+              <div class="md:col-span-2">
+                <p class="field-label">Address</p>
+                <input class="field-input" id="s-practice_address" placeholder="Street address" />
+              </div>
+              <div>
+                <p class="field-label">City</p>
+                <input class="field-input" id="s-practice_city" placeholder="City" />
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <p class="field-label">State</p>
+                  <input class="field-input" id="s-practice_state" placeholder="FL" maxlength="2" />
+                </div>
+                <div>
+                  <p class="field-label">ZIP</p>
+                  <input class="field-input" id="s-practice_zip" placeholder="00000" maxlength="10" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3 class="text-sm font-bold text-white mb-4 flex items-center gap-2">
+              <i class="fas fa-file-invoice-dollar text-violet-400"></i> Billing Configuration
+            </h3>
+            <div class="space-y-4">
+              <div>
+                <p class="field-label">Tax ID (EIN)</p>
+                <input class="field-input" id="s-billing_tax_id" placeholder="xx-xxxxxxx" />
+              </div>
+              <div>
+                <p class="field-label">Place of Service Code</p>
+                <select class="field-input" id="s-billing_place_of_service">
+                  <option value="11">11 — Office</option>
+                  <option value="12">12 — Home</option>
+                  <option value="21">21 — Inpatient Hospital</option>
+                  <option value="22">22 — On Campus-Outpatient Hospital</option>
+                  <option value="02">02 — Telehealth (Patient Home)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3 class="text-sm font-bold text-white mb-4 flex items-center gap-2">
+              <i class="fas fa-stethoscope text-emerald-400"></i> EHR Defaults
+            </h3>
+            <div class="space-y-4">
+              <div>
+                <p class="field-label">Default Exam Type</p>
+                <select class="field-input" id="s-ehr_default_exam">
+                  <option value="COMPREHENSIVE">Comprehensive Exam</option>
+                  <option value="FOLLOWUP">Follow-up</option>
+                  <option value="CONTACT_LENS">Contact Lens</option>
+                  <option value="GLAUCOMA">Glaucoma Exam</option>
+                  <option value="DIABETIC">Diabetic Eye Exam</option>
+                </select>
+              </div>
+              <div>
+                <p class="field-label">Timezone</p>
+                <select class="field-input" id="s-practice_timezone">
+                  <option value="America/New_York">Eastern Time</option>
+                  <option value="America/Chicago">Central Time</option>
+                  <option value="America/Denver">Mountain Time</option>
+                  <option value="America/Los_Angeles">Pacific Time</option>
+                  <option value="America/Phoenix">Arizona</option>
+                  <option value="Pacific/Honolulu">Hawaii</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── LOCATIONS ─────────────────────────────────────────────────── -->
+      <div id="tab-locations" class="hidden">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <h1 class="text-xl font-bold text-white">Locations</h1>
+            <p class="text-sm text-slate-500 mt-0.5">Manage office locations and contact information</p>
+          </div>
+          <button class="btn-primary" onclick="openAddLocation()">
+            <i class="fas fa-plus"></i> Add Location
+          </button>
+        </div>
+        <div id="locations-list" class="space-y-3">
+          <div class="card-sm text-center text-slate-500 text-sm py-8">
+            <i class="fas fa-spinner fa-spin text-2xl mb-3 text-slate-600"></i><br>Loading locations…
+          </div>
+        </div>
+
+        <!-- Add/Edit Modal -->
+        <div id="location-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg p-6">
+            <div class="flex items-center justify-between mb-5">
+              <h2 class="text-base font-bold text-white" id="loc-modal-title">Add Location</h2>
+              <button onclick="closeLocationModal()" class="text-slate-500 hover:text-white"><i class="fas fa-xmark text-lg"></i></button>
+            </div>
+            <div class="space-y-3">
+              <div>
+                <p class="field-label">Location Name *</p>
+                <input class="field-input" id="loc-name" placeholder="e.g. Main Office" />
+              </div>
+              <div>
+                <p class="field-label">Address</p>
+                <input class="field-input" id="loc-address" placeholder="Street address" />
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <p class="field-label">City</p>
+                  <input class="field-input" id="loc-city" placeholder="City" />
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <div>
+                    <p class="field-label">State</p>
+                    <input class="field-input" id="loc-state" placeholder="FL" maxlength="2" />
+                  </div>
+                  <div>
+                    <p class="field-label">ZIP</p>
+                    <input class="field-input" id="loc-zip" placeholder="00000" />
+                  </div>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <p class="field-label">Phone</p>
+                  <input class="field-input" id="loc-phone" placeholder="(xxx) xxx-xxxx" />
+                </div>
+                <div>
+                  <p class="field-label">Fax</p>
+                  <input class="field-input" id="loc-fax" placeholder="(xxx) xxx-xxxx" />
+                </div>
+              </div>
+            </div>
+            <input type="hidden" id="loc-edit-id" />
+            <div class="flex gap-3 mt-5">
+              <button class="btn-primary flex-1" onclick="saveLocation()"><i class="fas fa-save"></i> Save Location</button>
+              <button class="btn-secondary" onclick="closeLocationModal()">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── USERS ─────────────────────────────────────────────────────── -->
+      <div id="tab-users" class="hidden">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <h1 class="text-xl font-bold text-white">User Management</h1>
+            <p class="text-sm text-slate-500 mt-0.5">Create, edit, and manage staff accounts and roles</p>
+          </div>
+          <button class="btn-primary" onclick="openAddUser()">
+            <i class="fas fa-user-plus"></i> Add User
+          </button>
+        </div>
+
+        <div class="card p-0 overflow-hidden">
+          <table class="data-table">
+            <thead class="bg-slate-900/80">
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-tbody">
+              <tr><td colspan="5" class="text-center text-slate-500 py-8"><i class="fas fa-spinner fa-spin mr-2"></i>Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Add/Edit User Modal -->
+        <div id="user-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-6">
+            <div class="flex items-center justify-between mb-5">
+              <h2 class="text-base font-bold text-white" id="user-modal-title">Add Staff User</h2>
+              <button onclick="closeUserModal()" class="text-slate-500 hover:text-white"><i class="fas fa-xmark text-lg"></i></button>
+            </div>
+            <div class="space-y-3">
+              <div>
+                <p class="field-label">Full Name *</p>
+                <input class="field-input" id="u-name" placeholder="Dr. Jane Smith" />
+              </div>
+              <div>
+                <p class="field-label">Email Address *</p>
+                <input class="field-input" id="u-email" type="email" placeholder="jane@practice.com" />
+              </div>
+              <div>
+                <p class="field-label">Role *</p>
+                <select class="field-input" id="u-role">
+                  <option value="PROVIDER">Provider (OD/MD)</option>
+                  <option value="NURSE">Clinical Staff / Tech</option>
+                  <option value="FRONT_DESK">Front Desk</option>
+                  <option value="BILLING">Billing</option>
+                  <option value="OPTICAL">Optical Staff</option>
+                  <option value="ADMIN">Administrator</option>
+                </select>
+              </div>
+              <div>
+                <p class="field-label">Temporary Password</p>
+                <input class="field-input" id="u-password" type="password" placeholder="Leave blank for default: TempPass@123!" />
+              </div>
+            </div>
+            <input type="hidden" id="u-edit-id" />
+            <div class="flex gap-3 mt-5">
+              <button class="btn-primary flex-1" onclick="saveUser()"><i class="fas fa-save"></i> Save User</button>
+              <button class="btn-secondary" onclick="closeUserModal()">Cancel</button>
+            </div>
+            <p class="text-xs text-slate-600 mt-3 text-center">New users must change their password on first login</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── MODULES ────────────────────────────────────────────────────── -->
+      <div id="tab-modules" class="hidden">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <h1 class="text-xl font-bold text-white">Module Settings</h1>
+            <p class="text-sm text-slate-500 mt-0.5">Enable or disable optional modules for your practice</p>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn-secondary" onclick="setAllModules(true)">
+              <i class="fas fa-check-double text-emerald-400"></i> Enable All
+            </button>
+            <button class="btn-secondary" onclick="setAllModules(false)">
+              <i class="fas fa-ban text-red-400"></i> Disable Optional
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3" id="modules-grid">
+          <div class="card-sm text-center text-slate-500 text-sm py-8 col-span-3">
+            <i class="fas fa-spinner fa-spin text-2xl mb-3 text-slate-600"></i><br>Loading modules…
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- ── Toast ────────────────────────────────────────────────────────────── -->
+  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 border border-slate-600 text-white text-sm px-5 py-3 rounded-xl shadow-2xl z-[200] flex items-center gap-2">
+    <i id="toast-icon" class="fas fa-check-circle text-emerald-400"></i>
+    <span id="toast-msg">Done</span>
+  </div>
+
+  <script src="/static/auth-nav.js"></script>
+  <script src="/static/admin.js"></script>
+</body>
+</html>

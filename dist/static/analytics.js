@@ -5,7 +5,7 @@ let dashData = null;
 let charts = {};
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
-function token()  { return sessionStorage.getItem('accessToken'); }
+function token()  { return sessionStorage.getItem('of_access_token') || sessionStorage.getItem('accessToken'); }
 function logout() { sessionStorage.clear(); location.href = '/login'; }
 
 async function api(path) {

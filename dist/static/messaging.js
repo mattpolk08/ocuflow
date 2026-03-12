@@ -4,6 +4,19 @@
 
 const API = '/api/messaging'
 
+// ── Auth fetch helper ─────────────────────────────────────────────────────────
+function _authHdr(extra = {}) {
+  const tok = sessionStorage.getItem('of_access_token');
+  const h = { 'Content-Type': 'application/json', ...extra };
+  if (tok) h['Authorization'] = `Bearer ${tok}`;
+  return h;
+}
+async function apiFetch(url, opts = {}) {
+  const r = await fetch(url, { ...opts, headers: _authHdr(opts.headers) });
+  if (r.status === 401) { sessionStorage.clear(); location.href = '/login'; return { ok: false }; }
+  return r;
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 let currentView   = 'inbox'
 let currentItemId = null
@@ -26,7 +39,7 @@ function setTodayDate() {
 // ── Dashboard & Stats ─────────────────────────────────────────────────────────
 async function loadDashboard() {
   try {
-    const r = await fetch(`${API}/dashboard`)
+    const r = await apiFetch(`${API}/dashboard`)
     const { success, data } = await r.json()
     if (!success) return
     dashData = data
@@ -59,7 +72,7 @@ function setBadge(id, count) {
 // ── Staff ─────────────────────────────────────────────────────────────────────
 async function loadStaff() {
   try {
-    const r = await fetch(`${API}/staff`)
+    const r = await apiFetch(`${API}/staff`)
     const { success, data } = await r.json()
     if (!success) return
     staff = data
@@ -130,7 +143,7 @@ async function loadList(view) {
     }
 
     titleEl.textContent = title
-    const r = await fetch(url)
+    const r = await apiFetch(url)
     const { success, data } = await r.json()
     if (!success || !data) { listEl.innerHTML = '<div class="empty-state"><i class="fas fa-inbox"></i><span>No items found</span></div>'; return }
 
@@ -307,7 +320,7 @@ async function sendReply(threadId) {
   if (!body) return showToast('Reply cannot be empty', 'error')
 
   try {
-    const r = await fetch(`${API}/threads/${threadId}/reply`, {
+    const r = await apiFetch(`${API}/threads/${threadId}/reply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ senderId: 'staff-001', senderName: 'Dr. Sarah Chen', senderRole: 'OPTOMETRIST', body, priority }),
@@ -323,7 +336,7 @@ function handleReplyKey(e, threadId) {
 }
 
 async function markRead(threadId) {
-  await fetch(`${API}/threads/${threadId}/read`, {
+  await apiFetch(`${API}/threads/${threadId}/read`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ staffId: 'staff-001' }),
   })
@@ -333,7 +346,7 @@ async function markRead(threadId) {
 }
 
 async function togglePin(threadId, pinned) {
-  await fetch(`${API}/threads/${threadId}/pin`, {
+  await apiFetch(`${API}/threads/${threadId}/pin`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pinned }),
   })
@@ -342,7 +355,7 @@ async function togglePin(threadId, pinned) {
 }
 
 async function toggleArchive(threadId, archived) {
-  await fetch(`${API}/threads/${threadId}/archive`, {
+  await apiFetch(`${API}/threads/${threadId}/archive`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ archived }),
   })
@@ -359,7 +372,7 @@ async function openTask(taskId) {
   rp.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin text-2xl opacity-40"></i></div>'
 
   try {
-    const r = await fetch(`${API}/tasks/${taskId}`)
+    const r = await apiFetch(`${API}/tasks/${taskId}`)
     const { data: task } = await r.json()
     if (!task) return
 
@@ -428,7 +441,7 @@ async function openTask(taskId) {
 }
 
 async function updateTaskStatus(taskId, status) {
-  const r = await fetch(`${API}/tasks/${taskId}`, {
+  const r = await apiFetch(`${API}/tasks/${taskId}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status }),
   })
@@ -440,7 +453,7 @@ async function updateTaskStatus(taskId, status) {
 async function addComment(taskId) {
   const body = document.getElementById('comment-body')?.value?.trim()
   if (!body) return
-  const r = await fetch(`${API}/tasks/${taskId}/comments`, {
+  const r = await apiFetch(`${API}/tasks/${taskId}/comments`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ authorId: 'staff-001', authorName: 'Dr. Sarah Chen', body }),
   })
@@ -459,7 +472,7 @@ async function openRecall(recallId) {
 
   try {
     // Fetch full recalls list and find this one
-    const r = await fetch(`${API}/recalls`)
+    const r = await apiFetch(`${API}/recalls`)
     const { data: recalls } = await r.json()
     const recall = (recalls || []).find(rc => rc.id === recallId)
     if (!recall) return
@@ -513,7 +526,7 @@ async function openRecall(recallId) {
 async function updateRecallStatus(recallId, status) {
   const patch = { status }
   if (status === 'CONTACTED') patch.lastContactedAt = new Date().toISOString()
-  const r = await fetch(`${API}/recalls/${recallId}`, {
+  const r = await apiFetch(`${API}/recalls/${recallId}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
   })
@@ -537,7 +550,7 @@ async function submitNewThread() {
   if (!subject || !body || !sender) return showToast('Subject, sender and message are required', 'error')
 
   const patient = document.getElementById('nt-patient').value.trim()
-  const r = await fetch(`${API}/threads`, {
+  const r = await apiFetch(`${API}/threads`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       subject,
@@ -569,7 +582,7 @@ async function submitNewTask() {
   const creator = document.getElementById('tk-creator').value.trim()
   if (!title || !creator) return showToast('Title and creator are required', 'error')
 
-  const r = await fetch(`${API}/tasks`, {
+  const r = await apiFetch(`${API}/tasks`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       title,

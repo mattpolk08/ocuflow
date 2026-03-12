@@ -284,4 +284,70 @@
     startSessionMonitor();
   }
 
+  // ── Module visibility toggles (Phase C1) ──────────────────────────────────
+  // Fetch enabled modules from /api/admin/modules and hide nav links for
+  // disabled modules. Each nav link should have data-module="telehealth" etc.
+  const OF_MODULES_KEY = 'of_modules';
+
+  async function loadAndApplyModules() {
+    const tok = sessionStorage.getItem(TOKEN_KEY);
+    if (!tok) return;
+
+    try {
+      // Use cached modules if available (refresh every 5 min)
+      const cached = sessionStorage.getItem(OF_MODULES_KEY);
+      let modules = null;
+
+      if (cached) {
+        try { modules = JSON.parse(cached); } catch {}
+      }
+
+      if (!modules) {
+        const res = await fetch('/api/admin/modules', {
+          headers: { 'Authorization': `Bearer ${tok}`, 'Content-Type': 'application/json' }
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data && json.data.length > 0) {
+            modules = json.data;
+            sessionStorage.setItem(OF_MODULES_KEY, JSON.stringify(modules));
+            // Expire cache after 5 minutes
+            setTimeout(() => sessionStorage.removeItem(OF_MODULES_KEY), 5 * 60 * 1000);
+          }
+        }
+      }
+
+      if (!modules || !modules.length) return;
+
+      // Build disabled set
+      const disabled = new Set(
+        modules.filter(m => !m.is_enabled).map(m => m.module_id)
+      );
+      if (!disabled.size) return;
+
+      // Hide any nav links/buttons with data-module attribute
+      document.querySelectorAll('[data-module]').forEach(el => {
+        const moduleId = el.getAttribute('data-module');
+        if (disabled.has(moduleId)) {
+          el.style.display = 'none';
+          el.setAttribute('aria-hidden', 'true');
+        }
+      });
+    } catch (e) {
+      // Module visibility is non-critical — fail silently
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadAndApplyModules);
+  } else {
+    loadAndApplyModules();
+  }
+
+  // Expose for manual refresh
+  window.ofRefreshModules = function() {
+    sessionStorage.removeItem(OF_MODULES_KEY);
+    loadAndApplyModules();
+  };
+
 })();

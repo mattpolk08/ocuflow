@@ -14,8 +14,15 @@ let state = {
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
+function _authHdr(extra = {}) {
+  const tok = sessionStorage.getItem('of_access_token');
+  const h = { 'Content-Type': 'application/json', ...extra };
+  if (tok) h['Authorization'] = `Bearer ${tok}`;
+  return h;
+}
 async function apiFetch(path, opts = {}) {
-  const r = await fetch(API + path, { headers: { 'Content-Type': 'application/json' }, ...opts })
+  const r = await fetch(API + path, { ...opts, headers: _authHdr(opts.headers) })
+  if (r.status === 401) { sessionStorage.clear(); location.href = '/login'; return null; }
   return r.json()
 }
 const fmtDate = iso => iso ? iso.slice(0, 10) : '—'

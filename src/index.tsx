@@ -51,6 +51,7 @@ import engagementRoutes  from './routes/engagement'
 import analyticsRoutes   from './routes/analytics'
 import notificationsRoutes from './routes/notifications'
 import docRoutes         from './routes/documents'
+import adminRoutes       from './routes/admin'
 
 type Bindings = {
   OCULOFLOW_KV: KVNamespace
@@ -214,14 +215,20 @@ app.route('/api/notifications', notificationsRoutes)
 app.use('/api/documents/*',  requireAuth, requireRole('ADMIN','PROVIDER','NURSE','FRONT_DESK','BILLING'), auditMiddleware)
 app.route('/api/documents',  docRoutes)
 
+// ── Admin Module — Practice Settings, Locations, Module Toggles ───────────────
+// /api/admin/modules is accessible to any authenticated user (for nav rendering)
+// All other /api/admin/* routes require ADMIN role (enforced inside the router)
+app.use('/api/admin/*', requireAuth)
+app.route('/api/admin', adminRoutes)
+
 // ── Health Check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (c) => {
   return c.json({
     status: 'ok',
     service: 'OculoFlow',
-    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx', '8a-ai-cds', '8b-prior-auth', '9a-rcm', '9b-engagement', 'a1-auth', 'a2-audit-hipaa', 'a3-live-deploy', 'a4-mfa', '10a-analytics', 'b1-notifications', 'b2-documents', 'b3-portal-auth'],
+    phases: ['1-intake', '1a-dashboard', '1b-patients', '1c-scheduling', '1d-exam', '2a-billing', '2b-reports', '3a-optical', '4a-portal', '5a-messaging', '6a-reminders', '7a-scorecards', '7b-telehealth', '7c-erx', '8a-ai-cds', '8b-prior-auth', '9a-rcm', '9b-engagement', 'a1-auth', 'a2-audit-hipaa', 'a3-live-deploy', 'a4-mfa', '10a-analytics', 'b1-notifications', 'b2-documents', 'b3-portal-auth', 'c1-admin'],
     timestamp: new Date().toISOString(),
-    version: '3.1.0',
+    version: '3.2.0',
   })
 })
 

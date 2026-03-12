@@ -114,7 +114,11 @@ function showToast(msg, isErr = false) {
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 async function apiFetch(path, opts = {}) {
-  const r = await fetch(API + path, opts)
+  const tok = sessionStorage.getItem('of_access_token');
+  const headers = { 'Content-Type': 'application/json' };
+  if (tok) headers['Authorization'] = `Bearer ${tok}`;
+  const r = await fetch(API + path, { ...opts, headers: { ...headers, ...(opts.headers || {}) } })
+  if (r.status === 401) { sessionStorage.clear(); location.href = '/login'; return {}; }
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
   return r.json()
 }

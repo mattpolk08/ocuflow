@@ -55,7 +55,10 @@ async function loadData() {
   $$('[id^="section-"]').forEach(el => el.classList.add('hidden'))
 
   try {
-    const res = await fetch(`/api/reports/dashboard?range=${S.range}`)
+    const tok = sessionStorage.getItem('of_access_token');
+    const headers = tok ? { 'Authorization': `Bearer ${tok}` } : {};
+    const res = await fetch(`/api/reports/dashboard?range=${S.range}`, { headers })
+    if (res.status === 401) { sessionStorage.clear(); location.href = '/login'; return; }
     const json = await res.json()
     if (!json.success) throw new Error(json.error)
     S.data = json.data

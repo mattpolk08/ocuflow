@@ -91,20 +91,20 @@
   <div class="h-5 w-px bg-slate-700"></div>
   <nav class="flex items-center gap-1">
     <a href="/dashboard" class="nav-item"><i class="fas fa-gauge-high"></i> Dashboard</a>
-    <a href="/patients"  class="nav-item"><i class="fas fa-users"></i> Patients</a>
-    <a href="/schedule"  class="nav-item"><i class="fas fa-calendar-days"></i> Schedule</a>
-    <a href="/exam"      class="nav-item"><i class="fas fa-eye"></i> Exam</a>
-    <a href="/billing"   class="nav-item active"><i class="fas fa-file-invoice-dollar"></i> Billing</a>
-    <a href="/reports"   class="nav-item"><i class="fas fa-chart-line"></i> Reports</a>
-    <a href="/optical"   class="nav-item"><i class="fas fa-glasses"></i> Optical</a>
-    <a href="/portal"    class="nav-item"><i class="fas fa-user-circle"></i> Patient Portal</a>
-    <a href="/messaging"  class="nav-item"><i class="fas fa-comment-medical"></i> Messaging</a>
-    <a href="/reminders" class="nav-item"><i class="fas fa-bell"></i> Reminders</a>
-    <a href="/scorecards" class="nav-item"><i class="fas fa-chart-bar"></i> Scorecards</a>
-    <a href="/telehealth" class="nav-item"><i class="fas fa-video"></i> Telehealth</a>
-    <a href="/erx" class="nav-item"><i class="fas fa-prescription-bottle"></i> eRx</a>
-    <a href="/ai" class="nav-item"><i class="fas fa-brain"></i> AI CDS</a>
-    <a href="/priorauth" class="nav-item"><i class="fas fa-clipboard-check"></i> Prior Auth</a><a href="/rcm" class="nav-item"><i class="fas fa-dollar-sign"></i> RCM</a>
+    <a data-module="patients" href="/patients"  class="nav-item"><i class="fas fa-users"></i> Patients</a>
+    <a data-module="scheduling" href="/schedule"  class="nav-item"><i class="fas fa-calendar-days"></i> Schedule</a>
+    <a data-module="exam" href="/exam"      class="nav-item"><i class="fas fa-eye"></i> Exam</a>
+    <a data-module="billing" href="/billing"   class="nav-item active"><i class="fas fa-file-invoice-dollar"></i> Billing</a>
+    <a data-module="reports" href="/reports"   class="nav-item"><i class="fas fa-chart-line"></i> Reports</a>
+    <a data-module="optical" href="/optical"   class="nav-item"><i class="fas fa-glasses"></i> Optical</a>
+    <a data-module="portal" href="/portal"    class="nav-item"><i class="fas fa-user-circle"></i> Patient Portal</a>
+    <a data-module="messaging" href="/messaging"  class="nav-item"><i class="fas fa-comment-medical"></i> Messaging</a>
+    <a data-module="reminders" href="/reminders" class="nav-item"><i class="fas fa-bell"></i> Reminders</a>
+    <a data-module="scorecards" href="/scorecards" class="nav-item"><i class="fas fa-chart-bar"></i> Scorecards</a>
+    <a data-module="telehealth" href="/telehealth" class="nav-item"><i class="fas fa-video"></i> Telehealth</a>
+    <a data-module="erx" href="/erx" class="nav-item"><i class="fas fa-prescription-bottle"></i> eRx</a>
+    <a data-module="ai" href="/ai" class="nav-item"><i class="fas fa-brain"></i> AI CDS</a>
+    <a data-module="priorauth" href="/priorauth" class="nav-item"><i class="fas fa-clipboard-check"></i> Prior Auth</a><a data-module="rcm" href="/rcm" class="nav-item"><i class="fas fa-dollar-sign"></i> RCM</a>
   </nav>
   <div class="ml-auto flex items-center gap-2">
     <button id="btn-new-sb" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors">
@@ -129,14 +129,14 @@
 
     <div class="h-px bg-slate-800 my-2"></div>
     <p class="text-[10px] font-semibold uppercase tracking-widest text-slate-500 px-2 mb-1">Quick Links</p>
-    <a href="/patients" class="nav-item"><i class="fas fa-users"></i> Patients</a>
-    <a href="/schedule" class="nav-item"><i class="fas fa-calendar-days"></i> Schedule</a>
-    <a href="/exam"     class="nav-item"><i class="fas fa-stethoscope"></i> Exam Record</a>
-    <a href="/reports"  class="nav-item"><i class="fas fa-chart-line"></i> Reports</a>
-    <a href="/optical"  class="nav-item"><i class="fas fa-glasses"></i> Optical</a>
-    <a href="/portal"   class="nav-item"><i class="fas fa-user-circle"></i> Patient Portal</a>
-    <a href="/messaging" class="nav-item"><i class="fas fa-comment-medical"></i> Messaging</a>
-    <a href="/reminders" class="nav-item"><i class="fas fa-bell"></i> Reminders</a>
+    <a data-module="patients" href="/patients" class="nav-item"><i class="fas fa-users"></i> Patients</a>
+    <a data-module="scheduling" href="/schedule" class="nav-item"><i class="fas fa-calendar-days"></i> Schedule</a>
+    <a data-module="exam" href="/exam"     class="nav-item"><i class="fas fa-stethoscope"></i> Exam Record</a>
+    <a data-module="reports" href="/reports"  class="nav-item"><i class="fas fa-chart-line"></i> Reports</a>
+    <a data-module="optical" href="/optical"  class="nav-item"><i class="fas fa-glasses"></i> Optical</a>
+    <a data-module="portal" href="/portal"   class="nav-item"><i class="fas fa-user-circle"></i> Patient Portal</a>
+    <a data-module="messaging" href="/messaging" class="nav-item"><i class="fas fa-comment-medical"></i> Messaging</a>
+    <a data-module="reminders" href="/reminders" class="nav-item"><i class="fas fa-bell"></i> Reminders</a>
   </aside>
 
   <!-- MAIN CONTENT -->

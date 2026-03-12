@@ -101,8 +101,7 @@ async function loadDashboard() {
   refreshBtn.querySelector('i').classList.add('fa-spin')
 
   try {
-    const res = await fetch('/api/dashboard/today')
-    const data = await res.json()
+    const data = await oFetch('/api/dashboard/today')
 
     if (data.success) {
       DS.schedule = data.data.schedule
@@ -479,12 +478,11 @@ async function advanceStatus(apptId, newStatus) {
   renderCurrentView()
 
   try {
-    const res = await fetch('/api/dashboard/flow', {
+    const data = await oFetch('/api/dashboard/flow', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ appointmentId: apptId, newStatus }),
     })
-    const data = await res.json()
     if (!data.success) throw new Error(data.error)
 
     const cfg = STATUS_CONFIG[newStatus]

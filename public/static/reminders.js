@@ -46,9 +46,12 @@ function showTab(name, btn) {
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 async function api(path, method = 'GET', body = null) {
+  const tok = sessionStorage.getItem('of_access_token');
   const opts = { method, headers: { 'Content-Type': 'application/json' } }
+  if (tok) opts.headers['Authorization'] = `Bearer ${tok}`;
   if (body) opts.body = JSON.stringify(body)
   const res = await fetch(API + path, opts)
+  if (res.status === 401) { sessionStorage.clear(); location.href = '/login'; return {}; }
   return res.json()
 }
 

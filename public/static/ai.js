@@ -9,11 +9,18 @@ let riskChart = null;
 let allIcdCodes = [];
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
+function _authHeaders(extra = {}) {
+  const token = sessionStorage.getItem('of_access_token');
+  const h = { 'Content-Type': 'application/json', ...extra };
+  if (token) h['Authorization'] = `Bearer ${token}`;
+  return h;
+}
 async function apiFetch(path, opts = {}) {
   const res = await fetch(API + path, {
-    headers: { 'Content-Type': 'application/json' },
     ...opts,
+    headers: _authHeaders(opts.headers),
   });
+  if (res.status === 401) { sessionStorage.clear(); location.href = '/login'; return null; }
   return res.json();
 }
 

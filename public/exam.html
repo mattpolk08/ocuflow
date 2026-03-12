@@ -252,19 +252,19 @@
     <!-- Quick nav -->
     <div class="border-t border-slate-800 p-3 space-y-1">
       <a href="/dashboard" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-gauge-high w-3.5 text-center"></i><span>Dashboard</span></a>
-      <a href="/patients"  class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-users w-3.5 text-center"></i><span>Patients</span></a>
-      <a href="/schedule"  class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-calendar-days w-3.5 text-center"></i><span>Schedule</span></a>
-      <a href="/billing"   class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-file-invoice-dollar w-3.5 text-center"></i><span>Billing</span></a>
-      <a href="/reports"   class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-chart-line w-3.5 text-center"></i><span>Reports</span></a>
-      <a href="/optical"   class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-glasses w-3.5 text-center"></i><span>Optical</span></a>
-      <a href="/portal"    class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-user-circle w-3.5 text-center"></i><span>Portal</span></a>
-      <a href="/messaging" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-comment-medical w-3.5 text-center"></i><span>Messaging</span></a>
-      <a href="/reminders" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-bell w-3.5 text-center"></i><span>Reminders</span></a>
-      <a href="/scorecards" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-chart-bar w-3.5 text-center"></i><span>Scorecards</span></a>
-      <a href="/telehealth" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-video w-3.5 text-center"></i><span>Telehealth</span></a>
-      <a href="/erx" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-prescription-bottle w-3.5 text-center"></i><span>eRx</span></a>
-      <a href="/ai" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-brain w-3.5 text-center"></i><span>AI CDS</span></a>
-      <a href="/priorauth" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-clipboard-check w-3.5 text-center"></i><span>Prior Auth</span></a><a href="/rcm" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-dollar-sign w-3.5 text-center"></i><span>RCM</span></a>
+      <a data-module="patients" href="/patients"  class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-users w-3.5 text-center"></i><span>Patients</span></a>
+      <a data-module="scheduling" href="/schedule"  class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-calendar-days w-3.5 text-center"></i><span>Schedule</span></a>
+      <a data-module="billing" href="/billing"   class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-file-invoice-dollar w-3.5 text-center"></i><span>Billing</span></a>
+      <a data-module="reports" href="/reports"   class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-chart-line w-3.5 text-center"></i><span>Reports</span></a>
+      <a data-module="optical" href="/optical"   class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-glasses w-3.5 text-center"></i><span>Optical</span></a>
+      <a data-module="portal" href="/portal"    class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-user-circle w-3.5 text-center"></i><span>Portal</span></a>
+      <a data-module="messaging" href="/messaging" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-comment-medical w-3.5 text-center"></i><span>Messaging</span></a>
+      <a data-module="reminders" href="/reminders" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-bell w-3.5 text-center"></i><span>Reminders</span></a>
+      <a data-module="scorecards" href="/scorecards" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-chart-bar w-3.5 text-center"></i><span>Scorecards</span></a>
+      <a data-module="telehealth" href="/telehealth" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-video w-3.5 text-center"></i><span>Telehealth</span></a>
+      <a data-module="erx" href="/erx" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-prescription-bottle w-3.5 text-center"></i><span>eRx</span></a>
+      <a data-module="ai" href="/ai" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-brain w-3.5 text-center"></i><span>AI CDS</span></a>
+      <a data-module="priorauth" href="/priorauth" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-clipboard-check w-3.5 text-center"></i><span>Prior Auth</span></a><a data-module="rcm" href="/rcm" class="sec-item" style="text-decoration:none"><span class="dot"></span><i class="fas fa-dollar-sign w-3.5 text-center"></i><span>RCM</span></a>
     </div>
   </aside>
 
@@ -299,13 +299,13 @@
 
       <!-- Nav links -->
       <nav class="flex items-center gap-1 ml-2">
-        <a href="/patients" class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Patients</a>
-        <a href="/schedule" class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Schedule</a>
-        <a href="/billing"  class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Billing</a>
-        <a href="/reports"  class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Reports</a>
-        <a href="/optical"  class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Optical</a>
-        <a href="/portal"   class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Portal</a>
-        <a href="/messaging" class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Messaging</a>
+        <a data-module="patients" href="/patients" class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Patients</a>
+        <a data-module="scheduling" href="/schedule" class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Schedule</a>
+        <a data-module="billing" href="/billing"  class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Billing</a>
+        <a data-module="reports" href="/reports"  class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Reports</a>
+        <a data-module="optical" href="/optical"  class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Optical</a>
+        <a data-module="portal" href="/portal"   class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Portal</a>
+        <a data-module="messaging" href="/messaging" class="text-slate-500 hover:text-slate-300 text-xs px-2 py-1 rounded transition-colors hidden md:block">Messaging</a>
       </nav>
     </header>
 

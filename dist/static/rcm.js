@@ -3,6 +3,19 @@ const API = '/api/rcm';
 let allClaims = [];
 let allStatuses = [];
 
+// ── Auth fetch helper ─────────────────────────────────────────────────────────
+function _authHdr(extra = {}) {
+  const tok = sessionStorage.getItem('of_access_token');
+  const h = { 'Content-Type': 'application/json', ...extra };
+  if (tok) h['Authorization'] = `Bearer ${tok}`;
+  return h;
+}
+async function apiFetch(url, opts = {}) {
+  const r = await fetch(url, { ...opts, headers: _authHdr(opts.headers) });
+  if (r.status === 401) { sessionStorage.clear(); location.href = '/login'; return { ok: false }; }
+  return r;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 const fmt$ = n => '$' + (n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -47,7 +60,7 @@ function closeModal(id) { $(id).classList.add('hidden'); }
 
 // ─── Overview ─────────────────────────────────────────────────────────────────
 async function loadOverview() {
-  const r = await fetch(`${API}/dashboard`);
+  const r = await apiFetch(`${API}/dashboard`);
   const { data: d } = await r.json();
   if (!d) return;
 
@@ -97,11 +110,11 @@ async function loadOverview() {
 
 // ─── Claims ───────────────────────────────────────────────────────────────────
 async function loadClaims() {
-  const r = await fetch(`${API}/claims`);
+  const r = await apiFetch(`${API}/claims`);
   const { data } = await r.json();
   allClaims = data || [];
   // Populate status filter
-  const metaR = await fetch(`${API}/statuses`);
+  const metaR = await apiFetch(`${API}/statuses`);
   const { data: meta } = await metaR.json();
   allStatuses = meta?.claimStatuses || [];
   const sel = $('claim-status-filter');
@@ -147,7 +160,7 @@ function renderClaims(claims) {
 }
 
 async function viewClaim(id) {
-  const r = await fetch(`${API}/claims/${id}`);
+  const r = await apiFetch(`${API}/claims/${id}`);
   const { data: c } = await r.json();
   if (!c) return;
   $('claim-modal-title').textContent = `Claim: ${c.claimNumber}`;
@@ -221,7 +234,7 @@ async function viewClaim(id) {
 
 async function deleteClaim(id) {
   if (!confirm('Delete this claim? This cannot be undone.')) return;
-  const r = await fetch(`${API}/claims/${id}`, { method: 'DELETE' });
+  const r = await apiFetch(`${API}/claims/${id}`, { method: 'DELETE' });
   const data = await r.json();
   if (data.success) loadClaims();
   else alert(data.error || 'Delete failed');
@@ -257,7 +270,7 @@ async function submitPayment(claimId) {
   const method = $('pay-method').value;
   const postedBy = $('pay-postedBy').value.trim();
   if (!amount || !postedBy) { $('pay-err').textContent = 'amount and postedBy required'; $('pay-err').classList.remove('hidden'); return; }
-  const r = await fetch(`${API}/claims/${claimId}/payments`, {
+  const r = await apiFetch(`${API}/claims/${claimId}/payments`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ amount, method, postedBy, referenceNumber: $('pay-ref').value }),
@@ -294,7 +307,7 @@ async function submitDenial(claimId) {
   const reason = $('denial-reason').value;
   const reasonDescription = $('denial-desc').value.trim();
   if (!reasonDescription) { $('denial-err').textContent = 'Description required'; $('denial-err').classList.remove('hidden'); return; }
-  const r = await fetch(`${API}/claims/${claimId}/denials`, {
+  const r = await apiFetch(`${API}/claims/${claimId}/denials`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ reason, reasonDescription, appealDeadline: $('denial-deadline').value || undefined }),
@@ -322,7 +335,7 @@ async function submitNewClaim() {
   if (!body.patientId || !body.patientName || !body.payerId || !body.payerName || !body.serviceDate) {
     $('nc-error').textContent = 'Required fields missing'; $('nc-error').classList.remove('hidden'); return;
   }
-  const r = await fetch(`${API}/claims`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await apiFetch(`${API}/claims`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const data = await r.json();
   if (data.success) { closeModal('new-claim-modal'); loadClaims(); loadOverview(); }
   else { $('nc-error').textContent = data.error || 'Create failed'; $('nc-error').classList.remove('hidden'); }
@@ -330,7 +343,7 @@ async function submitNewClaim() {
 
 // ─── ERAs ─────────────────────────────────────────────────────────────────────
 async function loadERAs() {
-  const r = await fetch(`${API}/eras`);
+  const r = await apiFetch(`${API}/eras`);
   const { data } = await r.json();
   $('era-table').innerHTML = (data || []).length ? (data || []).map(e => `
     <tr class="tbl-row border-b border-slate-800 hover:bg-slate-800/50">
@@ -357,7 +370,7 @@ async function submitNewERA() {
   if (!body.payerId || !body.payerName || !body.checkDate || body.totalPayment === undefined) {
     $('era-error').textContent = 'Required fields missing'; $('era-error').classList.remove('hidden'); return;
   }
-  const r = await fetch(`${API}/eras`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await apiFetch(`${API}/eras`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const data = await r.json();
   if (data.success) { closeModal('new-era-modal'); loadERAs(); }
   else { $('era-error').textContent = data.error || 'Failed'; $('era-error').classList.remove('hidden'); }
@@ -365,7 +378,7 @@ async function submitNewERA() {
 
 // ─── Statements ───────────────────────────────────────────────────────────────
 async function loadStatements() {
-  const r = await fetch(`${API}/statements`);
+  const r = await apiFetch(`${API}/statements`);
   const { data } = await r.json();
   $('statements-table').innerHTML = (data || []).length ? (data || []).map(s => `
     <tr class="tbl-row border-b border-slate-800 hover:bg-slate-800/50">
@@ -390,7 +403,7 @@ async function submitNewStatement() {
   if (!body.patientId || !body.patientName || !body.dueDate) {
     $('stmt-error').textContent = 'Required fields missing'; $('stmt-error').classList.remove('hidden'); return;
   }
-  const r = await fetch(`${API}/statements`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await apiFetch(`${API}/statements`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const data = await r.json();
   if (data.success) { closeModal('new-stmt-modal'); loadStatements(); }
   else { $('stmt-error').textContent = data.error || 'Failed'; $('stmt-error').classList.remove('hidden'); }
@@ -398,7 +411,7 @@ async function submitNewStatement() {
 
 // ─── Payment Plans ────────────────────────────────────────────────────────────
 async function loadPlans() {
-  const r = await fetch(`${API}/payment-plans`);
+  const r = await apiFetch(`${API}/payment-plans`);
   const { data } = await r.json();
   $('plans-list').innerHTML = (data || []).length ? (data || []).map(p => `
     <div class="card p-4">
@@ -440,7 +453,7 @@ async function submitNewPlan() {
   if (!body.patientId || !body.patientName || !body.totalBalance || !body.monthlyPayment) {
     $('plan-error').textContent = 'Required fields missing'; $('plan-error').classList.remove('hidden'); return;
   }
-  const r = await fetch(`${API}/payment-plans`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await apiFetch(`${API}/payment-plans`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const data = await r.json();
   if (data.success) { closeModal('new-plan-modal'); loadPlans(); }
   else { $('plan-error').textContent = data.error || 'Failed'; $('plan-error').classList.remove('hidden'); }

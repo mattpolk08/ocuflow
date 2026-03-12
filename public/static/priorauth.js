@@ -2,6 +2,19 @@
 const API = '/api/pa';
 let allRequests = [], currentPAId = null, activeFilter = 'ALL', statusChart, payerChart, svctypeChart;
 
+// ── Auth fetch helper ─────────────────────────────────────────────────────────
+function _authHdr(extra = {}) {
+  const tok = sessionStorage.getItem('of_access_token');
+  const h = { 'Content-Type': 'application/json', ...extra };
+  if (tok) h['Authorization'] = `Bearer ${tok}`;
+  return h;
+}
+async function apiFetch(url, opts = {}) {
+  const r = await fetch(url, { ...opts, headers: _authHdr(opts.headers) });
+  if (r.status === 401) { sessionStorage.clear(); location.href = '/login'; return { ok: false }; }
+  return r;
+}
+
 // ── Status helpers ────────────────────────────────────────────────────────────
 function statusBadge(s) {
   const map = {
@@ -65,7 +78,7 @@ function setupFilters() {
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 async function loadDashboard() {
-  const res = await fetch(`${API}/dashboard`).then(r=>r.json()).catch(()=>null);
+  const res = await apiFetch(`${API}/dashboard`).then(r=>r.json()).catch(()=>null);
   if(!res?.success) return;
   const d = res.data;
   document.getElementById('kpi-active').textContent = d.totalActive;
@@ -128,7 +141,7 @@ async function loadDashboard() {
 
 // ── Requests List ─────────────────────────────────────────────────────────────
 async function loadRequests() {
-  const res = await fetch(`${API}/requests`).then(r=>r.json()).catch(()=>null);
+  const res = await apiFetch(`${API}/requests`).then(r=>r.json()).catch(()=>null);
   if(!res?.success) return;
   allRequests = res.data.requests||[];
   renderSidebar();
@@ -166,7 +179,7 @@ async function selectPA(id) {
   currentPAId = id;
   renderSidebar();
   switchTab('requests');
-  const res = await fetch(`${API}/requests/${id}`).then(r=>r.json()).catch(()=>null);
+  const res = await apiFetch(`${API}/requests/${id}`).then(r=>r.json()).catch(()=>null);
   if(!res?.success) return;
   renderPADetail(res.data);
 }
@@ -321,7 +334,7 @@ function renderPADetail(r) {
 // ── Status Update ─────────────────────────────────────────────────────────────
 async function updateStatus(id, status) {
   const authNumber = status==='APPROVED' ? prompt('Enter Auth Number (or leave blank):') || undefined : undefined;
-  const res = await fetch(`${API}/requests/${id}/status`, {
+  const res = await apiFetch(`${API}/requests/${id}/status`, {
     method:'PATCH',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ status, changedBy:'Staff', authNumber })
@@ -352,7 +365,7 @@ async function submitNewPA() {
   if(!body.patientId||!body.patientName||!body.serviceCode||!body.serviceDescription||!body.payerId||!body.payerName||!body.providerId||!body.providerName) {
     alert('Please fill in all required fields.'); return;
   }
-  const res = await fetch(`${API}/requests`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+  const res = await apiFetch(`${API}/requests`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
   if(res.success) {
     closeModal('new-pa-modal');
     await loadRequests(); await loadDashboard();
@@ -375,7 +388,7 @@ async function submitAppeal() {
     deadline: document.getElementById('appeal-deadline').value,
   };
   if(!body.reason||!body.deadline) { alert('Reason and deadline are required.'); return; }
-  const res = await fetch(`${API}/requests/${id}/appeal`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+  const res = await apiFetch(`${API}/requests/${id}/appeal`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
   if(res.success) { closeModal('appeal-modal'); await loadRequests(); await loadDashboard(); renderPADetail(res.data); }
   else alert('Error: '+res.error);
 }
@@ -390,7 +403,7 @@ async function submitP2P() {
     notes: document.getElementById('p2p-notes').value.trim()||undefined,
   };
   if(!body.physicianName) { alert('Physician name required.'); return; }
-  const res = await fetch(`${API}/requests/${id}/peer-to-peer`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+  const res = await apiFetch(`${API}/requests/${id}/peer-to-peer`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
   if(res.success) { closeModal('p2p-modal'); renderPADetail(res.data); }
   else alert('Error: '+res.error);
 }
@@ -406,7 +419,7 @@ async function submitDocument() {
     sizeKb: Math.floor(Math.random()*500+50),
   };
   if(!body.name||!body.uploadedBy) { alert('Name and uploader required.'); return; }
-  const res = await fetch(`${API}/requests/${id}/documents`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+  const res = await apiFetch(`${API}/requests/${id}/documents`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
   if(res.success) { closeModal('doc-modal'); renderPADetail(res.data); }
   else alert('Error: '+res.error);
 }
@@ -421,7 +434,7 @@ async function submitNote() {
     isInternal: document.getElementById('note-internal').checked,
   };
   if(!body.content) { alert('Note content required.'); return; }
-  const res = await fetch(`${API}/requests/${id}/notes`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+  const res = await apiFetch(`${API}/requests/${id}/notes`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
   if(res.success) { closeModal('note-modal'); renderPADetail(res.data); }
   else alert('Error: '+res.error);
 }
@@ -453,7 +466,7 @@ async function filterCriteria() {
   const params = new URLSearchParams();
   if(payerId) params.set('payerId',payerId);
   if(serviceCode) params.set('serviceCode',serviceCode);
-  const res = await fetch(`${API}/criteria?${params}`).then(r=>r.json());
+  const res = await apiFetch(`${API}/criteria?${params}`).then(r=>r.json());
   renderCriteria(res.data?.criteria||[]);
 }
 

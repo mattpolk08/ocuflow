@@ -11,16 +11,23 @@ const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)]
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
 
 // ── API helpers ───────────────────────────────────────────────────────────────
+function _authHdr(extra = {}) {
+  const tok = sessionStorage.getItem('of_access_token');
+  const h = { 'Content-Type': 'application/json', ...extra };
+  if (tok) h['Authorization'] = `Bearer ${tok}`;
+  return h;
+}
+function _handle401(r) { if (r.status === 401) { sessionStorage.clear(); location.href = '/login'; } return r; }
 async function apiGet(url) {
-  const r = await fetch(url)
+  const r = _handle401(await fetch(url, { headers: _authHdr() }))
   return r.json()
 }
 async function apiPost(url, body) {
-  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const r = _handle401(await fetch(url, { method: 'POST', headers: _authHdr(), body: JSON.stringify(body) }))
   return r.json()
 }
 async function apiPut(url, body) {
-  const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const r = _handle401(await fetch(url, { method: 'PUT', headers: _authHdr(), body: JSON.stringify(body) }))
   return r.json()
 }
 

@@ -53,8 +53,15 @@ function showToast(msg, type = 'success') {
 }
 
 // ── API ────────────────────────────────────────────────────────────────────────
+function _authHdr(extra = {}) {
+  const tok = sessionStorage.getItem('of_access_token');
+  const h = { 'Content-Type': 'application/json', ...extra };
+  if (tok) h['Authorization'] = `Bearer ${tok}`;
+  return h;
+}
 async function api(path, opts = {}) {
-  const res = await fetch(path, opts);
+  const res = await fetch(path, { ...opts, headers: _authHdr(opts.headers) });
+  if (res.status === 401) { sessionStorage.clear(); location.href = '/login'; return {}; }
   const j   = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(j.error || res.statusText);
   return j;

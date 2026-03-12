@@ -34,9 +34,12 @@ function showToast(msg, ok = true) {
 }
 
 async function api(method, path, body) {
+  const tok = sessionStorage.getItem('of_access_token');
   const opts = { method, headers: { 'Content-Type': 'application/json' } }
+  if (tok) opts.headers['Authorization'] = `Bearer ${tok}`;
   if (body) opts.body = JSON.stringify(body)
   const res = await fetch(`/api/optical${path}`, opts)
+  if (res.status === 401) { sessionStorage.clear(); location.href = '/login'; return {}; }
   return res.json()
 }
 
