@@ -54,6 +54,18 @@ reports.get('/dashboard', async (c) => {
   }
 })
 
+// ── GET /api/reports/overview?range=30d ──────────────────────────────────────
+// Alias for /dashboard — full dashboard payload in one call
+reports.get('/overview', async (c) => {
+  try {
+    const range = parseRange(c.req.query('range'))
+    const data  = await getReportsDashboard(c.env.OCULOFLOW_KV, range, c.env.DB)
+    return c.json<ApiResponse<ReportsDashboard>>({ success: true, data })
+  } catch (e: any) {
+    return c.json<ApiResponse<null>>({ success: false, error: e.message }, 500)
+  }
+})
+
 // ── GET /api/reports/revenue?range=30d ───────────────────────────────────────
 reports.get('/revenue', async (c) => {
   try {
