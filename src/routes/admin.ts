@@ -46,7 +46,7 @@ async function getAllSettings(db: D1Database): Promise<Record<string, string>> {
 // PRACTICE SETTINGS
 // ─────────────────────────────────────────────────────────────────────────────
 
-admin.get('/settings', requireRole(['ADMIN']), async (c) => {
+admin.get('/settings', requireRole('ADMIN'), async (c) => {
   try {
     const settings = await getAllSettings(c.env.DB)
     return c.json({ success: true, data: settings })
@@ -55,7 +55,7 @@ admin.get('/settings', requireRole(['ADMIN']), async (c) => {
   }
 })
 
-admin.put('/settings', requireRole(['ADMIN']), async (c) => {
+admin.put('/settings', requireRole('ADMIN'), async (c) => {
   try {
     const body = await c.req.json() as Record<string, string>
     const auth = c.get('auth' as any) as any
@@ -81,7 +81,7 @@ admin.put('/settings', requireRole(['ADMIN']), async (c) => {
 // LOCATIONS
 // ─────────────────────────────────────────────────────────────────────────────
 
-admin.get('/locations', requireRole(['ADMIN', 'PROVIDER', 'FRONT_DESK']), async (c) => {
+admin.get('/locations', requireRole('ADMIN', 'PROVIDER', 'FRONT_DESK'), async (c) => {
   try {
     const rows = await c.env.DB.prepare(
       'SELECT * FROM locations ORDER BY is_active DESC, name ASC'
@@ -92,7 +92,7 @@ admin.get('/locations', requireRole(['ADMIN', 'PROVIDER', 'FRONT_DESK']), async 
   }
 })
 
-admin.post('/locations', requireRole(['ADMIN']), async (c) => {
+admin.post('/locations', requireRole('ADMIN'), async (c) => {
   try {
     const body = await c.req.json() as any
     const id = `loc-${Date.now()}`
@@ -118,7 +118,7 @@ admin.post('/locations', requireRole(['ADMIN']), async (c) => {
   }
 })
 
-admin.put('/locations/:id', requireRole(['ADMIN']), async (c) => {
+admin.put('/locations/:id', requireRole('ADMIN'), async (c) => {
   try {
     const id = c.req.param('id')
     const body = await c.req.json() as any
@@ -156,7 +156,7 @@ admin.put('/locations/:id', requireRole(['ADMIN']), async (c) => {
   }
 })
 
-admin.delete('/locations/:id', requireRole(['ADMIN']), async (c) => {
+admin.delete('/locations/:id', requireRole('ADMIN'), async (c) => {
   try {
     const id = c.req.param('id')
     await c.env.DB.prepare(
@@ -185,7 +185,7 @@ admin.get('/modules', async (c) => {
   }
 })
 
-admin.put('/modules/:id', requireRole(['ADMIN']), async (c) => {
+admin.put('/modules/:id', requireRole('ADMIN'), async (c) => {
   try {
     const moduleId = c.req.param('id')
     const { is_enabled } = await c.req.json() as { is_enabled: boolean }
@@ -210,7 +210,7 @@ admin.put('/modules/:id', requireRole(['ADMIN']), async (c) => {
 // USER MANAGEMENT (proxy to auth lib)
 // ─────────────────────────────────────────────────────────────────────────────
 
-admin.get('/users', requireRole(['ADMIN']), async (c) => {
+admin.get('/users', requireRole('ADMIN'), async (c) => {
   try {
     const users = await listUsers(c.env.OCULOFLOW_KV, c.env.DB)
     return c.json({ success: true, data: users })
@@ -219,7 +219,7 @@ admin.get('/users', requireRole(['ADMIN']), async (c) => {
   }
 })
 
-admin.post('/users', requireRole(['ADMIN']), async (c) => {
+admin.post('/users', requireRole('ADMIN'), async (c) => {
   try {
     const body = await c.req.json() as any
     const { email, displayName, role, password } = body
@@ -241,7 +241,7 @@ admin.post('/users', requireRole(['ADMIN']), async (c) => {
   }
 })
 
-admin.put('/users/:id', requireRole(['ADMIN']), async (c) => {
+admin.put('/users/:id', requireRole('ADMIN'), async (c) => {
   try {
     const id = c.req.param('id')
     const body = await c.req.json() as any
@@ -270,7 +270,7 @@ admin.put('/users/:id', requireRole(['ADMIN']), async (c) => {
 // DASHBOARD SUMMARY (for admin overview page)
 // ─────────────────────────────────────────────────────────────────────────────
 
-admin.get('/dashboard', requireRole(['ADMIN']), async (c) => {
+admin.get('/dashboard', requireRole('ADMIN'), async (c) => {
   try {
     const [settings, locRows, modRows, userRows] = await Promise.all([
       getAllSettings(c.env.DB),
