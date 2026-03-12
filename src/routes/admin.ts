@@ -271,26 +271,27 @@ admin.put('/users/:id', requireRole('ADMIN'), async (c) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 admin.get('/dashboard', requireRole('ADMIN'), async (c) => {
-  try {
-    const [settings, locRows, modRows, userRows] = await Promise.all([
-      getAllSettings(c.env.DB),
-      c.env.DB.prepare('SELECT COUNT(*) as total, SUM(is_active) as active FROM locations').first() as Promise<any>,
-      c.env.DB.prepare('SELECT COUNT(*) as total, SUM(is_enabled) as enabled FROM module_settings').first() as Promise<any>,
-      c.env.DB.prepare('SELECT COUNT(*) as total FROM staff_users WHERE is_active = 1').first() as Promise<any>,
-    ])
-
-    return c.json({
-      success: true,
-      data: {
-        practiceName: settings.practice_name || 'OculoFlow Practice',
-        locations: { total: locRows?.total || 0, active: locRows?.active || 0 },
-        modules: { total: modRows?.total || 0, enabled: modRows?.enabled || 0 },
-        users: { active: userRows?.total || 0 },
-      }
-    })
-  } catch (err) {
-    return c.json({ success: false, error: String(err) }, 500)
+  // Run each query independently so one missing table doesn't break all
+  async function safeFirst(sql: string): Promise<any> {
+    try { return await c.env.DB.prepare(sql).first(); } catch { return null; }
   }
+
+  const [settings, locRows, modRows, userRows] = await Promise.all([
+    getAllSettings(c.env.DB),
+    safeFirst('SELECT COUNT(*) as total, SUM(is_active) as active FROM locations'),
+    safeFirst('SELECT COUNT(*) as total, SUM(is_enabled) as enabled FROM module_settings'),
+    safeFirst('SELECT COUNT(*) as total FROM staff_users WHERE is_active = 1'),
+  ])
+
+  return c.json({
+    success: true,
+    data: {
+      practiceName: settings.practice_name || 'OculoFlow Practice',
+      locations: { total: locRows?.total || 0, active: locRows?.active || 0 },
+      modules: { total: modRows?.total || 0, enabled: modRows?.enabled || 0 },
+      users: { active: userRows?.total || 0 },
+    }
+  })
 })
 
 export default admin
