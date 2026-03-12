@@ -216,9 +216,11 @@
         <i class="fas fa-plus text-xs"></i> New Appt
       </button>
 
-      <!-- User avatar -->
-      <div class="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center text-white text-xs font-bold cursor-pointer" title="Front Desk — Maria R.">
-        MR
+      <!-- User avatar + role chip + logout — populated by auth-nav.js -->
+      <div class="flex items-center gap-2" data-nav-actions>
+        <div data-auth-avatar class="w-8 h-8 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white text-xs font-bold cursor-pointer user-avatar-placeholder">
+          ?
+        </div>
       </div>
     </div>
   </nav>
