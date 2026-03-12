@@ -25,8 +25,8 @@ type Bindings = {
 
 const admin = new Hono<{ Bindings: Bindings }>()
 
-// ── All admin routes require authentication ───────────────────────────────────
-admin.use('/*', requireAuth)
+// Note: requireAuth is applied globally in index.tsx (app.use('/api/admin/*', requireAuth))
+// No need to repeat it here — double-auth breaks the shared c.get('auth') context.
 
 // ── Helper: get all settings as a map ────────────────────────────────────────
 async function getAllSettings(db: D1Database): Promise<Record<string, string>> {
