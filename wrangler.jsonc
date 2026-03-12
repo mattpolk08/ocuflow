@@ -12,6 +12,12 @@
       "id": "3de6133cdd914fa7b9b6eea4142322e0"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "OCULOFLOW_R2",
+      "bucket_name": "oculoflow-documents"
+    }
+  ],
   "d1_databases": [
     {
       "binding": "DB",
