@@ -171,7 +171,7 @@ app.route('/api/reminders',  remindersRoutes)
 app.use('/api/scorecards/*', requireAuth, requireRole('ADMIN','PROVIDER','BILLING'), auditMiddleware)
 app.route('/api/scorecards', scorecardsRoutes)
 
-app.use('/api/telehealth/*', requireAuth, requireRole('ADMIN','PROVIDER','NURSE'), auditMiddleware)
+app.use('/api/telehealth/*', requireAuth, requireRole('ADMIN','PROVIDER','NURSE','FRONT_DESK'), auditMiddleware)
 app.route('/api/telehealth', telehealthRoutes)
 
 app.use('/api/erx/*',        requireAuth, requireRole('PROVIDER', 'ADMIN', 'NURSE'), auditMiddleware)
@@ -183,7 +183,7 @@ app.route('/api/ai',         aiRoutes)
 app.use('/api/pa/*',         requireAuth, requireRole('ADMIN','PROVIDER','BILLING','NURSE'), auditMiddleware)
 app.route('/api/pa',         paRoutes)
 
-app.use('/api/rcm/*',        requireAuth, requireRole('BILLING', 'ADMIN', 'PROVIDER'), auditMiddleware)
+app.use('/api/rcm/*',        requireAuth, requireRole('BILLING', 'ADMIN', 'PROVIDER', 'FRONT_DESK'), auditMiddleware)
 app.route('/api/rcm',        rcmRoutes)
 
 // ── MFA ──────────────────────────────────────────────────────────────────────

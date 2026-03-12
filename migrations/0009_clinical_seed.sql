@@ -3,19 +3,22 @@
 -- /rx, /optical-orders, and dashboard activeRx fields are populated.
 
 -- ── Optical Rx ────────────────────────────────────────────────────────────────
+-- NOTE: provider_name, is_signed, expires_date are added by migration 0010.
+-- Insert only columns that exist in the base 0005_optical.sql schema here;
+-- the three late-added columns are backfilled in migration 0010.
 INSERT OR IGNORE INTO optical_rx
   (id, patient_id, exam_id, provider_id,
-   rx_date, expires_date,
+   rx_date,
    od_sphere, od_cylinder, od_axis, od_add, od_pd, od_va,
    os_sphere, os_cylinder, os_axis, os_add, os_pd, os_va,
-   binocular_pd, lens_type, provider_name, is_signed, notes,
+   binocular_pd, lens_type, notes,
    created_at, updated_at)
 VALUES
   ('rx-001', 'pt-001', NULL, 'dr-chen',
-   '2026-02-10', '2028-02-10',
+   '2026-02-10',
    -2.25, -0.50, 180, 2.00, 31.5, '20/20',
    -1.75, -0.75, 175, 2.00, 32.0, '20/20',
-   63.5, 'PROGRESSIVE', 'Dr. Emily Chen', 1,
+   63.5, 'PROGRESSIVE',
    'Patient adapted well to progressive design',
    datetime('now'), datetime('now'));
 
@@ -60,3 +63,4 @@ VALUES
    350.00, 30.00, 30.00,
    252.00, 0.00, 68.00, 98.00,
    'SUBMITTED', datetime('now'), datetime('now'));
+
