@@ -2,9 +2,9 @@
 
 ## Project Overview
 - **Name**: OculoFlow
-- **Version**: 3.1.0
+- **Version**: 3.2.0
 - **Goal**: Full-stack ophthalmology EHR and practice management system built on Cloudflare Pages + Hono
-- **Stack**: TypeScript · Hono · Cloudflare Workers · KV Storage · Vite · Tailwind CSS (CDN) · Chart.js
+- **Stack**: TypeScript · Hono · Cloudflare Workers · D1 SQLite · KV Storage · Vite · Tailwind CSS (CDN) · Chart.js
 
 ## Live URLs
 - **Production**: https://oculoflow.pages.dev
@@ -281,11 +281,50 @@
 | Health        | /api/health            | GET — version, phases, timestamp                                                      |
 
 ## Data Architecture
-- **Storage**: Cloudflare Workers KV (`OCULOFLOW_KV` binding)
-- **Pattern**: In-memory seed guard + KV index key + individual record keys
-- **Key prefixes**: `auth:user:`, `auth:email:`, `auth:session:`, `auth:revoked:`, `auth:user:idx`, `auth:seeded`, `patient:`, `appt:`, `exam:`, `sb:`, `optical:frame:`, `optical:order:`, `portal:session:`, `portal:appt-req:`, `portal:thread:`, `msg:thread:`, `msg:task:`, `msg:recall:`, `msg:staff:`, `comms:template:`, `comms:msg:`, `comms:rule:`, `comms:noshow:`, `comms:campaign:`, `sc:goal:`, `sc:seeded`, `th:visit:`, `th:idx`, `th:seeded`, `erx:rx:`, `erx:idx`, `erx:allergy:`, `erx:pdmp:`, `erx:seeded`, `ai:insight:`, `ai:risk:`, `ai:note:`, `ai:seeded`, `pa:req:`, `pa:idx`, `pa:seeded`, `rcm:claim:`, `rcm:era:`, `rcm:stmt:`, `rcm:pp:`, `rcm:seeded`
-- **Demo mode**: All data seeded automatically on first KV read
-- **Scorecards**: KPIs computed deterministically on-the-fly (no KV writes); only goals use KV
+
+### Primary Storage — Cloudflare D1 (SQLite)
+All clinical and operational data is persisted in the `oculoflow-production` D1 database.
+
+| Table Group | Tables |
+|---|---|
+| **Core** | `organizations`, `staff_users`, `auth_sessions`, `providers`, `rooms` |
+| **Patients** | `patients`, `patient_insurance` |
+| **Scheduling** | `appointments`, `waitlist` |
+| **Clinical** | `exams`, `exam_diagnoses`, `exam_plan_entries`, `care_gaps` |
+| **Billing** | `superbills`, `superbill_line_items`, `superbill_diagnoses`, `payments` |
+| **Optical** | `optical_orders`, `optical_order_line_items`, `optical_rx`, `frames`, `lenses`, `contact_lenses` |
+| **Portal** | `portal_accounts`, `portal_sessions`, `portal_appointment_requests`, `portal_message_threads`, `portal_messages`, `portal_notification_prefs`, `portal_activity_log` |
+| **Messaging** | `msg_threads`, `msg_messages`, `msg_tasks`, `msg_recalls` |
+| **Reminders** | `reminder_templates`, `reminder_messages`, `reminder_rules`, `outreach_campaigns` |
+| **Telehealth** | `telehealth_visits` |
+| **eRx** | `erx_prescriptions`, `erx_pdmp_reports`, `erx_allergies` |
+| **Prior Auth** | `prior_auth_requests` |
+| **RCM** | `rcm_claims`, `rcm_eras`, `rcm_statements`, `rcm_payment_plans` |
+| **AI / Analytics** | `ai_insights`, `ai_risk_scores`, `ai_generated_notes`, `care_gaps`, `provider_goals` |
+| **Scorecards** | `provider_goals` |
+| **Admin** | `practice_settings`, `locations`, `module_settings` |
+| **Audit** | `audit_log`, `notification_logs` |
+
+**Migrations applied**: 0001 → 0018 (all applied to remote production)
+
+### Secondary Storage — Cloudflare KV
+KV is used exclusively for ephemeral and session data that does not belong in a relational table:
+
+| Prefix | Purpose |
+|---|---|
+| `auth:session:` | JWT refresh-token session records (30-day TTL) |
+| `auth:revoked:` | Revoked JWT `jti` list |
+| `mfa:config:` | TOTP secrets and recovery codes |
+| `mfa:pending:` | In-progress MFA enrollment state |
+| `mfa:trusted:` | Trusted-device tokens (30-day TTL) |
+| `mfa:used:` | Used TOTP codes (replay prevention, 30s TTL) |
+| `ratelimit:api:` | Per-IP request counters (sliding window) |
+| `ratelimit:login:` | Failed-login counters per email |
+| `audit:log:` | HIPAA audit event records (6-year TTL) |
+| `audit:idx` | Audit log index |
+| `portal:session:` | Patient portal session tokens |
+
+**Note**: All clinical record seed data lives in D1. KV holds only auth/session/audit state.
 
 ## User Guide
 1. **Home** `/` — Phase overview with links to all 17 modules
@@ -321,10 +360,55 @@
 - **Deploy**: `npm run build && npx wrangler pages deploy dist --project-name oculoflow`
 - **KV Namespace**: `OCULOFLOW_KV` (id: 3de6133cdd914fa7b9b6eea4142322e0)
 - **Secrets**: `JWT_SECRET` (set via `wrangler pages secret put`)
-- **Last Updated**: 2026-03-08
-- **Version**: 3.1.0
+- **Last Updated**: 2026-03-14
+- **Version**: 3.2.0
 
-## Recent Additions (v3.1.0)
+## Recent Additions
+
+### v3.2.0 — Admin Module + Full D1 Migration *(2026-03-14)*
+
+#### Phase ADM-1 — Practice Administration Module
+- **Module Settings**: toggle enable/disable for all 21 platform modules; stored in `module_settings` D1 table
+- **Practice Settings**: name, NPI, address, phone, fax, timezone, billing info; stored in `practice_settings` D1 table
+- **Location Management**: multi-location CRUD with active/inactive toggle; stored in `locations` D1 table
+- **User Management**: list, create, update role/status for all staff users; backed by `staff_users` D1 table
+- **Admin Dashboard**: practice overview — total/active locations, total/enabled modules, active user count
+- Routes: `GET /admin`, `GET|PUT /api/admin/settings`, `GET|POST|PUT|DELETE /api/admin/locations`, `GET|POST|PUT /api/admin/users`, `GET /api/admin/modules`, `PUT /api/admin/modules/:id`, `GET /api/admin/dashboard`
+- Auth: ADMIN role required for all write operations; any authenticated user can read module states
+- **Seed**: 21 modules (all enabled), 15 practice settings, 1 location (Advanced Eye Care of Miami — Main), 7 staff users
+
+#### Full KV → D1 Migration Complete
+- All 6 remaining lib files confirmed D1-backed: `rcm.ts`, `messaging.ts`, `priorauth.ts`, `telehealth.ts`, `erx.ts`, `reminders.ts`
+- Production D1 seeded with sprint 2–4 data (rcm_claims, erx_prescriptions, msg_threads/messages/tasks, reminder_templates/rules, prior_auth_requests, care_gaps, provider_goals)
+- Migration **0018** added to align `rcm_claims` table column names with lib expectations
+- All migrations 0001–0018 applied to remote production via `--remote` flag
+
+#### D1 Production Data Summary
+| Table | Rows |
+|---|---|
+| patients | 16 |
+| appointments | 6 |
+| staff_users | 7 |
+| module_settings | 21 |
+| practice_settings | 15 |
+| locations | 1 |
+| rcm_claims | 2 |
+| erx_prescriptions | 3 |
+| msg_threads | 1 |
+| msg_messages | 2 |
+| msg_tasks | 1 |
+| reminder_templates | 4 |
+| reminder_rules | 4 |
+| prior_auth_requests | 2 |
+| care_gaps | 4 |
+| provider_goals | 5 |
+
+#### Routing Fix — /admin Clean URL
+- `admin.html` and `/admin` added to `public/_routes.json` exclude list so Cloudflare Pages serves the static file instead of routing through the Hono worker
+- Static `public/_routes.json` committed to repo — prevents the `@hono/vite-build` plugin from overwriting the exclude list during rebuilds
+- All 24 page routes now have both clean URL and `.html` variants in the exclude list
+
+---
 
 ### Phase B3 — Patient Portal Full Auth Suite *(v3.1.0)*
 - **Magic-link**: email OTP/token; demo mode returns OTP directly; real sends via SendGrid
@@ -353,10 +437,18 @@
 | Phase B3 Portal Auth | 40/40 | ✅ PASS |
 
 ## Pending / Next Steps
-- **Enhancement**: Real Twilio/SendGrid credentials in production (replace demo simulation with live send)
-- **Enhancement**: Real insurance eligibility API (wire `src/lib/eligibility.ts` to Change Healthcare/Availity)
-- **Enhancement**: Real login flow for portal (patient account creation / password reset)
-- **Enhancement**: File attachment support in clinical messaging threads
-- **Enhancement**: Real provider data feed to scorecards (currently computed from deterministic simulation)
-- **Phase 11A** — Multi-Location Support (multiple practice sites, provider scheduling across locations)
-- **Phase 11B** — Patient Mobile App (React Native companion for the patient portal)
+
+### Enhancements
+- **Real Twilio/SendGrid credentials** — replace demo simulation with live send for reminders/portal messages
+- **Real insurance eligibility API** — wire `src/lib/eligibility.ts` to Change Healthcare / Availity
+- **File attachment support** — clinical messaging threads; documents module (currently R2 stub)
+- **Real provider data feed** — scorecards KPIs currently computed from deterministic simulation
+- **Telehealth schema alignment** — remote `telehealth_visits` table uses video-call schema (from older migration); the async-review lib expects different columns; needs migration to unify
+
+### Roadmap Features (Sprint 5)
+- **Phase 11A** — Referral Management (outbound/inbound referrals, status tracking, fax integration)
+- **Phase 11B** — Document Templates (consent forms, letters, patient education PDFs)
+- **Phase 11C** — Staff Scheduling (provider schedule builder, PTO/block time, template weeks)
+- **Phase 11D** — Insurance Contract Fee Schedules (allowed amount lookup by CPT + payer)
+- **Phase 11E** — Multi-Location Routing (location-aware scheduling, location-specific settings)
+- **Phase 11F** — Patient Self-Scheduling (public booking widget linked to scheduling engine)
